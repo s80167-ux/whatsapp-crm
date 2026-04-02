@@ -1,0 +1,46 @@
+Failed to send message: {
+  code: 'PGRST204',
+  details: null,
+  hint: null,
+  message: "Could not find the 'send_status' column of 'messages' in the schema cache"
+}
+Failed to update outgoing message status: Could not find the 'send_status' column of 'messages' in the schema cache
+Failed to update outgoing message status: Could not find the 'send_status' column of 'messages' in the schema cache
+Failed to update outgoing message status: Could not find the 'send_status' column of 'messages' in the schema cache
+Failed to decrypt message with any known session...
+Session error:MessageCounterError: Key used already or never filled MessageCounterError: Key used already or never filled
+    at SessionCipher.doDecryptWhisperMessage (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\session_cipher.js:236:19)
+    at SessionCipher.decryptWithSessions (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\session_cipher.js:147:40)
+    at 56097171845164.0 [as awaitable] (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\session_cipher.js:171:39)
+    at async _asyncQueueExecutor (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\queue_job.js:20:29)
+Failed to send message: {
+  code: 'PGRST204',
+  details: null,
+  hint: null,
+  message: "Could not find the 'send_status' column of 'messages' in the schema cache"
+}
+Failed to send message: {
+  code: 'PGRST204',
+  details: null,
+  hint: null,
+  message: "Could not find the 'send_status' column of 'messages' in the schema cache"
+}
+Failed to decrypt message with any known session...
+Session error:MessageCounterError: Key used already or never filled MessageCounterError: Key used already or never filled
+    at SessionCipher.doDecryptWhisperMessage (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\session_cipher.js:236:19)
+    at SessionCipher.decryptWithSessions (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\session_cipher.js:147:40)
+    at 56097171845164.0 [as awaitable] (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\session_cipher.js:171:39)
+    at async _asyncQueueExecutor (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\queue_job.js:20:29)
+Failed to decrypt message with any known session...
+Session error:MessageCounterError: Key used already or never filled MessageCounterError: Key used already or never filled
+    at SessionCipher.doDecryptWhisperMessage (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\session_cipher.js:236:19)
+    at SessionCipher.decryptWithSessions (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\session_cipher.js:147:40)
+    at 56097171845164.0 [as awaitable] (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\session_cipher.js:171:39)
+    at async _asyncQueueExecutor (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\queue_job.js:20:29)
+Failed to decrypt message with any known session...
+Session error:MessageCounterError: Key used already or never filled MessageCounterError: Key used already or never filled
+    at SessionCipher.doDecryptWhisperMessage (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\session_cipher.js:236:19)
+    at SessionCipher.decryptWithSessions (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\session_cipher.js:147:40)
+    at 56097171845164.0 [as awaitable] (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\session_cipher.js:171:39)
+    at async _asyncQueueExecutor (C:\Users\SYed Mohd Hatta\whatsapp-crm\backend\node_modules\libsignal\src\queue_job.js:20:29)
+^C^C

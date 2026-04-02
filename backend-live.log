@@ -1,0 +1,51 @@
+
+> whatsapp-crm-backend@1.0.0 dev
+> node --watch server.js
+
+Backend listening on http://localhost:4000
+WhatsApp connection: connecting
+WhatsApp connection: open
+Restarting 'server.js'
+Restarting 'server.js'
+Backend listening on http://localhost:4000
+WhatsApp connection: connecting
+WhatsApp connection: open
+Closing session: SessionEntry {
+  _chains: {
+    'BeAQl8P3WgFZ1aRuRJU60Fo1W+gaeDy3zZ2Et7FEubc/': { chainKey: [Object], chainType: 2, messageKeys: {} },
+    'BfL9Ff5OuAJlndTEaI1hKCNTgtFsgvgFV3inH/0sIAcL': { chainKey: [Object], chainType: 1, messageKeys: {} }
+  },
+  registrationId: 1991098069,
+  currentRatchet: {
+    ephemeralKeyPair: {
+      pubKey: <Buffer 05 f2 fd 15 fe 4e b8 02 65 9d d4 c4 68 8d 61 28 23 53 82 d1 6c 82 f8 05 57 78 a7 1f fd 2c 20 07 0b>,
+      privKey: <Buffer 80 f3 03 77 37 f6 e1 1e cf 44 05 d4 1e a9 61 f6 4e f9 a2 9a a2 d2 c9 16 47 ef d7 7a c5 79 f8 51>
+    },
+    lastRemoteEphemeralKey: <Buffer 05 e0 10 97 c3 f7 5a 01 59 d5 a4 6e 44 95 3a d0 5a 35 5b e8 1a 78 3c b7 cd 9d 84 b7 b1 44 b9 b7 3f>,
+    previousCounter: 0,
+    rootKey: <Buffer 10 8b 90 71 85 c3 32 42 a0 a7 e4 3b a9 1a 43 74 86 df 86 d5 44 4e d9 65 49 6d 27 12 3c d0 54 37>
+  },
+  indexInfo: {
+    baseKey: <Buffer 05 47 06 62 6e f4 02 12 e6 c2 5e 61 cb a9 e7 bc 65 57 d9 d4 9a 7e a4 7e 08 89 fa 70 7c a1 59 83 44>,
+    baseKeyType: 2,
+    closed: -1,
+    used: 1775130162488,
+    created: 1775130162488,
+    remoteIdentityKey: <Buffer 05 e2 cd 2c 10 5b 05 58 6f df 20 c6 38 62 3a 1b e0 ad ad be d8 b6 60 12 ad 63 16 c5 e5 b9 c7 c4 65>
+  }
+}
+Restarting 'server.js'
+Backend listening on http://localhost:4000
+Restarting 'server.js'
+Backend listening on http://localhost:4000
+WhatsApp connection: connecting
+WhatsApp connection: open
+Restarting 'server.js'
+Backend listening on http://localhost:4000
+WhatsApp connection: connecting
+WhatsApp connection: open
+Restarting 'server.js'
+Backend listening on http://localhost:4000
+WhatsApp connection: connecting
+WhatsApp connection: open
+Failed running 'server.js'. Waiting for file changes before restarting...

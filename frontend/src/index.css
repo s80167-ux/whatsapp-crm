@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #102033;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.95), transparent 32%),
+    radial-gradient(circle at top right, rgba(93, 201, 255, 0.22), transparent 28%),
+    radial-gradient(circle at bottom left, rgba(111, 227, 193, 0.18), transparent 24%),
+    linear-gradient(135deg, #eef6ff 0%, #f8fbff 45%, #edf7f4 100%);
+  font-family:
+    "SF Pro Display",
+    "Segoe UI",
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+@layer components {
+  .glass-panel {
+    @apply rounded-[32px] border border-white/50 bg-white/30 shadow-glass backdrop-blur-glass;
+  }
+
+  .input-glass {
+    @apply w-full rounded-2xl border border-white/50 bg-white/70 px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-200 focus:bg-white;
+  }
+
+  .primary-button {
+    @apply rounded-2xl bg-gradient-to-r from-sky-400 to-cyan-300 px-5 py-3 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 hover:shadow-glass disabled:cursor-not-allowed disabled:opacity-70;
+  }
+
+  .secondary-button {
+    @apply rounded-2xl border border-white/50 bg-white/70 px-5 py-3 text-sm font-semibold text-slate-600 transition hover:bg-white;
+  }
+}
+
+.bg-app {
+  background:
+    radial-gradient(circle at 15% 10%, rgba(255, 255, 255, 0.9), transparent 20%),
+    radial-gradient(circle at 85% 10%, rgba(93, 201, 255, 0.18), transparent 20%),
+    radial-gradient(circle at 20% 85%, rgba(111, 227, 193, 0.14), transparent 24%),
+    linear-gradient(140deg, #edf5ff 0%, #f8fbff 52%, #eef8f5 100%);
+}
