@@ -56,7 +56,21 @@ export type WhatsAppQr = {
   qr: string | null;
 };
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
+const configuredApiUrl = import.meta.env.VITE_API_URL;
+const isLocalhost =
+  typeof window !== "undefined" &&
+  ["localhost", "127.0.0.1"].includes(window.location.hostname);
+const API_URL = configuredApiUrl || (isLocalhost ? "http://localhost:4000" : "");
+
+function getApiUrl() {
+  if (!API_URL) {
+    throw new Error(
+      "Missing backend API URL. Set VITE_API_URL to your deployed backend URL before using the dashboard."
+    );
+  }
+
+  return API_URL.replace(/\/$/, "");
+}
 
 async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(init.headers);
@@ -70,10 +84,20 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${getApiUrl()}${path}`, {
+      ...init,
+      headers
+    });
+  } catch (error) {
+    throw new Error(
+      error instanceof Error
+        ? `Failed to reach backend API at ${getApiUrl()}. ${error.message}`
+        : `Failed to reach backend API at ${getApiUrl()}.`
+    );
+  }
 
   const data = await response.json().catch(() => ({}));
 
