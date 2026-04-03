@@ -254,11 +254,11 @@ export function ChatWindow(props: ChatWindowProps) {
 
   if (!phone) {
     return (
-      <section className="glass-panel flex min-h-[420px] items-center justify-center p-6">
+      <section className="glass-panel flex min-h-[420px] items-center justify-center border border-white/70 bg-white/58 p-6">
         <div className="max-w-sm text-center">
-          <p className="text-sm uppercase tracking-[0.25em] text-slate-500">No active chat</p>
+          <p className="text-sm uppercase tracking-[0.25em] text-emerald-800/65">No active chat</p>
           <h3 className="mt-3 text-2xl font-semibold text-ink">Pick a conversation</h3>
-          <p className="mt-3 text-sm text-slate-500">
+          <p className="mt-3 text-sm text-emerald-950/62">
             Select a contact from the left panel to review history and send a reply.
           </p>
         </div>
@@ -267,22 +267,22 @@ export function ChatWindow(props: ChatWindowProps) {
   }
 
   return (
-    <section className="glass-panel flex min-h-[520px] flex-col overflow-visible p-4 xl:max-h-[calc(100dvh-210px)]">
-      <div className="mb-3 rounded-[26px] border border-white/45 bg-white/40 px-4 py-3 shadow-soft">
-        <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Active conversation</p>
+    <section className="glass-panel flex min-h-[520px] flex-col overflow-visible border border-white/70 bg-white/58 p-4 xl:max-h-[calc(100dvh-210px)]">
+      <div className="mb-3 rounded-[26px] border border-white/60 bg-white/72 px-4 py-3 shadow-soft">
+        <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Active conversation</p>
         <h3 className="mt-1 text-xl font-semibold text-ink">{getDisplayName(contactName, phone)}</h3>
-        <p className="mt-1 text-sm text-slate-400">{phone}</p>
+        <p className="mt-1 text-sm text-emerald-900/45">{phone}</p>
       </div>
 
       <div
         ref={listRef}
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-[28px] border border-white/35 bg-white/18 p-4"
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-[28px] border border-emerald-100/80 bg-[rgba(219,245,228,0.7)] p-4"
         onScroll={updateStickToBottom}
       >
         {loading ? (
-          <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading messages...</div>
+          <div className="flex h-full items-center justify-center text-sm text-emerald-950/55">Loading messages...</div>
         ) : messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-slate-500">
+          <div className="flex h-full items-center justify-center text-sm text-emerald-950/55">
             No messages in this conversation yet.
           </div>
         ) : (
@@ -294,14 +294,14 @@ export function ChatWindow(props: ChatWindowProps) {
               <div
                 className={`max-w-[80%] rounded-[24px] px-4 py-3 shadow-soft ${
                   item.direction === "outgoing"
-                    ? "bg-gradient-to-br from-sky-400 to-cyan-300 text-white"
-                    : "bg-white/75 text-slate-700"
+                    ? "bg-gradient-to-br from-emerald-500 to-green-400 text-white"
+                    : "border border-white/75 bg-white/92 text-emerald-950/82"
                 }`}
               >
                 <p className="text-sm leading-6">{item.message}</p>
                 <p
                   className={`mt-2 text-right text-[11px] ${
-                    item.direction === "outgoing" ? "text-white/75" : "text-slate-400"
+                    item.direction === "outgoing" ? "text-white/75" : "text-emerald-900/42"
                   }`}
                 >
                   {item.direction === "outgoing"
@@ -317,11 +317,11 @@ export function ChatWindow(props: ChatWindowProps) {
 
       <div className="relative z-10 mt-3 space-y-2">
         {showQuickReplies ? (
-          <div className="rounded-[26px] border border-white/45 bg-white/55 p-3 shadow-soft">
+          <div className="rounded-[26px] border border-white/60 bg-white/72 p-3 shadow-soft">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-semibold text-ink">Quick replies</p>
               <button
-                className="text-xs font-medium text-slate-400 transition hover:text-slate-600"
+                className="text-xs font-medium text-emerald-900/45 transition hover:text-emerald-900/75"
                 onClick={() => setShowQuickReplies(false)}
                 type="button"
               >
@@ -331,9 +331,9 @@ export function ChatWindow(props: ChatWindowProps) {
             <div className="mt-3 max-h-36 overflow-y-auto pr-1">
               <div className="flex flex-wrap gap-2">
               {quickReplies.map((reply) => (
-                <div key={reply} className="flex items-center gap-1 rounded-full bg-white/75 pr-1 shadow-soft">
+                <div key={reply} className="flex items-center gap-1 rounded-full bg-emerald-50 pr-1 shadow-soft">
                   <button
-                    className="rounded-full px-3 py-2 text-left text-sm text-slate-600 transition hover:bg-white"
+                    className="rounded-full px-3 py-2 text-left text-sm text-emerald-950/74 transition hover:bg-white"
                     onClick={() => handlePickQuickReply(reply)}
                     type="button"
                   >
@@ -341,7 +341,7 @@ export function ChatWindow(props: ChatWindowProps) {
                   </button>
                   <button
                     aria-label={`Delete quick reply: ${reply}`}
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-white hover:text-rose-500"
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-emerald-900/38 transition hover:bg-white hover:text-rose-500"
                     onClick={() => handleDeleteQuickReply(reply)}
                     type="button"
                   >
@@ -380,11 +380,11 @@ export function ChatWindow(props: ChatWindowProps) {
         ) : null}
 
         {showAttachmentMenu ? (
-          <div className="rounded-[26px] border border-white/45 bg-white/55 p-3 shadow-soft">
+          <div className="rounded-[26px] border border-white/60 bg-white/72 p-3 shadow-soft">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-semibold text-ink">Attachments</p>
               <button
-                className="text-xs font-medium text-slate-400 transition hover:text-slate-600"
+                className="text-xs font-medium text-emerald-900/45 transition hover:text-emerald-900/75"
                 onClick={() => setShowAttachmentMenu(false)}
                 type="button"
               >
@@ -402,8 +402,8 @@ export function ChatWindow(props: ChatWindowProps) {
                   key={item.key}
                   className={`rounded-full px-4 py-2 text-sm font-medium transition ${
                     attachmentTab === item.key
-                      ? "bg-gradient-to-r from-sky-400 to-cyan-300 text-white shadow-soft"
-                      : "bg-white/70 text-slate-500 hover:bg-white"
+                      ? "bg-gradient-to-r from-emerald-500 to-green-400 text-white shadow-soft"
+                      : "bg-white/82 text-emerald-900/60 hover:bg-white"
                   }`}
                   onClick={() => {
                     setAttachmentTab(item.key);
@@ -425,7 +425,7 @@ export function ChatWindow(props: ChatWindowProps) {
                   ref={attachmentTab === "image" ? imageInputRef : documentInputRef}
                   type="file"
                 />
-                <div className="rounded-[22px] bg-white/70 p-3 text-sm text-slate-600">
+                <div className="rounded-[22px] bg-emerald-50/75 p-3 text-sm text-emerald-950/62">
                   {selectedFile ? `Selected: ${selectedFile.name}` : `No ${attachmentTab} selected yet.`}
                 </div>
                 <div className="flex gap-2">
@@ -504,11 +504,11 @@ export function ChatWindow(props: ChatWindowProps) {
           </div>
         ) : null}
 
-        <div className="rounded-[26px] border border-white/45 bg-white/40 p-2 shadow-soft">
+        <div className="rounded-[26px] border border-white/60 bg-white/72 p-2 shadow-soft">
           <div className="flex items-center gap-2">
           <button
             className={`secondary-button flex h-12 w-12 items-center justify-center rounded-2xl p-0 ${
-              showQuickReplies ? "bg-white text-slate-700" : ""
+              showQuickReplies ? "bg-emerald-100 text-emerald-950" : ""
             }`}
             onClick={() => {
               setShowQuickReplies((current) => !current);
@@ -533,7 +533,7 @@ export function ChatWindow(props: ChatWindowProps) {
 
           <button
             className={`secondary-button flex h-12 w-12 items-center justify-center rounded-2xl p-0 ${
-              showAttachmentMenu ? "bg-white text-slate-700" : ""
+              showAttachmentMenu ? "bg-emerald-100 text-emerald-950" : ""
             }`}
             onClick={() => {
               setShowAttachmentMenu((current) => !current);

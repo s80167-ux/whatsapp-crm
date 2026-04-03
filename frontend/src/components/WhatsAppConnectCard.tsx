@@ -72,17 +72,17 @@ export function WhatsAppConnectCard({
 
   if (compact) {
     return (
-      <div className="rounded-[28px] border border-white/50 bg-white/40 p-4 shadow-soft">
+      <div className="rounded-[28px] border border-white/60 bg-white/62 p-4 shadow-soft">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.25em] text-slate-500">WhatsApp</p>
+            <p className="text-[10px] uppercase tracking-[0.25em] text-emerald-800/65">WhatsApp</p>
             <h3 className="mt-1 text-sm font-semibold text-ink">Connection</h3>
           </div>
           <div className="flex items-center gap-2">
             {disconnectIconButton}
             <span
               className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                status?.connected ? "bg-emerald-100 text-emerald-700" : "bg-white/70 text-slate-500"
+                status?.connected ? "bg-emerald-100 text-emerald-800" : "bg-emerald-950/6 text-emerald-900/60"
               }`}
             >
               {loading ? "Loading..." : statusLabel(status)}
@@ -91,17 +91,17 @@ export function WhatsAppConnectCard({
         </div>
 
         {shouldShowQrPanel ? (
-          <div className="mt-3 flex min-h-[148px] items-center justify-center rounded-[22px] bg-white/70 p-3 shadow-soft">
+          <div className="mt-3 flex min-h-[148px] items-center justify-center rounded-[22px] bg-emerald-50/80 p-3 shadow-soft">
             {qr?.qr ? (
               <img alt="WhatsApp QR code" className="h-28 w-28 rounded-xl object-contain" src={qr.qr} />
             ) : (
-              <p className="max-w-[160px] text-center text-xs leading-5 text-slate-400">
+              <p className="max-w-[160px] text-center text-xs leading-5 text-emerald-900/42">
                 {loading ? "Refreshing QR..." : "Waiting for a fresh QR from the WhatsApp session..."}
               </p>
             )}
           </div>
         ) : (
-          <p className="mt-3 text-xs leading-5 text-slate-500">
+          <p className="mt-3 text-xs leading-5 text-emerald-950/62">
             {status?.connected ? "Phone linked and ready to sync." : helperText}
           </p>
         )}
@@ -111,18 +111,18 @@ export function WhatsAppConnectCard({
   }
 
   return (
-    <div className="glass-panel p-4">
+    <div className="glass-panel border border-white/70 bg-white/62 p-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.25em] text-slate-500">WhatsApp</p>
+          <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">WhatsApp</p>
           <h3 className="mt-1.5 text-xl font-semibold text-ink">Connection</h3>
-          <p className="mt-1.5 text-sm text-slate-500">{helperText}</p>
+          <p className="mt-1.5 text-sm text-emerald-950/62">{helperText}</p>
         </div>
         <div className="flex items-center gap-2">
           {disconnectIconButton}
           <span
             className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              status?.connected ? "bg-emerald-100 text-emerald-700" : "bg-white/70 text-slate-500"
+              status?.connected ? "bg-emerald-100 text-emerald-800" : "bg-emerald-950/6 text-emerald-900/60"
             }`}
           >
             {loading ? "Loading..." : statusLabel(status)}
@@ -130,29 +130,29 @@ export function WhatsAppConnectCard({
         </div>
       </div>
 
-      <div className="mt-3 flex flex-col items-center justify-center rounded-[24px] bg-white/40 p-4 shadow-soft md:flex-row md:items-center md:justify-between">
-        <div className="flex min-h-[160px] w-full max-w-[220px] items-center justify-center rounded-[20px] bg-white p-4 shadow-soft">
+      <div className="mt-3 flex flex-col items-center justify-center rounded-[24px] bg-white/55 p-4 shadow-soft md:flex-row md:items-center md:justify-between">
+        <div className="flex min-h-[160px] w-full max-w-[220px] items-center justify-center rounded-[20px] bg-emerald-50/85 p-4 shadow-soft">
           {qr?.qr ? (
             <img alt="WhatsApp QR code" className="h-40 w-40 rounded-2xl object-contain" src={qr.qr} />
           ) : status?.connected ? (
-            <div className="text-center text-sm text-emerald-600">
+            <div className="text-center text-sm text-emerald-700">
               <p className="font-semibold">WhatsApp is connected.</p>
-              <p className="mt-1.5 text-emerald-500">You can start syncing and replying now.</p>
+              <p className="mt-1.5 text-emerald-600">You can start syncing and replying now.</p>
             </div>
           ) : status?.hasQr || loading ? (
-            <div className="text-center text-sm text-slate-400">
+            <div className="text-center text-sm text-emerald-900/42">
               {loading ? "Refreshing QR..." : "Waiting for a fresh QR from the backend session."}
             </div>
           ) : (
-            <div className="text-center text-sm text-slate-400">
+            <div className="text-center text-sm text-emerald-900/42">
               QR code not ready yet. Keep this page open while the backend connects.
             </div>
           )}
         </div>
 
         <div className="mt-4 max-w-sm md:mt-0 md:pl-5">
-          <p className="text-sm font-medium text-slate-600">{instructionTitle}</p>
-          <div className="mt-2 space-y-1.5 text-sm text-slate-500">
+          <p className="text-sm font-medium text-emerald-950/72">{instructionTitle}</p>
+          <div className="mt-2 space-y-1.5 text-sm text-emerald-950/62">
             {status?.connected ? (
               <>
                 <p>1. Your phone is already linked to this workspace.</p>

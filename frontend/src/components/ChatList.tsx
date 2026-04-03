@@ -61,21 +61,21 @@ export function ChatList({
   }, [conversations, filter, query]);
 
   return (
-    <section className="glass-panel flex min-h-[420px] flex-col p-4 xl:max-h-[calc(100dvh-210px)]">
+    <section className="glass-panel flex min-h-[420px] flex-col border border-white/70 bg-white/58 p-4 xl:max-h-[calc(100dvh-210px)]">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Conversations</p>
+          <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Conversations</p>
           <h3 className="text-xl font-semibold text-ink">Recent chats</h3>
         </div>
         <div className="flex items-center gap-2">
           <button
-            className="rounded-full bg-white/70 px-3 py-1 text-xs font-medium text-slate-500 shadow-soft transition hover:bg-white"
+            className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-900 shadow-soft transition hover:bg-white"
             onClick={onRefresh}
             type="button"
           >
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
-          <div className="rounded-full bg-white/65 px-3 py-1 text-xs font-medium text-slate-500 shadow-soft">
+          <div className="rounded-full bg-emerald-950/6 px-3 py-1 text-xs font-medium text-emerald-900/65 shadow-soft">
             {conversations.length}
           </div>
         </div>
@@ -93,7 +93,7 @@ export function ChatList({
             <button
               key={item}
               className={`rounded-full px-3 py-1.5 text-xs font-medium capitalize transition ${
-                filter === item ? "bg-white text-ink shadow-soft" : "bg-white/45 text-slate-500 hover:bg-white/70"
+                filter === item ? "bg-emerald-500 text-white shadow-soft" : "bg-white/50 text-emerald-900/65 hover:bg-white/80"
               }`}
               onClick={() => setFilter(item)}
               type="button"
@@ -107,10 +107,10 @@ export function ChatList({
       {loading ? (
         <div className="flex flex-1 items-center justify-center text-sm text-slate-500">Loading chats...</div>
       ) : filteredConversations.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center rounded-3xl border border-dashed border-white/50 bg-white/25 px-6 text-center text-sm text-slate-500">
+        <div className="flex flex-1 flex-col items-center justify-center rounded-3xl border border-dashed border-emerald-200 bg-white/35 px-6 text-center text-sm text-emerald-950/60">
           {conversations.length === 0 ? (
             <>
-              <p className="font-medium text-slate-600">
+              <p className="font-medium text-emerald-950/78">
                 {whatsAppConnected
                   ? activeView === "inbox"
                     ? "WhatsApp is connected, but no chats have been synced yet."
@@ -137,8 +137,8 @@ export function ChatList({
                 key={conversation.phone}
                 className={`w-full rounded-[24px] border px-4 py-3 text-left transition ${
                   active
-                    ? "border-white/70 bg-white/70 shadow-soft"
-                    : "border-white/35 bg-white/25 hover:bg-white/45"
+                    ? "border-emerald-200 bg-emerald-50/88 shadow-soft"
+                    : "border-white/45 bg-white/35 hover:bg-white/60"
                 }`}
                 onClick={() => onSelect(conversation.phone)}
                 type="button"
@@ -148,10 +148,10 @@ export function ChatList({
                     <p className="truncate text-sm font-semibold text-ink">
                       {getDisplayName(conversation.contactName, conversation.phone)}
                     </p>
-                    <p className="truncate text-xs text-slate-400">{conversation.phone}</p>
-                    <p className="mt-1 truncate text-sm text-slate-500">{conversation.lastMessage}</p>
+                    <p className="truncate text-xs text-emerald-900/45">{conversation.phone}</p>
+                    <p className="mt-1 truncate text-sm text-emerald-950/62">{conversation.lastMessage}</p>
                   </div>
-                  <span className="shrink-0 text-xs text-slate-400">{formatTimestamp(conversation.timestamp)}</span>
+                  <span className="shrink-0 text-xs text-emerald-900/45">{formatTimestamp(conversation.timestamp)}</span>
                 </div>
               </button>
             );

@@ -26,19 +26,19 @@ export function LoginForm(props: LoginFormProps) {
   } = props;
 
   return (
-    <div className="glass-panel w-full max-w-md p-8">
+    <div className="glass-panel w-full max-w-md border border-white/70 bg-white/62 p-8">
       <div className="mb-6">
-        <p className="text-sm uppercase tracking-[0.35em] text-slate-500">WhatsApp CRM</p>
-        <h1 className="mt-3 text-3xl font-semibold text-ink">Sales dashboard</h1>
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="text-sm uppercase tracking-[0.35em] text-emerald-800/70">WhatsApp CRM</p>
+        <h1 className="mt-3 text-3xl font-semibold text-ink">Rezeki Dashboard</h1>
+        <p className="mt-2 text-sm text-emerald-950/65">
           Log in to sync conversations, reply from one place, and keep your team focused.
         </p>
       </div>
 
-      <div className="mb-6 flex rounded-2xl bg-white/50 p-1 shadow-soft">
+      <div className="mb-6 flex rounded-2xl bg-emerald-900/6 p-1 shadow-soft ring-1 ring-emerald-900/5">
         <button
           className={`flex-1 rounded-xl px-4 py-2 text-sm font-medium transition ${
-            mode === "login" ? "bg-white text-ink shadow-soft" : "text-slate-500"
+            mode === "login" ? "bg-white text-emerald-950 shadow-soft" : "text-emerald-900/55"
           }`}
           onClick={() => onModeChange("login")}
           type="button"
@@ -47,7 +47,7 @@ export function LoginForm(props: LoginFormProps) {
         </button>
         <button
           className={`flex-1 rounded-xl px-4 py-2 text-sm font-medium transition ${
-            mode === "register" ? "bg-white text-ink shadow-soft" : "text-slate-500"
+            mode === "register" ? "bg-white text-emerald-950 shadow-soft" : "text-emerald-900/55"
           }`}
           onClick={() => onModeChange("register")}
           type="button"
@@ -58,7 +58,7 @@ export function LoginForm(props: LoginFormProps) {
 
       <div className="space-y-4">
         <label className="block">
-          <span className="mb-2 block text-sm font-medium text-slate-600">Email</span>
+          <span className="mb-2 block text-sm font-medium text-emerald-950/70">Email</span>
           <input
             className="input-glass"
             onChange={(event) => onEmailChange(event.target.value)}
@@ -69,7 +69,7 @@ export function LoginForm(props: LoginFormProps) {
         </label>
 
         <label className="block">
-          <span className="mb-2 block text-sm font-medium text-slate-600">Password</span>
+          <span className="mb-2 block text-sm font-medium text-emerald-950/70">Password</span>
           <input
             className="input-glass"
             onChange={(event) => onPasswordChange(event.target.value)}
@@ -86,7 +86,7 @@ export function LoginForm(props: LoginFormProps) {
         </button>
 
         {mode === "register" ? (
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-emerald-900/45">
             Registration uses Supabase Auth. If email confirmation is enabled in your project, confirm your
             email before signing in.
           </p>
