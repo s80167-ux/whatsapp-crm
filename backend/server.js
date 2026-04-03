@@ -35,6 +35,16 @@ if (
 
 const app = express();
 const port = process.env.PORT || 4000;
+const allowedOrigins = new Set(
+  [
+    "http://localhost:5173",
+    "https://rezekicrm.vercel.app",
+    ...String(process.env.FRONTEND_URL || "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  ]
+);
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -44,7 +54,14 @@ const upload = multer({
 
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173"
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`Origin ${origin} is not allowed by CORS.`));
+    }
   })
 );
 app.use(express.json());
