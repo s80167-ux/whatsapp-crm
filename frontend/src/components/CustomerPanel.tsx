@@ -68,6 +68,8 @@ export function CustomerPanel(props: CustomerPanelProps) {
   const title = contactName || phone || "No customer selected";
   const initials = getInitials(contactName, phone);
   const activityLabel = lastDirection ? `${lastDirection === "incoming" ? "Incoming" : "Outgoing"} message` : "No synced messages";
+  const usernameLabel = contactName || "Unavailable";
+  const phoneLabel = phone || "Unavailable";
 
   return (
     <aside className="glass-panel flex h-full min-h-0 flex-col overflow-hidden p-4">
@@ -90,7 +92,16 @@ export function CustomerPanel(props: CustomerPanelProps) {
 
             <div className="mt-3 min-w-0 w-full">
               <h3 className="break-words text-lg font-semibold leading-tight text-ink">{title}</h3>
-              {phone ? <p className="mt-1 break-all text-sm text-slate-400">{phone}</p> : null}
+              <div className="mt-3 grid gap-2 text-left">
+                <div className="rounded-2xl bg-white/60 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Username</p>
+                  <p className="mt-1 break-words text-sm font-medium text-slate-700">{usernameLabel}</p>
+                </div>
+                <div className="rounded-2xl bg-white/60 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">Phone</p>
+                  <p className="mt-1 break-all text-sm font-medium text-slate-700">{phoneLabel}</p>
+                </div>
+              </div>
             </div>
           </div>
 

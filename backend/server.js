@@ -20,6 +20,7 @@ const {
   getWhatsAppStatus,
   getWhatsAppQr,
   getContactProfile,
+  bindWhatsAppOwner,
   normalizePhone
 } = require("./whatsapp");
 
@@ -46,6 +47,11 @@ app.use(
   })
 );
 app.use(express.json());
+
+function bindAuthenticatedWhatsAppOwner(req, _res, next) {
+  bindWhatsAppOwner(req.user?.sub || null);
+  next();
+}
 
 app.get("/", (_req, res) => {
   res.json({
@@ -114,9 +120,9 @@ app.post("/login", async (req, res) => {
   }
 });
 
-app.get("/conversations", requireAuth, async (_req, res) => {
+app.get("/conversations", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
-    const conversations = await getConversations();
+    const conversations = await getConversations(req.user.sub);
     return res.json(conversations);
   } catch (error) {
     console.error("Failed to fetch conversations:", error);
@@ -124,10 +130,10 @@ app.get("/conversations", requireAuth, async (_req, res) => {
   }
 });
 
-app.get("/messages/:phone", requireAuth, async (req, res) => {
+app.get("/messages/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const phone = normalizePhone(req.params.phone);
-    const messages = await getMessagesByPhone(phone);
+    const messages = await getMessagesByPhone(phone, req.user.sub);
     return res.json(messages);
   } catch (error) {
     console.error("Failed to fetch messages:", error);
@@ -135,10 +141,10 @@ app.get("/messages/:phone", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/customers/:phone", requireAuth, async (req, res) => {
+app.get("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const phone = normalizePhone(req.params.phone);
-    const customer = await getCustomerInsights(phone);
+    const customer = await getCustomerInsights(phone, req.user.sub);
     const profile = await getContactProfile(phone, customer.chat_jid || null);
     return res.json({
       ...customer,
@@ -151,7 +157,7 @@ app.get("/customers/:phone", requireAuth, async (req, res) => {
   }
 });
 
-app.put("/customers/:phone", requireAuth, async (req, res) => {
+app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const phone = normalizePhone(req.params.phone);
     const { status, notes } = req.body;
@@ -165,12 +171,13 @@ app.put("/customers/:phone", requireAuth, async (req, res) => {
     }
 
     await upsertCustomer({
+      owner_user_id: req.user.sub,
       phone,
       status,
       notes: typeof notes === "string" ? notes : ""
     });
 
-    const customer = await getCustomerInsights(phone);
+    const customer = await getCustomerInsights(phone, req.user.sub);
     const profile = await getContactProfile(phone, customer.chat_jid || null);
 
     return res.json({
@@ -184,7 +191,7 @@ app.put("/customers/:phone", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/send", requireAuth, async (req, res) => {
+app.post("/send", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const { phone, message, chatJid } = req.body;
     const normalizedPhone = normalizePhone(phone);
@@ -193,12 +200,19 @@ app.post("/send", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Phone and message are required." });
     }
 
-    const customer = await getCustomerByPhone(normalizedPhone);
+    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
 
     const result = await sendMessageToPhone(normalizedPhone, message, resolvedChatJid);
 
+    await upsertCustomer({
+      owner_user_id: req.user.sub,
+      phone: normalizedPhone,
+      chat_jid: resolvedChatJid
+    });
+
     const savedMessage = await saveMessage({
+      owner_user_id: req.user.sub,
       phone: normalizedPhone,
       chat_jid: resolvedChatJid,
       wa_message_id: result?.key?.id || null,
@@ -216,7 +230,7 @@ app.post("/send", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/send/attachment", requireAuth, upload.single("file"), async (req, res) => {
+app.post("/send/attachment", requireAuth, bindAuthenticatedWhatsAppOwner, upload.single("file"), async (req, res) => {
   try {
     const normalizedPhone = normalizePhone(req.body.phone);
     const { chatJid, caption } = req.body;
@@ -226,7 +240,7 @@ app.post("/send/attachment", requireAuth, upload.single("file"), async (req, res
       return res.status(400).json({ error: "Phone and file are required." });
     }
 
-    const customer = await getCustomerByPhone(normalizedPhone);
+    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
     const result = await sendAttachmentToPhone({
       phone: normalizedPhone,
@@ -237,12 +251,19 @@ app.post("/send/attachment", requireAuth, upload.single("file"), async (req, res
       caption
     });
 
+    await upsertCustomer({
+      owner_user_id: req.user.sub,
+      phone: normalizedPhone,
+      chat_jid: resolvedChatJid
+    });
+
     const label = file.mimetype.startsWith("image/") ? "Image" : "Document";
     const previewText = caption?.trim()
       ? `[${label}] ${file.originalname} - ${caption.trim()}`
       : `[${label}] ${file.originalname}`;
 
     const savedMessage = await saveMessage({
+      owner_user_id: req.user.sub,
       phone: normalizedPhone,
       chat_jid: resolvedChatJid,
       wa_message_id: result?.key?.id || null,
@@ -260,7 +281,7 @@ app.post("/send/attachment", requireAuth, upload.single("file"), async (req, res
   }
 });
 
-app.post("/send/location", requireAuth, async (req, res) => {
+app.post("/send/location", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const normalizedPhone = normalizePhone(req.body.phone);
     const { chatJid, latitude, longitude, name, address } = req.body;
@@ -269,7 +290,7 @@ app.post("/send/location", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Phone, latitude, and longitude are required." });
     }
 
-    const customer = await getCustomerByPhone(normalizedPhone);
+    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
     const result = await sendLocationToPhone({
       phone: normalizedPhone,
@@ -280,8 +301,15 @@ app.post("/send/location", requireAuth, async (req, res) => {
       address
     });
 
+    await upsertCustomer({
+      owner_user_id: req.user.sub,
+      phone: normalizedPhone,
+      chat_jid: resolvedChatJid
+    });
+
     const locationName = String(name || address || `${latitude}, ${longitude}`).trim();
     const savedMessage = await saveMessage({
+      owner_user_id: req.user.sub,
       phone: normalizedPhone,
       chat_jid: resolvedChatJid,
       wa_message_id: result?.key?.id || null,

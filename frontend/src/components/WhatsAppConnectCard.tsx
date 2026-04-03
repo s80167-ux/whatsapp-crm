@@ -29,6 +29,7 @@ export function WhatsAppConnectCard({ status, qr, loading, compact = false }: Wh
     : "Scan the QR below with WhatsApp on your phone to connect this CRM workspace.";
 
   const instructionTitle = status?.connected ? "Connection ready" : "How to connect";
+  const shouldShowQrPanel = !status?.connected && (Boolean(qr?.qr) || Boolean(status?.hasQr) || loading);
 
   if (compact) {
     return (
@@ -47,9 +48,15 @@ export function WhatsAppConnectCard({ status, qr, loading, compact = false }: Wh
           </span>
         </div>
 
-        {qr?.qr && !status?.connected ? (
-          <div className="mt-3 flex justify-center rounded-[22px] bg-white/70 p-3 shadow-soft">
-            <img alt="WhatsApp QR code" className="h-28 w-28 rounded-xl object-contain" src={qr.qr} />
+        {shouldShowQrPanel ? (
+          <div className="mt-3 flex min-h-[148px] items-center justify-center rounded-[22px] bg-white/70 p-3 shadow-soft">
+            {qr?.qr ? (
+              <img alt="WhatsApp QR code" className="h-28 w-28 rounded-xl object-contain" src={qr.qr} />
+            ) : (
+              <p className="max-w-[160px] text-center text-xs leading-5 text-slate-400">
+                {loading ? "Refreshing QR..." : "Waiting for a fresh QR from the WhatsApp session..."}
+              </p>
+            )}
           </div>
         ) : (
           <p className="mt-3 text-xs leading-5 text-slate-500">
@@ -85,6 +92,10 @@ export function WhatsAppConnectCard({ status, qr, loading, compact = false }: Wh
             <div className="text-center text-sm text-emerald-600">
               <p className="font-semibold">WhatsApp is connected.</p>
               <p className="mt-1.5 text-emerald-500">You can start syncing and replying now.</p>
+            </div>
+          ) : status?.hasQr || loading ? (
+            <div className="text-center text-sm text-slate-400">
+              {loading ? "Refreshing QR..." : "Waiting for a fresh QR from the backend session."}
             </div>
           ) : (
             <div className="text-center text-sm text-slate-400">

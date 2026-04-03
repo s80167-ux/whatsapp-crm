@@ -2,7 +2,7 @@
 
 WhatsApp CRM MVP with:
 
-- `backend/`: Node.js + Express + Supabase + whatsapp-web.js + JWT auth
+- `backend/`: Node.js + Express + Supabase + Baileys + JWT auth
 - `frontend/`: React + TypeScript + Vite + Tailwind glass UI
 
 ## Project Structure
@@ -23,7 +23,7 @@ Required backend env values:
 - `SUPABASE_URL=https://kavumbilqekhzkzzxnhc.supabase.co`
 - `SUPABASE_SERVICE_ROLE_KEY=your_service_role_key`
 - `SUPABASE_PUBLISHABLE_KEY=optional_fallback_for_local_mvp`
-- `PUPPETEER_EXECUTABLE_PATH=optional_path_to_local_chrome_or_edge`
+- `WHATSAPP_AUTH_DIR=optional_path_for_baileys_session_storage`
 
 ## 2. Backend Install
 
@@ -35,7 +35,7 @@ npm run dev
 
 Backend will run on `http://localhost:4000`.
 
-When `whatsapp-web.js` starts, open the frontend QR card and scan it with WhatsApp.
+When Baileys starts, open the frontend QR card and scan it with WhatsApp.
 
 ## 3. Frontend Install
 
@@ -58,7 +58,50 @@ Frontend will run on `http://localhost:5173`.
 
 - `users.password` stores a bcrypt hash
 - `messages.phone` is the conversation key
-- outgoing messages are saved after successful WhatsApp Web send
+- outgoing messages are saved after successful WhatsApp send
 - `Customer info` status and notes are UI-only for now
-- `backend/wwebjs_auth/` stores the WhatsApp Web session
-- If Puppeteer cannot download Chrome automatically, set `PUPPETEER_EXECUTABLE_PATH` to your local browser executable
+- `backend/baileys_auth/` stores the Baileys session by default
+
+## Railway
+
+Deploy the backend to Railway with a persistent volume for the WhatsApp auth state.
+
+- Mount a persistent volume and point `WHATSAPP_AUTH_DIR` to that mounted path.
+- Keep `npm start` as the backend start command.
+- If the auth directory is not persisted, WhatsApp will require a fresh QR login after redeploys.
+
+### Backend Service Setup
+
+Deploy the `backend/` directory as its own Railway service.
+
+- Use [backend/railway.json](backend/railway.json) as the service config.
+- Use `backend/.env.railway.example` as the template for Railway environment variables.
+- Attach a persistent volume and mount it at `/data`.
+- Set `WHATSAPP_AUTH_DIR=/data/baileys_auth` so the Baileys login survives redeploys.
+- Set `FRONTEND_URL` to your Vercel production domain for CORS.
+
+Required Railway environment variables:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `JWT_SECRET`
+- `FRONTEND_URL`
+- `WHATSAPP_AUTH_DIR=/data/baileys_auth`
+
+Optional:
+
+- `PORT` (Railway usually injects this automatically)
+
+### Connect Vercel Frontend To Railway Backend
+
+After Railway gives you a public backend URL, set it in the Vercel frontend as `VITE_API_URL`, then redeploy the frontend.
+
+Example:
+
+```bash
+cd frontend
+npx vercel env add VITE_API_URL production
+npx vercel --prod
+```
+
+Use your Railway backend URL as the value, for example `https://your-backend.up.railway.app`.

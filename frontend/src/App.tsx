@@ -5,6 +5,7 @@ import { CustomerPanel } from "./components/CustomerPanel";
 import { LoginForm } from "./components/LoginForm";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
+import { WhatsAppConnectCard } from "./components/WhatsAppConnectCard";
 import { api, type Conversation, type Customer, type Message, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
 import { supabase } from "./lib/supabase";
 
@@ -139,7 +140,21 @@ function App() {
     try {
       const [status, qr] = await Promise.all([api.getWhatsAppStatus(), api.getWhatsAppQr()]);
       setWhatsAppStatus(status);
-      setWhatsAppQr(qr);
+      setWhatsAppQr((current) => {
+        if (status.connected) {
+          return qr;
+        }
+
+        if (qr.qr) {
+          return qr;
+        }
+
+        if (status.hasQr && current?.qr) {
+          return current;
+        }
+
+        return qr;
+      });
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to load WhatsApp state.");
     } finally {
@@ -177,12 +192,15 @@ function App() {
   }, []);
 
   useEffect(() => {
+    loadWhatsAppState();
+  }, []);
+
+  useEffect(() => {
     if (!token) {
       return;
     }
 
     loadConversations(token);
-    loadWhatsAppState();
   }, [token]);
 
   useEffect(() => {
@@ -195,6 +213,38 @@ function App() {
     loadMessages(selectedPhone, token);
     loadCustomer(selectedPhone, token);
   }, [selectedPhone, token]);
+
+  useEffect(() => {
+    if (whatsAppStatus?.connected) {
+      return;
+    }
+
+    if (!whatsAppStatus?.hasQr || whatsAppQr?.qr) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      loadWhatsAppState(true);
+    }, 1500);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [whatsAppQr?.qr, whatsAppStatus?.connected, whatsAppStatus?.hasQr]);
+
+  useEffect(() => {
+    if (token) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      loadWhatsAppState(true);
+    }, conversationPollMs);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!token) {
