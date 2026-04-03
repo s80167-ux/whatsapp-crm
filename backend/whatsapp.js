@@ -1,17 +1,10 @@
 const path = require("path");
-const pino = require("pino");
 const QRCode = require("qrcode");
-const qrcode = require("qrcode-terminal");
-const {
-  default: makeWASocket,
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  WAMessageStatus,
-  useMultiFileAuthState
-} = require("@whiskeysockets/baileys");
+const { Client, LocalAuth, Location, MessageMedia } = require("whatsapp-web.js");
 const { saveMessage, updateOutgoingMessageStatus, upsertCustomer } = require("./supabase");
 
-let socket;
+let client = null;
+let initializationPromise = null;
 let connectionState = "connecting";
 let currentQr = null;
 let currentQrDataUrl = null;
@@ -25,101 +18,119 @@ function getChatKey(jid) {
 }
 
 function toWhatsAppJid(phone) {
-  const rawPhone = String(phone || "");
+  const rawPhone = String(phone || "").trim();
 
-  if (rawPhone.includes("@s.whatsapp.net")) {
+  if (rawPhone.includes("@c.us") || rawPhone.includes("@g.us")) {
     return rawPhone;
   }
 
-  const normalized = normalizePhone(rawPhone);
-  return `${normalized}@s.whatsapp.net`;
+  return `${normalizePhone(rawPhone)}@c.us`;
 }
 
-function extractText(message) {
-  return (
-    message?.conversation ||
-    message?.extendedTextMessage?.text ||
-    message?.imageMessage?.caption ||
-    message?.videoMessage?.caption ||
-    ""
-  );
-}
-
-function getSendStatusLabel(status) {
-  if (status === WAMessageStatus.READ || status === WAMessageStatus.PLAYED) {
+function ackToStatus(ack) {
+  if (ack >= 3) {
     return "read";
   }
 
-  if (status === WAMessageStatus.DELIVERY_ACK) {
+  if (ack === 2) {
     return "delivered";
   }
 
-  if (status === WAMessageStatus.SERVER_ACK) {
+  if (ack === 1) {
     return "sent";
+  }
+
+  if (ack === -1) {
+    return "failed";
   }
 
   return "queued";
 }
 
-async function initializeWhatsApp() {
-  const authDir = path.join(__dirname, "baileys_auth");
-  const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const { version } = await fetchLatestBaileysVersion();
+function createClient() {
+  const authPath = process.env.WHATSAPP_AUTH_DIR || path.join(__dirname, "wwebjs_auth");
 
-  socket = makeWASocket({
-    auth: state,
-    version,
-    printQRInTerminal: false,
-    logger: pino({ level: "silent" }),
-    browser: ["whatsapp-crm", "Chrome", "1.0.0"]
+  return new Client({
+    authStrategy: new LocalAuth({
+      clientId: "whatsapp-crm",
+      dataPath: authPath
+    }),
+    puppeteer: {
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+      ...(process.env.PUPPETEER_EXECUTABLE_PATH
+        ? { executablePath: process.env.PUPPETEER_EXECUTABLE_PATH }
+        : {})
+    }
   });
+}
 
-  socket.ev.on("creds.update", saveCreds);
+async function initializeWhatsApp() {
+  if (client) {
+    return client;
+  }
 
-  socket.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
-    if (qr) {
+  if (initializationPromise) {
+    return initializationPromise;
+  }
+
+  initializationPromise = new Promise((resolve, reject) => {
+    const nextClient = createClient();
+    let resolved = false;
+
+    nextClient.on("qr", async (qr) => {
       currentQr = qr;
       currentQrDataUrl = await QRCode.toDataURL(qr);
-      console.log("\nScan this WhatsApp QR code:\n");
-      qrcode.generate(qr, { small: true });
-    }
+      connectionState = "qr";
+      console.log("\nScan this WhatsApp QR code from /whatsapp/qr\n");
+    });
 
-    if (connection) {
-      connectionState = connection;
-      if (connection === "open") {
-        currentQr = null;
-        currentQrDataUrl = null;
+    nextClient.on("ready", () => {
+      client = nextClient;
+      connectionState = "open";
+      currentQr = null;
+      currentQrDataUrl = null;
+      console.log("WhatsApp is ready.");
+
+      if (!resolved) {
+        resolved = true;
+        resolve(nextClient);
       }
-      console.log(`WhatsApp connection: ${connection}`);
-    }
+    });
 
-    if (connection === "close") {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+    nextClient.on("authenticated", () => {
+      connectionState = "authenticated";
+      console.log("WhatsApp authenticated.");
+    });
 
-      if (shouldReconnect) {
+    nextClient.on("auth_failure", (message) => {
+      connectionState = "auth_failure";
+      console.error("WhatsApp authentication failed:", message);
+    });
+
+    nextClient.on("disconnected", (reason) => {
+      connectionState = "disconnected";
+      currentQr = null;
+      currentQrDataUrl = null;
+      client = null;
+      initializationPromise = null;
+      console.error("WhatsApp disconnected:", reason);
+
+      setTimeout(() => {
         initializeWhatsApp().catch((error) => {
           console.error("Failed to reconnect WhatsApp:", error);
         });
-      } else {
-        console.error("WhatsApp session logged out. Delete backend/baileys_auth and reconnect.");
-      }
-    }
-  });
+      }, 3000);
+    });
 
-  socket.ev.on("messages.upsert", async ({ messages, type }) => {
-    if (type !== "notify") {
-      return;
-    }
-
-    for (const item of messages) {
-      const chatJid = getChatKey(item.key.remoteJid);
+    nextClient.on("message", async (message) => {
+      const chatJid = getChatKey(message.from);
       const phone = normalizePhone(chatJid);
-      const text = extractText(item.message);
-      const contactName = item.pushName || item.verifiedBizName || null;
+      const text = String(message.body || "").trim();
+      const contactName = message._data?.notifyName || null;
 
-      if (!phone || !text || item.key.fromMe) {
-        continue;
+      if (!phone || !text) {
+        return;
       }
 
       try {
@@ -128,76 +139,53 @@ async function initializeWhatsApp() {
           chat_jid: chatJid,
           contact_name: contactName
         });
+
         await saveMessage({
           phone,
           chat_jid: chatJid,
+          wa_message_id: message.id?.id || null,
           message: text,
           direction: "incoming"
         });
       } catch (error) {
         console.error("Failed to save incoming message:", error.message);
       }
-    }
-  });
+    });
 
-  socket.ev.on("messages.update", async (updates) => {
-    for (const item of updates) {
-      const waMessageId = item.key?.id;
-      const phone = normalizePhone(item.key?.remoteJid);
-      const chatJid = getChatKey(item.key?.remoteJid);
-      const sendStatus = getSendStatusLabel(item.update?.status);
-
-      if (!item.key?.fromMe || !waMessageId) {
-        continue;
+    nextClient.on("message_ack", async (message, ack) => {
+      if (!message.fromMe) {
+        return;
       }
 
       try {
         await updateOutgoingMessageStatus({
-          phone,
-          chat_jid: chatJid,
-          wa_message_id: waMessageId,
-          send_status: sendStatus
+          phone: normalizePhone(message.to || message.from),
+          chat_jid: getChatKey(message.to || message.from),
+          wa_message_id: message.id?.id || null,
+          send_status: ackToStatus(ack)
         });
       } catch (error) {
         console.error("Failed to update outgoing message status:", error.message);
       }
-    }
+    });
+
+    nextClient
+      .initialize()
+      .catch((error) => {
+        initializationPromise = null;
+        client = null;
+        if (!resolved) {
+          reject(error);
+        }
+      });
   });
 
-  socket.ev.on("message-receipt.update", async (updates) => {
-    for (const item of updates) {
-      const waMessageId = item.key?.id;
-      const phone = normalizePhone(item.key?.remoteJid);
-      const chatJid = getChatKey(item.key?.remoteJid);
-      const sendStatus = item.receipt?.readTimestamp ? "read" : item.receipt?.receiptTimestamp ? "delivered" : null;
-
-      if (!item.key?.fromMe || !waMessageId || !sendStatus) {
-        continue;
-      }
-
-      try {
-        await updateOutgoingMessageStatus({
-          phone,
-          chat_jid: chatJid,
-          wa_message_id: waMessageId,
-          send_status: sendStatus
-        });
-      } catch (error) {
-        console.error("Failed to update outgoing receipt status:", error.message);
-      }
-    }
-  });
+  return initializationPromise;
 }
 
-async function sendMessageToPhone(phone, message, chatJid) {
-  ensureSocketReady();
-
-  return socket.sendMessage(chatJid || toWhatsAppJid(phone), { text: message });
-}
-
-function ensureSocketReady() {
-  if (!socket) {
-    throw new Error("WhatsApp socket is not initialized yet.");
+function ensureClientReady() {
+  if (!client) {
+    throw new Error("WhatsApp client is not initialized yet.");
   }
 
   if (connectionState !== "open") {
@@ -205,41 +193,33 @@ function ensureSocketReady() {
   }
 }
 
+async function sendMessageToPhone(phone, message, chatJid) {
+  ensureClientReady();
+  return client.sendMessage(chatJid || toWhatsAppJid(phone), String(message));
+}
+
 async function sendAttachmentToPhone({ phone, chatJid, buffer, mimeType, fileName, caption }) {
-  ensureSocketReady();
+  ensureClientReady();
 
-  const jid = chatJid || toWhatsAppJid(phone);
-  const normalizedMimeType = mimeType || "application/octet-stream";
-  const isImage = normalizedMimeType.startsWith("image/");
-  const payload = isImage
-    ? {
-        image: buffer,
-        mimetype: normalizedMimeType,
-        caption: caption || undefined
-      }
-    : {
-        document: buffer,
-        mimetype: normalizedMimeType,
-        fileName: fileName || "attachment",
-        caption: caption || undefined
-      };
+  const media = new MessageMedia(
+    mimeType || "application/octet-stream",
+    Buffer.from(buffer).toString("base64"),
+    fileName || "attachment"
+  );
 
-  return socket.sendMessage(jid, payload);
+  return client.sendMessage(chatJid || toWhatsAppJid(phone), media, {
+    caption: caption || undefined,
+    sendMediaAsDocument: !(mimeType || "").startsWith("image/")
+  });
 }
 
 async function sendLocationToPhone({ phone, chatJid, latitude, longitude, name, address }) {
-  ensureSocketReady();
+  ensureClientReady();
 
-  const jid = chatJid || toWhatsAppJid(phone);
+  const description = [name, address].filter(Boolean).join(" - ") || undefined;
+  const location = new Location(Number(latitude), Number(longitude), description);
 
-  return socket.sendMessage(jid, {
-    location: {
-      degreesLatitude: Number(latitude),
-      degreesLongitude: Number(longitude),
-      name: name || undefined,
-      address: address || undefined
-    }
-  });
+  return client.sendMessage(chatJid || toWhatsAppJid(phone), location);
 }
 
 function getWhatsAppStatus() {
@@ -259,37 +239,28 @@ function getWhatsAppQr() {
 }
 
 async function getContactProfile(phone, chatJid) {
-  if (!socket || connectionState !== "open") {
+  if (!client || connectionState !== "open") {
     return {
       profilePictureUrl: null,
       about: null
     };
   }
 
-  const jid = chatJid || toWhatsAppJid(phone);
-
-  let profilePictureUrl = null;
-  let about = null;
-
   try {
-    profilePictureUrl = await socket.profilePictureUrl(jid, "image");
-  } catch {
-    profilePictureUrl = null;
-  }
+    const contact = await client.getContactById(chatJid || toWhatsAppJid(phone));
+    const profilePictureUrl = (await contact.getProfilePicUrl().catch(() => null)) || null;
+    const about = (await contact.getAbout().catch(() => null)) || null;
 
-  try {
-    if (typeof socket.fetchStatus === "function") {
-      const status = await socket.fetchStatus(jid);
-      about = status?.status || null;
-    }
+    return {
+      profilePictureUrl,
+      about
+    };
   } catch {
-    about = null;
+    return {
+      profilePictureUrl: null,
+      about: null
+    };
   }
-
-  return {
-    profilePictureUrl,
-    about
-  };
 }
 
 module.exports = {
