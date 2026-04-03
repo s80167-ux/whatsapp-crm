@@ -72,7 +72,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
   const phoneLabel = phone || "Unavailable";
 
   return (
-    <aside className="glass-panel flex h-full min-h-0 flex-col overflow-hidden p-4">
+    <aside className="glass-panel flex min-h-[420px] flex-col overflow-hidden p-4 xl:max-h-[calc(100dvh-210px)]">
       <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Customer info</p>
 
       <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">

@@ -254,7 +254,7 @@ export function ChatWindow(props: ChatWindowProps) {
 
   if (!phone) {
     return (
-      <section className="glass-panel flex h-full items-center justify-center p-6">
+      <section className="glass-panel flex min-h-[420px] items-center justify-center p-6">
         <div className="max-w-sm text-center">
           <p className="text-sm uppercase tracking-[0.25em] text-slate-500">No active chat</p>
           <h3 className="mt-3 text-2xl font-semibold text-ink">Pick a conversation</h3>
@@ -267,7 +267,7 @@ export function ChatWindow(props: ChatWindowProps) {
   }
 
   return (
-    <section className="glass-panel flex h-full min-h-0 max-h-full flex-col overflow-visible p-4">
+    <section className="glass-panel flex min-h-[520px] flex-col overflow-visible p-4 xl:max-h-[calc(100dvh-210px)]">
       <div className="mb-3 rounded-[26px] border border-white/45 bg-white/40 px-4 py-3 shadow-soft">
         <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Active conversation</p>
         <h3 className="mt-1 text-xl font-semibold text-ink">{getDisplayName(contactName, phone)}</h3>

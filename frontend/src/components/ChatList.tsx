@@ -61,7 +61,7 @@ export function ChatList({
   }, [conversations, filter, query]);
 
   return (
-    <section className="glass-panel flex h-full flex-col p-4">
+    <section className="glass-panel flex min-h-[420px] flex-col p-4 xl:max-h-[calc(100dvh-210px)]">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Conversations</p>

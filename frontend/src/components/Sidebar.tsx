@@ -37,7 +37,7 @@ export function Sidebar({
   disconnectingWhatsApp
 }: SidebarProps) {
   return (
-    <aside className="glass-panel flex h-full flex-col justify-between p-4">
+    <aside className="glass-panel flex flex-col justify-between self-start p-4 xl:sticky xl:top-6">
       <div>
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-[18px] bg-white/70 text-base font-semibold text-ink shadow-soft">

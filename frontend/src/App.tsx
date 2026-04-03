@@ -587,7 +587,7 @@ function App() {
   if (!token) {
     return (
       <main className="min-h-screen bg-app px-4 py-10">
-        <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-6xl items-center justify-center">
+        <div className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-6xl items-center justify-center">
           <LoginForm
             authReady={authReady}
             email={email}
@@ -607,7 +607,7 @@ function App() {
 
   return (
     <main className="min-h-screen bg-app px-4 py-6 text-slate-700">
-      <div className="mx-auto grid max-w-[1600px] gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+      <div className="mx-auto grid max-w-[1600px] items-start gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
         <Sidebar
           activeView={activeView}
           counts={sidebarCounts}
@@ -634,7 +634,7 @@ function App() {
             <div className="glass-panel px-4 py-3 text-sm text-rose-500">{dashboardError}</div>
           ) : null}
 
-          <div className="grid min-h-[80vh] gap-4 xl:h-[calc(100vh-210px)] xl:min-h-0 xl:grid-cols-[300px_minmax(0,1fr)_340px]">
+          <div className="grid items-start gap-4 xl:grid-cols-[300px_minmax(0,1fr)_340px]">
             <ChatList
               activeView={activeView}
               conversations={visibleConversations}

@@ -40,7 +40,35 @@ export function WhatsAppConnectCard({
   const instructionTitle = status?.connected ? "Connection ready" : "How to connect";
   const shouldShowQrPanel = !status?.connected && (Boolean(qr?.qr) || Boolean(status?.hasQr) || loading);
   const canDisconnect = Boolean(onDisconnect) && Boolean(status?.connected || disconnecting);
-  const disconnectLabel = disconnecting ? "Disconnecting..." : "Disconnect";
+  const disconnectLabel = disconnecting ? "Disconnecting WhatsApp" : "Disconnect WhatsApp";
+
+  const disconnectIconButton = canDisconnect ? (
+    <button
+      aria-label={disconnectLabel}
+      className="secondary-button flex h-10 w-10 items-center justify-center rounded-full p-0"
+      disabled={disconnecting}
+      onClick={onDisconnect}
+      title={disconnectLabel}
+      type="button"
+    >
+      <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+        <path
+          d="M15 9l-6 6M9 9l6 6"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+        />
+        <path
+          d="M8 4h8a2 2 0 0 1 2 2v12l-2.8-2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.8"
+        />
+      </svg>
+    </button>
+  ) : null;
 
   if (compact) {
     return (
@@ -50,13 +78,16 @@ export function WhatsAppConnectCard({
             <p className="text-[10px] uppercase tracking-[0.25em] text-slate-500">WhatsApp</p>
             <h3 className="mt-1 text-sm font-semibold text-ink">Connection</h3>
           </div>
-          <span
-            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-              status?.connected ? "bg-emerald-100 text-emerald-700" : "bg-white/70 text-slate-500"
-            }`}
-          >
-            {loading ? "Loading..." : statusLabel(status)}
-          </span>
+          <div className="flex items-center gap-2">
+            {disconnectIconButton}
+            <span
+              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                status?.connected ? "bg-emerald-100 text-emerald-700" : "bg-white/70 text-slate-500"
+              }`}
+            >
+              {loading ? "Loading..." : statusLabel(status)}
+            </span>
+          </div>
         </div>
 
         {shouldShowQrPanel ? (
@@ -75,16 +106,6 @@ export function WhatsAppConnectCard({
           </p>
         )}
 
-        {canDisconnect ? (
-          <button
-            className="secondary-button mt-3 w-full"
-            disabled={disconnecting}
-            onClick={onDisconnect}
-            type="button"
-          >
-            {disconnectLabel}
-          </button>
-        ) : null}
       </div>
     );
   }
@@ -97,13 +118,16 @@ export function WhatsAppConnectCard({
           <h3 className="mt-1.5 text-xl font-semibold text-ink">Connection</h3>
           <p className="mt-1.5 text-sm text-slate-500">{helperText}</p>
         </div>
-        <span
-          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-            status?.connected ? "bg-emerald-100 text-emerald-700" : "bg-white/70 text-slate-500"
-          }`}
-        >
-          {loading ? "Loading..." : statusLabel(status)}
-        </span>
+        <div className="flex items-center gap-2">
+          {disconnectIconButton}
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              status?.connected ? "bg-emerald-100 text-emerald-700" : "bg-white/70 text-slate-500"
+            }`}
+          >
+            {loading ? "Loading..." : statusLabel(status)}
+          </span>
+        </div>
       </div>
 
       <div className="mt-3 flex flex-col items-center justify-center rounded-[24px] bg-white/40 p-4 shadow-soft md:flex-row md:items-center md:justify-between">
@@ -145,12 +169,6 @@ export function WhatsAppConnectCard({
               </>
             )}
           </div>
-
-          {canDisconnect ? (
-            <button className="secondary-button mt-4" disabled={disconnecting} onClick={onDisconnect} type="button">
-              {disconnectLabel}
-            </button>
-          ) : null}
         </div>
       </div>
     </div>
