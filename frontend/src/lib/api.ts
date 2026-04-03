@@ -127,6 +127,15 @@ export const api = {
   getWhatsAppQr() {
     return request<WhatsAppQr>("/whatsapp/qr");
   },
+  disconnectWhatsApp(token: string) {
+    return request<WhatsAppStatus>(
+      "/whatsapp/disconnect",
+      {
+        method: "POST"
+      },
+      token
+    );
+  },
   getConversations(token: string) {
     return request<Conversation[]>("/conversations", {}, token);
   },

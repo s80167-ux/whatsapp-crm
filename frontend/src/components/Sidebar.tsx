@@ -11,9 +11,11 @@ type SidebarProps = {
   onChangeView: (view: "inbox" | "pipeline" | "broadcast") => void;
   userEmail: string;
   onLogout: () => void;
+  onDisconnectWhatsApp: () => void;
   whatsAppStatus: WhatsAppStatus | null;
   whatsAppQr: WhatsAppQr | null;
   loadingWhatsApp: boolean;
+  disconnectingWhatsApp: boolean;
 };
 
 const menu = [
@@ -28,9 +30,11 @@ export function Sidebar({
   onChangeView,
   userEmail,
   onLogout,
+  onDisconnectWhatsApp,
   whatsAppStatus,
   whatsAppQr,
-  loadingWhatsApp
+  loadingWhatsApp,
+  disconnectingWhatsApp
 }: SidebarProps) {
   return (
     <aside className="glass-panel flex h-full flex-col justify-between p-4">
@@ -67,7 +71,14 @@ export function Sidebar({
       </div>
 
       <div className="space-y-3 pt-4">
-        <WhatsAppConnectCard compact loading={loadingWhatsApp} qr={whatsAppQr} status={whatsAppStatus} />
+        <WhatsAppConnectCard
+          compact
+          disconnecting={disconnectingWhatsApp}
+          loading={loadingWhatsApp}
+          onDisconnect={onDisconnectWhatsApp}
+          qr={whatsAppQr}
+          status={whatsAppStatus}
+        />
 
         <div className="rounded-[28px] border border-white/50 bg-white/40 p-4 shadow-soft">
           <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Signed in</p>

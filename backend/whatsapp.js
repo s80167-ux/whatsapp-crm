@@ -12,6 +12,7 @@ let baileysModulePromise = null;
 let reconnectTimer = null;
 let resetAuthPromise = null;
 let activeOwnerUserId = null;
+let manualDisconnectRequested = false;
 
 const authDir = process.env.WHATSAPP_AUTH_DIR
 	? path.resolve(process.env.WHATSAPP_AUTH_DIR)
@@ -126,10 +127,15 @@ async function resetAuthState() {
 	return resetAuthPromise;
 }
 
-function scheduleReconnect({ resetAuth = false } = {}) {
+function clearReconnectTimer() {
 	if (reconnectTimer) {
 		clearTimeout(reconnectTimer);
+		reconnectTimer = null;
 	}
+}
+
+function scheduleReconnect({ resetAuth = false } = {}) {
+	clearReconnectTimer();
 
 	connectionState = 'connecting';
 	reconnectTimer = setTimeout(async () => {
@@ -192,6 +198,10 @@ async function initializeWhatsApp() {
 				: undefined;
 			qrData = null;
 			sock = null;
+			if (manualDisconnectRequested) {
+				connectionState = 'disconnected';
+				return;
+			}
 			if (statusCode === DisconnectReason.loggedOut) {
 				console.warn('WhatsApp session was logged out. Resetting auth state to generate a fresh QR.');
 				scheduleReconnect({ resetAuth: true });
@@ -218,6 +228,32 @@ async function initializeWhatsApp() {
 	});
 
 	return sock;
+}
+
+async function disconnectWhatsApp() {
+	clearReconnectTimer();
+	qrData = null;
+	connectionState = 'disconnecting';
+	manualDisconnectRequested = true;
+
+	const currentSock = sock;
+	sock = null;
+
+	try {
+		if (currentSock?.logout) {
+			await currentSock.logout();
+		} else {
+			await resetAuthState();
+		}
+	} catch (error) {
+		console.warn('Failed to log out WhatsApp session cleanly:', error.message);
+		await resetAuthState();
+	} finally {
+		manualDisconnectRequested = false;
+	}
+
+	scheduleReconnect({ resetAuth: true });
+	return getWhatsAppStatus();
 }
 
 function getWhatsAppStatus() {
@@ -280,6 +316,7 @@ module.exports = {
 	sendLocationToPhone,
 	getWhatsAppStatus,
 	getWhatsAppQr,
+	disconnectWhatsApp,
 	getContactProfile,
 	bindWhatsAppOwner,
 	normalizePhone

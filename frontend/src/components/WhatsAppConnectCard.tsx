@@ -5,6 +5,8 @@ type WhatsAppConnectCardProps = {
   qr: WhatsAppQr | null;
   loading: boolean;
   compact?: boolean;
+  onDisconnect?: () => void;
+  disconnecting?: boolean;
 };
 
 function statusLabel(status: WhatsAppStatus | null) {
@@ -23,13 +25,22 @@ function statusLabel(status: WhatsAppStatus | null) {
   return status.state || "Connecting";
 }
 
-export function WhatsAppConnectCard({ status, qr, loading, compact = false }: WhatsAppConnectCardProps) {
+export function WhatsAppConnectCard({
+  status,
+  qr,
+  loading,
+  compact = false,
+  onDisconnect,
+  disconnecting = false
+}: WhatsAppConnectCardProps) {
   const helperText = status?.connected
     ? "Your WhatsApp session is active and ready to sync messages."
     : "Scan the QR below with WhatsApp on your phone to connect this CRM workspace.";
 
   const instructionTitle = status?.connected ? "Connection ready" : "How to connect";
   const shouldShowQrPanel = !status?.connected && (Boolean(qr?.qr) || Boolean(status?.hasQr) || loading);
+  const canDisconnect = Boolean(onDisconnect) && Boolean(status?.connected || disconnecting);
+  const disconnectLabel = disconnecting ? "Disconnecting..." : "Disconnect";
 
   if (compact) {
     return (
@@ -63,6 +74,17 @@ export function WhatsAppConnectCard({ status, qr, loading, compact = false }: Wh
             {status?.connected ? "Phone linked and ready to sync." : helperText}
           </p>
         )}
+
+        {canDisconnect ? (
+          <button
+            className="secondary-button mt-3 w-full"
+            disabled={disconnecting}
+            onClick={onDisconnect}
+            type="button"
+          >
+            {disconnectLabel}
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -123,6 +145,12 @@ export function WhatsAppConnectCard({ status, qr, loading, compact = false }: Wh
               </>
             )}
           </div>
+
+          {canDisconnect ? (
+            <button className="secondary-button mt-4" disabled={disconnecting} onClick={onDisconnect} type="button">
+              {disconnectLabel}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

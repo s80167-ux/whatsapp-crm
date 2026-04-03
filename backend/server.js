@@ -19,6 +19,7 @@ const {
   sendLocationToPhone,
   getWhatsAppStatus,
   getWhatsAppQr,
+  disconnectWhatsApp,
   getContactProfile,
   bindWhatsAppOwner,
   normalizePhone
@@ -61,6 +62,7 @@ app.get("/", (_req, res) => {
       health: "/health",
       whatsappStatus: "/whatsapp/status",
       whatsappQr: "/whatsapp/qr",
+      whatsappDisconnect: "/whatsapp/disconnect",
       register: "/register",
       login: "/login",
       conversations: "/conversations",
@@ -84,6 +86,16 @@ app.get("/whatsapp/status", (_req, res) => {
 
 app.get("/whatsapp/qr", (_req, res) => {
   res.json(getWhatsAppQr());
+});
+
+app.post("/whatsapp/disconnect", requireAuth, bindAuthenticatedWhatsAppOwner, async (_req, res) => {
+  try {
+    const status = await disconnectWhatsApp();
+    return res.json(status);
+  } catch (error) {
+    console.error("Failed to disconnect WhatsApp:", error);
+    return res.status(500).json({ error: "Failed to disconnect WhatsApp." });
+  }
 });
 
 app.post("/register", async (req, res) => {

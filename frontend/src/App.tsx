@@ -40,6 +40,7 @@ function App() {
   const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus | null>(null);
   const [whatsAppQr, setWhatsAppQr] = useState<WhatsAppQr | null>(null);
   const [loadingWhatsApp, setLoadingWhatsApp] = useState(true);
+  const [disconnectingWhatsApp, setDisconnectingWhatsApp] = useState(false);
 
   async function loadConversations(activeToken: string, silent = false) {
     if (!silent) {
@@ -161,6 +162,33 @@ function App() {
       if (!silent) {
         setLoadingWhatsApp(false);
       }
+    }
+  }
+
+  async function handleDisconnectWhatsApp() {
+    if (!token || disconnectingWhatsApp) {
+      return;
+    }
+
+    setDisconnectingWhatsApp(true);
+    setDashboardError("");
+
+    try {
+      const status = await api.disconnectWhatsApp(token);
+      setWhatsAppStatus(status);
+      setWhatsAppQr({
+        connected: status.connected,
+        state: status.state,
+        qr: null
+      });
+
+      window.setTimeout(() => {
+        loadWhatsAppState(true);
+      }, 3500);
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "Failed to disconnect WhatsApp.");
+    } finally {
+      setDisconnectingWhatsApp(false);
     }
   }
 
@@ -583,8 +611,10 @@ function App() {
         <Sidebar
           activeView={activeView}
           counts={sidebarCounts}
+          disconnectingWhatsApp={disconnectingWhatsApp}
           loadingWhatsApp={loadingWhatsApp}
           onChangeView={setActiveView}
+          onDisconnectWhatsApp={handleDisconnectWhatsApp}
           onLogout={handleLogout}
           userEmail={userEmail}
           whatsAppQr={whatsAppQr}
