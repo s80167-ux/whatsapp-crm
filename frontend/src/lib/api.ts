@@ -60,12 +60,12 @@ const configuredApiUrl = import.meta.env.VITE_API_URL;
 const isLocalhost =
   typeof window !== "undefined" &&
   ["localhost", "127.0.0.1"].includes(window.location.hostname);
-const API_URL = configuredApiUrl || (isLocalhost ? "http://localhost:4000" : "");
+const API_URL = isLocalhost ? configuredApiUrl || "http://localhost:4000" : "/api";
 
 function getApiUrl() {
   if (!API_URL) {
     throw new Error(
-      "Missing backend API URL. Set VITE_API_URL to your deployed backend URL before using the dashboard."
+      "Missing backend API URL. Set VITE_API_URL for local development before using the dashboard."
     );
   }
 
