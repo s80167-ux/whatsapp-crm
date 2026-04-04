@@ -9,6 +9,8 @@ type ChatWindowProps = {
   messageText: string;
   loading: boolean;
   sending: boolean;
+  mobileCollapsed?: boolean;
+  onToggleMobileCollapse?: () => void;
   onChangeMessage: (value: string) => void;
   onSend: () => void;
   onSendAttachment: (file: File, caption: string) => Promise<void> | void;
@@ -76,6 +78,8 @@ export function ChatWindow(props: ChatWindowProps) {
     messageText,
     loading,
     sending,
+    mobileCollapsed = false,
+    onToggleMobileCollapse,
     onChangeMessage,
     onSend,
     onSendAttachment,
@@ -254,7 +258,7 @@ export function ChatWindow(props: ChatWindowProps) {
 
   if (!phone) {
     return (
-      <section className="glass-panel flex min-h-[420px] items-center justify-center border border-white/70 bg-white/58 p-6">
+      <section className="glass-panel flex min-h-[320px] items-center justify-center border border-white/70 bg-white/58 p-6 sm:min-h-[420px]">
         <div className="max-w-sm text-center">
           <p className="text-sm uppercase tracking-[0.25em] text-emerald-800/65">No active chat</p>
           <h3 className="mt-3 text-2xl font-semibold text-ink">Pick a conversation</h3>
@@ -267,16 +271,33 @@ export function ChatWindow(props: ChatWindowProps) {
   }
 
   return (
-    <section className="glass-panel flex min-h-[520px] flex-col overflow-visible border border-white/70 bg-white/58 p-4 xl:max-h-[calc(100dvh-210px)]">
+    <section className="glass-panel flex min-h-[120px] flex-col overflow-visible border border-white/70 bg-white/58 p-3 sm:min-h-[520px] sm:p-4 xl:max-h-[calc(100dvh-210px)]">
+      <button
+        className="mb-3 flex w-full items-center justify-between gap-3 rounded-[26px] border border-white/60 bg-white/72 px-4 py-3 text-left shadow-soft lg:hidden"
+        onClick={onToggleMobileCollapse}
+        type="button"
+      >
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Active conversation</p>
+          <p className="mt-1 truncate text-sm font-medium text-ink">{getDisplayName(contactName, phone)}</p>
+        </div>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/70 text-emerald-900/65 shadow-soft">
+          <svg className={`h-4 w-4 transition ${mobileCollapsed ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24">
+            <path d="m6 9 6 6 6-6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+          </svg>
+        </span>
+      </button>
+
+      <div className={`${mobileCollapsed ? "hidden" : "block"} lg:block`}>
       <div className="mb-3 rounded-[26px] border border-white/60 bg-white/72 px-4 py-3 shadow-soft">
         <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Active conversation</p>
-        <h3 className="mt-1 text-xl font-semibold text-ink">{getDisplayName(contactName, phone)}</h3>
-        <p className="mt-1 text-sm text-emerald-900/45">{phone}</p>
+        <h3 className="mt-1 text-lg font-semibold text-ink sm:text-xl">{getDisplayName(contactName, phone)}</h3>
+        <p className="mt-1 break-all text-sm text-emerald-900/45">{phone}</p>
       </div>
 
       <div
         ref={listRef}
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-[28px] border border-emerald-100/80 bg-[rgba(219,245,228,0.7)] p-4"
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-[28px] border border-emerald-100/80 bg-[rgba(219,245,228,0.7)] p-3 sm:p-4"
         onScroll={updateStickToBottom}
       >
         {loading ? (
@@ -292,7 +313,7 @@ export function ChatWindow(props: ChatWindowProps) {
               className={`flex ${item.direction === "outgoing" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[80%] rounded-[24px] px-4 py-3 shadow-soft ${
+                className={`max-w-[88%] rounded-[24px] px-4 py-3 shadow-soft sm:max-w-[80%] ${
                   item.direction === "outgoing"
                     ? "bg-gradient-to-br from-emerald-500 to-green-400 text-white"
                     : "border border-white/75 bg-white/92 text-emerald-950/82"
@@ -420,6 +441,7 @@ export function ChatWindow(props: ChatWindowProps) {
               <div className="mt-3 space-y-3">
                 <input
                   accept={attachmentTab === "image" ? "image/*" : ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"}
+                  aria-label={attachmentTab === "image" ? "Choose picture attachment" : "Choose document attachment"}
                   className="hidden"
                   onChange={handleFileSelection}
                   ref={attachmentTab === "image" ? imageInputRef : documentInputRef}
@@ -507,7 +529,7 @@ export function ChatWindow(props: ChatWindowProps) {
         <div className="rounded-[26px] border border-white/60 bg-white/72 p-2 shadow-soft">
           <div className="flex items-center gap-2">
           <button
-            className={`secondary-button flex h-12 w-12 items-center justify-center rounded-2xl p-0 ${
+            className={`secondary-button flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl p-0 sm:h-12 sm:w-12 ${
               showQuickReplies ? "bg-emerald-100 text-emerald-950" : ""
             }`}
             onClick={() => {
@@ -573,6 +595,7 @@ export function ChatWindow(props: ChatWindowProps) {
           </button>
           </div>
         </div>
+      </div>
       </div>
     </section>
   );

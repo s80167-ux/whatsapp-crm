@@ -62,7 +62,7 @@ export function ChatList({
   }, [conversations, filter, query]);
 
   return (
-    <section className="glass-panel flex min-h-[420px] flex-col border border-white/70 bg-white/58 p-3 sm:p-4 xl:max-h-[calc(100dvh-210px)]">
+    <section className="glass-panel flex min-h-[220px] flex-col border border-white/70 bg-white/58 p-3 sm:min-h-[420px] sm:p-4 xl:max-h-[calc(100dvh-210px)]">
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="hidden text-xs uppercase tracking-[0.25em] text-emerald-800/65 md:block">Conversations</p>
@@ -144,7 +144,7 @@ export function ChatList({
             return (
               <button
                 key={conversation.chatJid || resolvedPhone || conversation.timestamp}
-                className={`w-full rounded-[20px] border px-2 py-2 text-left transition sm:rounded-[24px] sm:px-4 sm:py-3 ${
+                className={`w-full rounded-[20px] border px-3 py-3 text-left transition sm:rounded-[24px] sm:px-4 sm:py-3 ${
                   active
                     ? "border-emerald-200 bg-emerald-50/88 shadow-soft"
                     : "border-white/45 bg-white/35 hover:bg-white/60"
@@ -157,17 +157,17 @@ export function ChatList({
                 }}
                 type="button"
               >
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                   <div className="min-w-0">
-                    <p className="break-words text-[11px] font-semibold leading-4 text-ink sm:text-sm sm:leading-5">
+                    <p className="break-words text-sm font-semibold leading-5 text-ink sm:text-sm sm:leading-5">
                       {getDisplayName(conversation.contactName, resolvedPhone)}
                     </p>
-                    <p className="mt-1 break-all text-[10px] text-emerald-900/45 sm:text-xs">{resolvedPhone || "Unavailable"}</p>
+                    <p className="mt-1 break-all text-xs text-emerald-900/45 sm:text-xs">{resolvedPhone || "Unavailable"}</p>
                     <p className="mt-1 hidden break-words text-sm leading-5 text-emerald-950/62 md:block">
                       {conversation.lastMessage}
                     </p>
                   </div>
-                  <span className="text-[10px] text-emerald-900/45 sm:shrink-0 sm:text-xs">{formatTimestamp(conversation.timestamp)}</span>
+                  <span className="text-xs text-emerald-900/45 sm:shrink-0 sm:text-xs">{formatTimestamp(conversation.timestamp)}</span>
                 </div>
               </button>
             );

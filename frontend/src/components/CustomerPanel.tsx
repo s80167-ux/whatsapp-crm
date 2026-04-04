@@ -13,6 +13,8 @@ type CustomerPanelProps = {
   lastDirection?: "incoming" | "outgoing" | null;
   loading: boolean;
   saving: boolean;
+  mobileCollapsed?: boolean;
+  onToggleMobileCollapse?: () => void;
   onStatusChange: (value: string) => void;
   onNotesChange: (value: string) => void;
 };
@@ -61,6 +63,8 @@ export function CustomerPanel(props: CustomerPanelProps) {
     lastDirection,
     loading,
     saving,
+    mobileCollapsed = false,
+    onToggleMobileCollapse,
     onStatusChange,
     onNotesChange
   } = props;
@@ -72,12 +76,28 @@ export function CustomerPanel(props: CustomerPanelProps) {
   const phoneLabel = phone || "Unavailable";
 
   return (
-    <aside className="glass-panel flex min-h-[420px] flex-col overflow-hidden border border-white/70 bg-white/58 p-4 xl:max-h-[calc(100dvh-210px)]">
-      <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Customer info</p>
+    <aside className="glass-panel flex flex-col overflow-hidden border border-white/70 bg-white/58 p-4">
+      <button
+        className="flex w-full items-center justify-between gap-3 text-left lg:hidden"
+        onClick={onToggleMobileCollapse}
+        type="button"
+      >
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Customer info</p>
+          <p className="mt-1 truncate text-sm font-medium text-ink">{title}</p>
+        </div>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/70 text-emerald-900/65 shadow-soft">
+          <svg className={`h-4 w-4 transition ${mobileCollapsed ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24">
+            <path d="m6 9 6 6 6-6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+          </svg>
+        </span>
+      </button>
 
-      <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+      <p className="hidden text-xs uppercase tracking-[0.25em] text-emerald-800/65 lg:block">Customer info</p>
+
+      <div className={`${mobileCollapsed ? "hidden" : "mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1"} lg:mt-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:space-y-3 lg:overflow-y-auto lg:pr-1`}>
         <div className="rounded-[28px] bg-white/68 p-4 shadow-soft">
-          <div className="flex flex-col items-center text-center">
+          <div className="flex flex-col gap-4 sm:items-center sm:text-center lg:items-start lg:text-left xl:items-center xl:text-center">
             {profilePictureUrl ? (
               <img
                 alt={title}
@@ -90,9 +110,9 @@ export function CustomerPanel(props: CustomerPanelProps) {
               </div>
             )}
 
-            <div className="mt-3 min-w-0 w-full">
+            <div className="min-w-0 w-full">
               <h3 className="break-words text-lg font-semibold leading-tight text-ink">{title}</h3>
-              <div className="mt-3 grid gap-2 text-left">
+              <div className="mt-3 grid gap-2 text-left sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-1">
                 <div className="rounded-2xl bg-emerald-50/75 px-3 py-2">
                   <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-800/55">Username</p>
                   <p className="mt-1 break-words text-sm font-medium text-emerald-950/80">{usernameLabel}</p>

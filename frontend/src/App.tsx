@@ -41,6 +41,8 @@ function App() {
   const [whatsAppQr, setWhatsAppQr] = useState<WhatsAppQr | null>(null);
   const [loadingWhatsApp, setLoadingWhatsApp] = useState(true);
   const [disconnectingWhatsApp, setDisconnectingWhatsApp] = useState(false);
+  const [isMobileChatCollapsed, setIsMobileChatCollapsed] = useState(true);
+  const [isMobileCustomerCollapsed, setIsMobileCustomerCollapsed] = useState(true);
 
   async function loadConversations(activeToken: string, silent = false) {
     if (!silent) {
@@ -629,8 +631,8 @@ function App() {
             <div className="glass-panel px-4 py-3 text-sm text-rose-500 xl:col-start-2 xl:col-end-4">{dashboardError}</div>
           ) : null}
 
-          <div className="grid items-start gap-4 grid-cols-[minmax(132px,_30%)_minmax(0,_70%)] xl:contents">
-            <div className="space-y-4 xl:col-start-2 xl:col-end-3">
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(260px,_0.95fr)_minmax(0,_1.55fr)] xl:contents">
+            <div className="space-y-4 lg:col-start-1 lg:col-end-2 xl:col-start-2 xl:col-end-3">
               <ChatList
                 activeView={activeView}
                 conversations={visibleConversations}
@@ -662,7 +664,9 @@ function App() {
                 lastMessageAt={customerDraft?.last_message_at || null}
                 lastMessagePreview={customerDraft?.last_message_preview || null}
                 loading={loadingCustomer}
+                mobileCollapsed={isMobileCustomerCollapsed}
                 notes={selectedNotes}
+                onToggleMobileCollapse={() => setIsMobileCustomerCollapsed((current) => !current)}
                 outgoingCount={customerDraft?.outgoing_count}
                 profilePictureUrl={customerDraft?.profile_picture_url || null}
                 saving={savingCustomer}
@@ -720,7 +724,7 @@ function App() {
               />
             </div>
 
-            <div className="xl:col-start-3 xl:col-end-4">
+            <div className="lg:col-start-2 lg:col-end-3 xl:col-start-3 xl:col-end-4">
               <ChatWindow
                 contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
                 loading={loadingMessages}
@@ -731,6 +735,8 @@ function App() {
                 onSendLocation={handleSendLocation}
                 onSend={handleSend}
                 phone={selectedPhone}
+                mobileCollapsed={isMobileChatCollapsed}
+                onToggleMobileCollapse={() => setIsMobileChatCollapsed((current) => !current)}
                 sending={sending}
               />
               </div>
