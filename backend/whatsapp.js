@@ -15,6 +15,15 @@ let resetAuthPromise = null;
 let activeOwnerUserId = null;
 let manualDisconnectRequested = false;
 
+function withTimeout(promise, timeoutMs, fallbackValue) {
+	return Promise.race([
+		promise,
+		new Promise((resolve) => {
+			setTimeout(() => resolve(fallbackValue), timeoutMs);
+		})
+	]);
+}
+
 const authDir = process.env.WHATSAPP_AUTH_DIR
 	? path.resolve(process.env.WHATSAPP_AUTH_DIR)
 	: path.join(__dirname, 'baileys_auth');
@@ -238,7 +247,7 @@ async function disconnectWhatsApp() {
 
 	try {
 		if (currentSock?.logout) {
-			await currentSock.logout();
+			await withTimeout(currentSock.logout(), 5000, null);
 		} else {
 			await resetAuthState();
 		}
@@ -295,17 +304,13 @@ async function getWhatsAppProfile() {
 	const username = String(sock.user?.name || '').trim() || null;
 	const phone = extractPhoneFromJid(jid);
 
-	const profilePictureUrl = jid
-		? await sock.profilePictureUrl(jid, 'image').catch(() => null)
-		: null;
-
-	const businessProfile = jid
-		? await sock.getBusinessProfile(jid).catch(() => null)
-		: null;
-
-	const catalogResult = jid
-		? await sock.getCatalog({ jid, limit: 10 }).catch(() => ({ products: [] }))
-		: { products: [] };
+	const [profilePictureUrl, businessProfile, catalogResult] = jid
+		? await Promise.all([
+			withTimeout(sock.profilePictureUrl(jid, 'image').catch(() => null), 5000, null),
+			withTimeout(sock.getBusinessProfile(jid).catch(() => null), 5000, null),
+			withTimeout(sock.getCatalog({ jid, limit: 10 }).catch(() => ({ products: [] })), 7000, { products: [] })
+		])
+		: [null, null, { products: [] }];
 
 	return {
 		connected: true,

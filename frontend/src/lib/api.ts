@@ -143,7 +143,12 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error((data as { error?: string }).error || "Request failed.");
+  const payloadError = (data as { error?: string }).error;
+  if (payloadError) {
+    throw new Error(payloadError);
+  }
+
+  throw new Error(`Request failed (${response.status} ${response.statusText || "Unknown error"}).`);
   }
 
   return data as T;
