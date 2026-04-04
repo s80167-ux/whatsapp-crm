@@ -18,6 +18,86 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   }
 });
 
+const STATUS_NOTE_MARKER = "[[crm_status:";
+const STATUS_NOTE_REGEX = /^\[\[crm_status:(new_lead|interested|processing|closed_won|closed_lost)\]\]\n?/;
+
+function stripStoredStatusMetadata(notes) {
+  if (typeof notes !== "string") {
+    return "";
+  }
+
+  return notes.replace(STATUS_NOTE_REGEX, "");
+}
+
+function getEmbeddedStatus(notes) {
+  if (typeof notes !== "string") {
+    return null;
+  }
+
+  const match = notes.match(STATUS_NOTE_REGEX);
+  return match ? match[1] : null;
+}
+
+function normalizeCustomerStatus(status, notes) {
+  const embeddedStatus = getEmbeddedStatus(notes);
+
+  if (embeddedStatus) {
+    return embeddedStatus;
+  }
+
+  switch (status) {
+    case "hot":
+      return "processing";
+    case "warm":
+      return "interested";
+    case "cold":
+      return "closed_lost";
+    case "new_lead":
+    case "interested":
+    case "processing":
+    case "closed_won":
+    case "closed_lost":
+      return status;
+    default:
+      return "new_lead";
+  }
+}
+
+function toLegacyCustomerStatus(status) {
+  switch (status) {
+    case "processing":
+      return "hot";
+    case "closed_lost":
+      return "cold";
+    case "new_lead":
+    case "interested":
+    case "closed_won":
+    default:
+      return "warm";
+  }
+}
+
+function withStoredStatusMetadata(status, notes) {
+  const sanitizedNotes = stripStoredStatusMetadata(notes);
+  return `${STATUS_NOTE_MARKER}${status}]]\n${sanitizedNotes}`;
+}
+
+function normalizeCustomerRecord(customer) {
+  if (!customer) {
+    return customer;
+  }
+
+  return {
+    ...customer,
+    status: normalizeCustomerStatus(customer.status, customer.notes),
+    ...(Object.prototype.hasOwnProperty.call(customer, "notes") ? { notes: stripStoredStatusMetadata(customer.notes) } : {})
+  };
+}
+
+function isCustomerStatusConstraintError(error) {
+  return error?.code === "23514" && String(error?.message || "").toLowerCase().includes("status");
+}
+
 function isMissingColumnError(error, columnName) {
   return error?.code === "42703" && String(error?.message || "").includes(columnName);
 }
@@ -200,7 +280,7 @@ async function getConversations(ownerUserId) {
       .select("phone, chat_jid, message, created_at, direction")
       .eq("owner_user_id", ownerUserId)
       .order("created_at", { ascending: false }),
-    supabase.from("customers").select("phone, chat_jid, status, contact_name").eq("owner_user_id", ownerUserId)
+    supabase.from("customers").select("phone, chat_jid, status, contact_name, notes").eq("owner_user_id", ownerUserId)
   ]);
 
   throwIfTenantSchemaError(messageError, "messages.owner_user_id");
@@ -219,7 +299,7 @@ async function getConversations(ownerUserId) {
   if (isMissingColumnError(customerError, "customers.chat_jid")) {
     ({ data: customerRows, error: customerError } = await supabase
       .from("customers")
-      .select("phone, status, contact_name")
+      .select("phone, status, contact_name, notes")
       .eq("owner_user_id", ownerUserId));
 
     throwIfTenantSchemaError(customerError, "customers.owner_user_id");
@@ -241,14 +321,14 @@ async function getConversations(ownerUserId) {
 
     if (resolvedPhone) {
       customerMap.set(resolvedPhone, {
-        ...customer,
+        ...normalizeCustomerRecord(customer),
         phone: resolvedPhone
       });
     }
 
     if (customer.chat_jid) {
       customerChatJidMap.set(customer.chat_jid, {
-        ...customer,
+        ...normalizeCustomerRecord(customer),
         phone: resolvedPhone || customer.phone
       });
     }
@@ -298,7 +378,7 @@ async function getCustomerByPhone(phone, ownerUserId) {
 
   const resolvedPhone = await resolveWhatsAppPhone(phone, data?.chat_jid || null);
 
-  return (
+  return normalizeCustomerRecord(
     data || {
       phone: resolvedPhone || phone,
       chat_jid: null,
@@ -351,6 +431,7 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
     ...(notes !== undefined ? { notes } : {}),
     updated_at: new Date().toISOString()
   };
+  let writePayload = payload;
 
   const lookupValues = await getPhoneLookupValues(phone, chat_jid || null);
   const existing = await supabase
@@ -373,14 +454,14 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
   if (existing.data?.id) {
     ({ data, error } = await supabase
       .from("customers")
-      .update(payload)
+      .update(writePayload)
       .eq("id", existing.data.id)
       .select("*")
       .single());
   } else {
     ({ data, error } = await supabase
       .from("customers")
-      .insert(payload)
+      .insert(writePayload)
       .select("*")
       .single());
   }
@@ -388,19 +469,45 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
   throwIfTenantSchemaError(error, "customers.owner_user_id");
 
   if (isMissingColumnError(error, "customers.chat_jid")) {
-    const { chat_jid: _ignored, ...fallbackPayload } = payload;
+    const { chat_jid: _ignored, ...fallbackPayload } = writePayload;
+    writePayload = fallbackPayload;
 
     if (existing.data?.id) {
       ({ data, error } = await supabase
         .from("customers")
-        .update(fallbackPayload)
+        .update(writePayload)
         .eq("id", existing.data.id)
         .select("*")
         .single());
     } else {
       ({ data, error } = await supabase
         .from("customers")
-        .insert(fallbackPayload)
+        .insert(writePayload)
+        .select("*")
+        .single());
+    }
+
+    throwIfTenantSchemaError(error, "customers.owner_user_id");
+  }
+
+  if (isCustomerStatusConstraintError(error) && status !== undefined) {
+    const legacyPayload = {
+      ...writePayload,
+      status: toLegacyCustomerStatus(status),
+      notes: withStoredStatusMetadata(status, notes)
+    };
+
+    if (existing.data?.id) {
+      ({ data, error } = await supabase
+        .from("customers")
+        .update(legacyPayload)
+        .eq("id", existing.data.id)
+        .select("*")
+        .single());
+    } else {
+      ({ data, error } = await supabase
+        .from("customers")
+        .insert(legacyPayload)
         .select("*")
         .single());
     }
@@ -412,7 +519,7 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
     throw error;
   }
 
-  return data;
+  return normalizeCustomerRecord(data);
 }
 
 async function getCustomerOwnerIdsByPhone(phone) {

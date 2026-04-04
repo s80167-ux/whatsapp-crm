@@ -44,16 +44,29 @@ function App() {
   const [disconnectingWhatsApp, setDisconnectingWhatsApp] = useState(false);
   const [isMobileCustomerCollapsed, setIsMobileCustomerCollapsed] = useState(true);
 
-  function updateConversationStatus(phone: string, status: CustomerStatus) {
+  function updateConversationStatus(params: {
+    phone?: string | null;
+    chatJid?: string | null;
+    status: CustomerStatus;
+  }) {
+    const targetResolvedPhone = getResolvedPhone(params.phone, params.chatJid);
+    const targetChatJid = String(params.chatJid || "").trim() || null;
+
     setConversations((current) =>
-      current.map((conversation) =>
-        conversation.phone === phone
-          ? {
-              ...conversation,
-              status
-            }
-          : conversation
-      )
+      current.map((conversation) => {
+        const conversationResolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid);
+        const matchesPhone = Boolean(targetResolvedPhone && conversationResolvedPhone === targetResolvedPhone);
+        const matchesChatJid = Boolean(targetChatJid && conversation.chatJid === targetChatJid);
+
+        if (!matchesPhone && !matchesChatJid) {
+          return conversation;
+        }
+
+        return {
+          ...conversation,
+          status: params.status
+        };
+      })
     );
   }
 
@@ -115,7 +128,11 @@ function App() {
     try {
       const data = await api.getCustomer(phone, activeToken);
       setCustomerDraft(data);
-      updateConversationStatus(data.phone, data.status);
+      updateConversationStatus({
+        phone: data.phone,
+        chatJid: data.chat_jid,
+        status: data.status
+      });
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to load customer.");
     } finally {
@@ -142,7 +159,11 @@ function App() {
         token
       );
       setCustomerDraft(savedCustomer);
-      updateConversationStatus(savedCustomer.phone, savedCustomer.status);
+      updateConversationStatus({
+        phone: savedCustomer.phone,
+        chatJid: savedCustomer.chat_jid,
+        status: savedCustomer.status
+      });
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to save customer.");
     } finally {
@@ -733,7 +754,11 @@ function App() {
                     };
 
                     setCustomerDraft(nextCustomer);
-                    updateConversationStatus(nextCustomer.phone, nextCustomer.status);
+                    updateConversationStatus({
+                      phone: nextCustomer.phone,
+                      chatJid: nextCustomer.chat_jid,
+                      status: nextCustomer.status
+                    });
                     scheduleCustomerSave(nextCustomer, true);
                   }}
                   phone={selectedPhone}
@@ -819,7 +844,11 @@ function App() {
                   };
 
                   setCustomerDraft(nextCustomer);
-                    updateConversationStatus(nextCustomer.phone, nextCustomer.status);
+                    updateConversationStatus({
+                      phone: nextCustomer.phone,
+                      chatJid: nextCustomer.chat_jid,
+                      status: nextCustomer.status
+                    });
                   scheduleCustomerSave(nextCustomer, true);
                 }}
                 phone={selectedPhone}
