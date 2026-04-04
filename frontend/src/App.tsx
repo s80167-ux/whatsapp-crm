@@ -605,7 +605,7 @@ function App() {
 
   return (
     <main className="min-h-screen bg-app px-4 py-6 text-slate-700">
-      <div className="mx-auto grid max-w-[1600px] items-start gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+      <div className="mx-auto max-w-[1600px] space-y-4 xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(280px,1fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0">
         <Sidebar
           activeView={activeView}
           counts={sidebarCounts}
@@ -620,14 +620,13 @@ function App() {
           whatsAppStatus={whatsAppStatus}
         />
 
-        <div className="space-y-4">
+        <div className="space-y-4 xl:contents">
           {dashboardError ? (
-            <div className="glass-panel px-4 py-3 text-sm text-rose-500">{dashboardError}</div>
+            <div className="glass-panel px-4 py-3 text-sm text-rose-500 xl:col-start-2 xl:col-end-4">{dashboardError}</div>
           ) : null}
 
-          <div className="grid items-start gap-4 grid-cols-[minmax(132px,_30%)_minmax(0,_70%)] xl:grid-cols-[300px_minmax(0,1fr)_340px]">
-            <div className="space-y-4 xl:contents">
-              <div className="xl:order-1">
+          <div className="grid items-start gap-4 grid-cols-[minmax(132px,_30%)_minmax(0,_70%)] xl:contents">
+            <div className="space-y-4 xl:col-start-2 xl:col-end-3">
               <ChatList
                 activeView={activeView}
                 conversations={visibleConversations}
@@ -650,77 +649,74 @@ function App() {
                 selectedPhone={selectedPhone}
                 whatsAppConnected={Boolean(whatsAppStatus?.connected)}
               />
-              </div>
 
-              <div className="xl:order-3">
-                <CustomerPanel
-                  contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
-                  about={customerDraft?.about || null}
-                  incomingCount={customerDraft?.incoming_count}
-                  lastDirection={customerDraft?.last_direction || null}
-                  lastMessageAt={customerDraft?.last_message_at || null}
-                  lastMessagePreview={customerDraft?.last_message_preview || null}
-                  loading={loadingCustomer}
-                  notes={selectedNotes}
-                  outgoingCount={customerDraft?.outgoing_count}
-                  profilePictureUrl={customerDraft?.profile_picture_url || null}
-                  saving={savingCustomer}
-                  onNotesChange={(value) => {
-                    if (!selectedPhone) {
-                      return;
-                    }
+              <CustomerPanel
+                contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
+                about={customerDraft?.about || null}
+                incomingCount={customerDraft?.incoming_count}
+                lastDirection={customerDraft?.last_direction || null}
+                lastMessageAt={customerDraft?.last_message_at || null}
+                lastMessagePreview={customerDraft?.last_message_preview || null}
+                loading={loadingCustomer}
+                notes={selectedNotes}
+                outgoingCount={customerDraft?.outgoing_count}
+                profilePictureUrl={customerDraft?.profile_picture_url || null}
+                saving={savingCustomer}
+                onNotesChange={(value) => {
+                  if (!selectedPhone) {
+                    return;
+                  }
 
-                    const nextCustomer: Customer = {
-                      phone: selectedPhone,
-                      chat_jid: customerDraft?.chat_jid || selectedConversation?.chatJid || null,
-                      contact_name: customerDraft?.contact_name || selectedConversation?.contactName || null,
-                      profile_picture_url: customerDraft?.profile_picture_url || null,
-                      about: customerDraft?.about || null,
-                      total_messages: customerDraft?.total_messages,
-                      incoming_count: customerDraft?.incoming_count,
-                      outgoing_count: customerDraft?.outgoing_count,
-                      last_message_at: customerDraft?.last_message_at || null,
-                      last_message_preview: customerDraft?.last_message_preview || null,
-                      last_direction: customerDraft?.last_direction || null,
-                      status: customerDraft?.status || "warm",
-                      notes: value
-                    };
+                  const nextCustomer: Customer = {
+                    phone: selectedPhone,
+                    chat_jid: customerDraft?.chat_jid || selectedConversation?.chatJid || null,
+                    contact_name: customerDraft?.contact_name || selectedConversation?.contactName || null,
+                    profile_picture_url: customerDraft?.profile_picture_url || null,
+                    about: customerDraft?.about || null,
+                    total_messages: customerDraft?.total_messages,
+                    incoming_count: customerDraft?.incoming_count,
+                    outgoing_count: customerDraft?.outgoing_count,
+                    last_message_at: customerDraft?.last_message_at || null,
+                    last_message_preview: customerDraft?.last_message_preview || null,
+                    last_direction: customerDraft?.last_direction || null,
+                    status: customerDraft?.status || "warm",
+                    notes: value
+                  };
 
-                    setCustomerDraft(nextCustomer);
-                    scheduleCustomerSave(nextCustomer);
-                  }}
-                  onStatusChange={(value) => {
-                    if (!selectedPhone) {
-                      return;
-                    }
+                  setCustomerDraft(nextCustomer);
+                  scheduleCustomerSave(nextCustomer);
+                }}
+                onStatusChange={(value) => {
+                  if (!selectedPhone) {
+                    return;
+                  }
 
-                    const nextCustomer: Customer = {
-                      phone: selectedPhone,
-                      chat_jid: customerDraft?.chat_jid || selectedConversation?.chatJid || null,
-                      contact_name: customerDraft?.contact_name || selectedConversation?.contactName || null,
-                      profile_picture_url: customerDraft?.profile_picture_url || null,
-                      about: customerDraft?.about || null,
-                      total_messages: customerDraft?.total_messages,
-                      incoming_count: customerDraft?.incoming_count,
-                      outgoing_count: customerDraft?.outgoing_count,
-                      last_message_at: customerDraft?.last_message_at || null,
-                      last_message_preview: customerDraft?.last_message_preview || null,
-                      last_direction: customerDraft?.last_direction || null,
-                      status: value as Customer["status"],
-                      notes: customerDraft?.notes || ""
-                    };
+                  const nextCustomer: Customer = {
+                    phone: selectedPhone,
+                    chat_jid: customerDraft?.chat_jid || selectedConversation?.chatJid || null,
+                    contact_name: customerDraft?.contact_name || selectedConversation?.contactName || null,
+                    profile_picture_url: customerDraft?.profile_picture_url || null,
+                    about: customerDraft?.about || null,
+                    total_messages: customerDraft?.total_messages,
+                    incoming_count: customerDraft?.incoming_count,
+                    outgoing_count: customerDraft?.outgoing_count,
+                    last_message_at: customerDraft?.last_message_at || null,
+                    last_message_preview: customerDraft?.last_message_preview || null,
+                    last_direction: customerDraft?.last_direction || null,
+                    status: value as Customer["status"],
+                    notes: customerDraft?.notes || ""
+                  };
 
-                    setCustomerDraft(nextCustomer);
-                    scheduleCustomerSave(nextCustomer, true);
-                  }}
-                  phone={selectedPhone}
-                  status={selectedStatus}
-                  totalMessages={customerDraft?.total_messages}
-                />
-              </div>
+                  setCustomerDraft(nextCustomer);
+                  scheduleCustomerSave(nextCustomer, true);
+                }}
+                phone={selectedPhone}
+                status={selectedStatus}
+                totalMessages={customerDraft?.total_messages}
+              />
             </div>
 
-            <div className="xl:order-2">
+            <div className="xl:col-start-3 xl:col-end-4">
               <ChatWindow
                 contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
                 loading={loadingMessages}
@@ -733,7 +729,7 @@ function App() {
                 phone={selectedPhone}
                 sending={sending}
               />
-            </div>
+              </div>
           </div>
         </div>
       </div>

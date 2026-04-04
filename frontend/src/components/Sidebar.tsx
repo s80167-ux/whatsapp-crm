@@ -96,7 +96,7 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className="grid gap-3 pt-3 sm:grid-cols-2">
+      <div className="grid gap-3 pt-3 md:grid-cols-2 xl:grid-cols-1">
         <WhatsAppConnectCard
           compact
           disconnecting={disconnectingWhatsApp}
