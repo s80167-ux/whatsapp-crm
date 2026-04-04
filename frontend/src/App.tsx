@@ -12,7 +12,6 @@ import { supabase } from "./lib/supabase";
 type AuthMode = "login" | "register";
 type SidebarView = "inbox" | "pipeline" | "broadcast";
 const conversationPollMs = 8000;
-const ACTIVE_CUSTOMER_STATUSES = CUSTOMER_STATUSES.filter((status) => !status.startsWith("closed_"));
 
 function App() {
   const [mode, setMode] = useState<AuthMode>("login");
@@ -24,6 +23,7 @@ function App() {
   const [token, setToken] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [activeView, setActiveView] = useState<SidebarView>("inbox");
+  const [activeStatusFilter, setActiveStatusFilter] = useState<CustomerStatus | null>(null);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
@@ -353,20 +353,12 @@ function App() {
   }, [conversations]);
 
   const visibleConversations = useMemo(() => {
-    const now = Date.now();
-
-    if (activeView === "pipeline") {
-      return conversations.filter((conversation) => ACTIVE_CUSTOMER_STATUSES.includes(conversation.status));
-    }
-
-    if (activeView === "broadcast") {
-      return conversations.filter(
-        (conversation) => now - new Date(conversation.timestamp).getTime() > 24 * 60 * 60 * 1000
-      );
+    if (activeStatusFilter) {
+      return conversations.filter((conversation) => conversation.status === activeStatusFilter);
     }
 
     return conversations;
-  }, [activeView, conversations]);
+  }, [activeStatusFilter, conversations]);
 
   const sidebarStats = useMemo(
     () => ({
@@ -650,10 +642,12 @@ function App() {
       <div className="mx-auto max-w-[1600px] space-y-4 xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(280px,1fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0">
         <Sidebar
           activeView={activeView}
+          activeStatusFilter={activeStatusFilter}
           counts={sidebarCounts}
           disconnectingWhatsApp={disconnectingWhatsApp}
           loadingWhatsApp={loadingWhatsApp}
           onChangeView={setActiveView}
+          onStatusFilterChange={setActiveStatusFilter}
           onDisconnectWhatsApp={handleDisconnectWhatsApp}
           onLogout={handleLogout}
           stats={sidebarStats}

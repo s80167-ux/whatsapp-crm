@@ -5,6 +5,7 @@ import { WhatsAppConnectCard } from "./WhatsAppConnectCard";
 
 type SidebarProps = {
   activeView: "inbox" | "pipeline" | "broadcast";
+  activeStatusFilter: CustomerStatus | null;
   token: string;
   counts: {
     inbox: number;
@@ -15,6 +16,7 @@ type SidebarProps = {
     activeContact: string;
   };
   onChangeView: (view: "inbox" | "pipeline" | "broadcast") => void;
+  onStatusFilterChange: (status: CustomerStatus | null) => void;
   userEmail: string;
   onLogout: () => void;
   onDisconnectWhatsApp: () => void;
@@ -28,10 +30,12 @@ const menu = [{ key: "inbox", label: "Inbox" }];
 
 export function Sidebar({
   activeView,
+  activeStatusFilter,
   token,
   counts,
   stats,
   onChangeView,
+  onStatusFilterChange,
   userEmail,
   onLogout,
   onDisconnectWhatsApp,
@@ -64,7 +68,9 @@ export function Sidebar({
           >
             <div className="min-w-0">
               <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Workspace</p>
-              <p className="mt-1 truncate text-sm font-medium text-ink">{menu.find((item) => item.key === activeView)?.label || "Inbox"}</p>
+              <p className="mt-1 truncate text-sm font-medium text-ink">
+                {activeStatusFilter ? CUSTOMER_STATUS_LABELS[activeStatusFilter] : menu.find((item) => item.key === activeView)?.label || "Inbox"}
+              </p>
             </div>
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/70 text-emerald-900/65 shadow-soft">
               <svg className={`h-4 w-4 transition ${isWorkspaceCollapsed ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24">
@@ -79,11 +85,14 @@ export function Sidebar({
                 <button
                   key={item.key}
                   className={`relative col-span-2 min-w-0 rounded-[16px] border px-2.5 py-2 pr-9 text-left text-xs font-semibold transition ${
-                    activeView === item.key
+                    activeView === item.key && !activeStatusFilter
                       ? "border-emerald-200 bg-emerald-50/90 text-emerald-950 shadow-soft"
                       : "border-white/45 bg-white/35 text-emerald-950/82 hover:bg-white/60"
                   }`}
-                  onClick={() => onChangeView(item.key as "inbox" | "pipeline" | "broadcast")}
+                  onClick={() => {
+                    onChangeView(item.key as "inbox" | "pipeline" | "broadcast");
+                    onStatusFilterChange(null);
+                  }}
                   type="button"
                 >
                   <span className="block break-words leading-4">{item.label}</span>
@@ -94,10 +103,19 @@ export function Sidebar({
               ))}
 
               {CUSTOMER_STATUSES.map((status) => (
-                <div key={status} className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
+                <button
+                  key={status}
+                  className={`rounded-[16px] border px-2.5 py-2 text-left transition ${
+                    activeStatusFilter === status
+                      ? "border-emerald-200 bg-emerald-50/90 text-emerald-950 shadow-soft"
+                      : "border-white/55 bg-white/72 hover:bg-white/85"
+                  }`}
+                  onClick={() => onStatusFilterChange(activeStatusFilter === status ? null : status)}
+                  type="button"
+                >
                   <p className="text-[10px] uppercase tracking-[0.14em] text-emerald-900/50">{CUSTOMER_STATUS_LABELS[status]}</p>
                   <p className="mt-0.5 text-base font-semibold text-ink">{stats.statusCounts[status]}</p>
-                </div>
+                </button>
               ))}
 
               <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
