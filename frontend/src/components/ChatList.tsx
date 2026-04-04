@@ -61,27 +61,34 @@ export function ChatList({
   }, [conversations, filter, query]);
 
   return (
-    <section className="glass-panel flex min-h-[420px] flex-col border border-white/70 bg-white/58 p-4 xl:max-h-[calc(100dvh-210px)]">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Conversations</p>
-          <h3 className="text-xl font-semibold text-ink">Recent chats</h3>
+    <section className="glass-panel flex min-h-[420px] flex-col border border-white/70 bg-white/58 p-3 sm:p-4 xl:max-h-[calc(100dvh-210px)]">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="hidden text-xs uppercase tracking-[0.25em] text-emerald-800/65 md:block">Conversations</p>
+          <h3 className="text-sm font-semibold leading-5 text-ink sm:text-xl">Recent chats</h3>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-1 sm:justify-end sm:gap-2">
           <button
-            className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-900 shadow-soft transition hover:bg-white"
+            className="hidden rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-900 shadow-soft transition hover:bg-white sm:inline-flex"
             onClick={onRefresh}
             type="button"
           >
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
-          <div className="rounded-full bg-emerald-950/6 px-3 py-1 text-xs font-medium text-emerald-900/65 shadow-soft">
+          <button
+            className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-medium text-emerald-900 shadow-soft transition hover:bg-white sm:hidden"
+            onClick={onRefresh}
+            type="button"
+          >
+            Sync
+          </button>
+          <div className="shrink-0 rounded-full bg-emerald-950/6 px-2 py-1 text-[10px] font-medium text-emerald-900/65 shadow-soft sm:px-3 sm:text-xs">
             {conversations.length}
           </div>
         </div>
       </div>
 
-      <div className="mb-3 space-y-3">
+      <div className="mb-3 hidden space-y-3 md:block">
         <input
           className="input-glass"
           onChange={(event) => setQuery(event.target.value)}
@@ -135,7 +142,7 @@ export function ChatList({
             return (
               <button
                 key={conversation.phone}
-                className={`w-full rounded-[24px] border px-4 py-3 text-left transition ${
+                className={`w-full rounded-[20px] border px-2 py-2 text-left transition sm:rounded-[24px] sm:px-4 sm:py-3 ${
                   active
                     ? "border-emerald-200 bg-emerald-50/88 shadow-soft"
                     : "border-white/45 bg-white/35 hover:bg-white/60"
@@ -143,15 +150,17 @@ export function ChatList({
                 onClick={() => onSelect(conversation.phone)}
                 type="button"
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-ink">
+                    <p className="break-words text-[11px] font-semibold leading-4 text-ink sm:text-sm sm:leading-5">
                       {getDisplayName(conversation.contactName, conversation.phone)}
                     </p>
-                    <p className="truncate text-xs text-emerald-900/45">{conversation.phone}</p>
-                    <p className="mt-1 truncate text-sm text-emerald-950/62">{conversation.lastMessage}</p>
+                    <p className="mt-1 break-all text-[10px] text-emerald-900/45 sm:text-xs">{conversation.phone}</p>
+                    <p className="mt-1 hidden break-words text-sm leading-5 text-emerald-950/62 md:block">
+                      {conversation.lastMessage}
+                    </p>
                   </div>
-                  <span className="shrink-0 text-xs text-emerald-900/45">{formatTimestamp(conversation.timestamp)}</span>
+                  <span className="text-[10px] text-emerald-900/45 sm:shrink-0 sm:text-xs">{formatTimestamp(conversation.timestamp)}</span>
                 </div>
               </button>
             );

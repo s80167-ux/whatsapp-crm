@@ -61,7 +61,7 @@ export function Sidebar({
             {menu.map((item) => (
               <button
                 key={item.key}
-                className={`flex min-w-0 items-center justify-between rounded-[16px] border px-2.5 py-2 text-left text-xs font-semibold transition ${
+                className={`relative min-w-0 rounded-[16px] border px-2.5 py-2 pr-9 text-left text-xs font-semibold transition ${
                   activeView === item.key
                     ? "border-emerald-200 bg-emerald-50/90 text-emerald-950 shadow-soft"
                     : "border-white/45 bg-white/35 text-emerald-950/82 hover:bg-white/60"
@@ -69,8 +69,8 @@ export function Sidebar({
                 onClick={() => onChangeView(item.key as "inbox" | "pipeline" | "broadcast")}
                 type="button"
               >
-                <span className="truncate">{item.label}</span>
-                <span className="ml-2 rounded-full bg-emerald-950/6 px-1.5 py-0.5 text-[10px] text-emerald-900/60">
+                <span className="block break-words leading-4">{item.label}</span>
+                <span className="absolute right-2 top-2 rounded-full bg-emerald-950/6 px-1.5 py-0.5 text-[10px] text-emerald-900/60">
                   {counts[item.key as keyof typeof counts]}
                 </span>
               </button>
@@ -96,7 +96,7 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className="space-y-3 pt-3">
+      <div className="grid gap-3 pt-3 sm:grid-cols-2">
         <WhatsAppConnectCard
           compact
           disconnecting={disconnectingWhatsApp}
@@ -106,10 +106,10 @@ export function Sidebar({
           status={whatsAppStatus}
         />
 
-        <div className="rounded-[28px] border border-white/60 bg-white/62 p-4 shadow-soft">
+        <div className="flex flex-col rounded-[28px] border border-white/60 bg-white/62 p-4 shadow-soft">
           <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Signed in</p>
-          <p className="mt-2 truncate text-sm font-medium text-ink">{userEmail}</p>
-          <button className="secondary-button mt-3 w-full" onClick={onLogout} type="button">
+          <p className="mt-2 break-all text-sm font-medium text-ink">{userEmail}</p>
+          <button className="secondary-button mt-3 w-full sm:mt-auto" onClick={onLogout} type="button">
             Logout
           </button>
         </div>
