@@ -5,6 +5,7 @@ import { WhatsAppConnectCard } from "./WhatsAppConnectCard";
 
 type SidebarProps = {
   activeView: "inbox" | "pipeline" | "broadcast";
+  token: string;
   counts: {
     inbox: number;
     pipeline: number;
@@ -34,6 +35,7 @@ const menu = [
 
 export function Sidebar({
   activeView,
+  token,
   counts,
   stats,
   onChangeView,
@@ -127,6 +129,7 @@ export function Sidebar({
           onDisconnect={onDisconnectWhatsApp}
           qr={whatsAppQr}
           status={whatsAppStatus}
+          token={token}
         />
 
         <div className="flex flex-col rounded-[28px] border border-white/60 bg-white/62 p-4 shadow-soft">

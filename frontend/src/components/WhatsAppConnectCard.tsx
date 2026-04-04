@@ -1,9 +1,11 @@
-import type { WhatsAppQr, WhatsAppStatus } from "../lib/api";
+import { useEffect, useState } from "react";
+import { api, type WhatsAppProfile, type WhatsAppQr, type WhatsAppStatus } from "../lib/api";
 
 type WhatsAppConnectCardProps = {
   status: WhatsAppStatus | null;
   qr: WhatsAppQr | null;
   loading: boolean;
+  token: string;
   compact?: boolean;
   onDisconnect?: () => void;
   disconnecting?: boolean;
@@ -25,14 +27,40 @@ function statusLabel(status: WhatsAppStatus | null) {
   return status.state || "Connecting";
 }
 
+function formatPhone(value: string | null) {
+  if (!value) {
+    return "Unavailable";
+  }
+
+  return value.startsWith("+") ? value : `+${value}`;
+}
+
+function formatPrice(price: number, currency: string) {
+  if (!Number.isFinite(price)) {
+    return currency || "Price unavailable";
+  }
+
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: currency || "MYR",
+    maximumFractionDigits: 2
+  }).format(price);
+}
+
 export function WhatsAppConnectCard({
   status,
   qr,
   loading,
+  token,
   compact = false,
   onDisconnect,
   disconnecting = false
 }: WhatsAppConnectCardProps) {
+  const [showProfilePanel, setShowProfilePanel] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profile, setProfile] = useState<WhatsAppProfile | null>(null);
+
   const helperText = status?.connected
     ? "Your WhatsApp session is active and ready to sync messages."
     : "Scan the QR below with WhatsApp on your phone to connect this CRM workspace.";
@@ -40,7 +68,70 @@ export function WhatsAppConnectCard({
   const instructionTitle = status?.connected ? "Connection ready" : "How to connect";
   const shouldShowQrPanel = !status?.connected && (Boolean(qr?.qr) || Boolean(status?.hasQr) || loading);
   const canDisconnect = Boolean(onDisconnect) && Boolean(status?.connected || disconnecting);
+  const canViewProfile = Boolean(status?.connected && token);
   const disconnectLabel = disconnecting ? "Disconnecting WhatsApp" : "Disconnect WhatsApp";
+
+  useEffect(() => {
+    if (!showProfilePanel || !canViewProfile) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadProfile() {
+      setProfileLoading(true);
+      setProfileError("");
+
+      try {
+        const data = await api.getWhatsAppProfile(token);
+        if (!cancelled) {
+          setProfile(data);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setProfileError(error instanceof Error ? error.message : "Failed to load WhatsApp profile.");
+        }
+      } finally {
+        if (!cancelled) {
+          setProfileLoading(false);
+        }
+      }
+    }
+
+    void loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewProfile, showProfilePanel, token]);
+
+  useEffect(() => {
+    if (!status?.connected) {
+      setShowProfilePanel(false);
+      setProfile(null);
+      setProfileError("");
+    }
+  }, [status?.connected]);
+
+  const profileIconButton = canViewProfile ? (
+    <button
+      aria-label={showProfilePanel ? "Hide WhatsApp profile" : "Show WhatsApp profile"}
+      className={`secondary-button flex h-10 w-10 items-center justify-center rounded-full p-0 ${showProfilePanel ? "bg-emerald-100 text-emerald-950" : ""}`}
+      onClick={() => setShowProfilePanel((current) => !current)}
+      title={showProfilePanel ? "Hide WhatsApp profile" : "Show WhatsApp profile"}
+      type="button"
+    >
+      <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+        <path
+          d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 1 1 14 0"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+        />
+      </svg>
+    </button>
+  ) : null;
 
   const disconnectIconButton = canDisconnect ? (
     <button
@@ -70,6 +161,112 @@ export function WhatsAppConnectCard({
     </button>
   ) : null;
 
+  const profilePanel = showProfilePanel ? (
+    <div className="mt-3 rounded-[24px] border border-white/60 bg-white/78 p-3 shadow-soft">
+      {profileLoading ? (
+        <p className="text-sm text-emerald-900/55">Loading WhatsApp profile...</p>
+      ) : profileError ? (
+        <p className="text-sm text-rose-500">{profileError}</p>
+      ) : profile ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            {profile.profilePictureUrl ? (
+              <img
+                alt={profile.username || profile.phone || "WhatsApp profile"}
+                className="h-14 w-14 rounded-2xl object-cover shadow-soft"
+                src={profile.profilePictureUrl}
+              />
+            ) : (
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-lg font-semibold text-white shadow-soft">
+                {(profile.username || profile.phone || "W").slice(0, 1).toUpperCase()}
+              </div>
+            )}
+
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-ink">{profile.username || "WhatsApp account"}</p>
+              <p className="mt-1 break-all text-xs text-emerald-900/55">{formatPhone(profile.phone)}</p>
+            </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="rounded-[18px] bg-emerald-50/80 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-900/50">Username</p>
+              <p className="mt-1 break-words text-sm font-medium text-ink">{profile.username || "Unavailable"}</p>
+            </div>
+            <div className="rounded-[18px] bg-emerald-50/80 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-900/50">Number</p>
+              <p className="mt-1 break-all text-sm font-medium text-ink">{formatPhone(profile.phone)}</p>
+            </div>
+          </div>
+
+          {profile.businessProfile ? (
+            <div className="rounded-[18px] bg-emerald-50/80 p-3">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-900/50">Category</p>
+                  <p className="mt-1 text-sm font-medium text-ink">{profile.businessProfile.category || "Unavailable"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-900/50">Email</p>
+                  <p className="mt-1 break-all text-sm font-medium text-ink">{profile.businessProfile.email || "Unavailable"}</p>
+                </div>
+              </div>
+              <div className="mt-2">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-900/50">Shop description</p>
+                <p className="mt-1 break-words text-sm text-emerald-950/70">{profile.businessProfile.description || "Unavailable"}</p>
+              </div>
+              <div className="mt-2">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-900/50">Address</p>
+                <p className="mt-1 break-words text-sm text-emerald-950/70">{profile.businessProfile.address || "Unavailable"}</p>
+              </div>
+              <div className="mt-2">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-900/50">Website</p>
+                <p className="mt-1 break-all text-sm text-emerald-950/70">
+                  {profile.businessProfile.website.length ? profile.businessProfile.website.join(", ") : "Unavailable"}
+                </p>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-[18px] bg-emerald-50/80 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-900/50">Catalogue / Shop</p>
+              <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold text-emerald-900/60">
+                {profile.catalog?.products.length || 0} items
+              </span>
+            </div>
+
+            {profile.catalog?.products.length ? (
+              <div className="mt-3 space-y-2">
+                {profile.catalog.products.map((product) => (
+                  <div key={product.id} className="flex gap-3 rounded-[18px] border border-white/60 bg-white/72 p-2.5">
+                    {product.imageUrl ? (
+                      <img alt={product.name} className="h-14 w-14 rounded-2xl object-cover" src={product.imageUrl} />
+                    ) : (
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-[10px] font-semibold uppercase text-emerald-900/55">
+                        Shop
+                      </div>
+                    )}
+
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-ink">{product.name}</p>
+                      <p className="mt-1 text-xs text-emerald-900/55">{formatPrice(product.price, product.currency)}</p>
+                      {product.description ? <p className="mt-1 line-clamp-2 text-xs text-emerald-950/65">{product.description}</p> : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-emerald-950/62">No catalogue or shop items are available for this WhatsApp account.</p>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-emerald-900/55">No WhatsApp profile data is available yet.</p>
+      )}
+    </div>
+  ) : null;
+
   if (compact) {
     return (
       <div className="rounded-[28px] border border-white/60 bg-white/62 p-4 shadow-soft">
@@ -79,6 +276,7 @@ export function WhatsAppConnectCard({
             <h3 className="mt-1 text-sm font-semibold text-ink">Connection</h3>
           </div>
           <div className="flex items-center gap-2">
+            {profileIconButton}
             {disconnectIconButton}
             <span
               className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
@@ -106,6 +304,8 @@ export function WhatsAppConnectCard({
           </p>
         )}
 
+        {profilePanel}
+
       </div>
     );
   }
@@ -119,6 +319,7 @@ export function WhatsAppConnectCard({
           <p className="mt-1.5 text-sm text-emerald-950/62">{helperText}</p>
         </div>
         <div className="flex items-center gap-2">
+          {profileIconButton}
           {disconnectIconButton}
           <span
             className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -129,6 +330,8 @@ export function WhatsAppConnectCard({
           </span>
         </div>
       </div>
+
+      {profilePanel}
 
       <div className="mt-3 flex flex-col items-center justify-center rounded-[24px] bg-white/55 p-4 shadow-soft md:flex-row md:items-center md:justify-between">
         <div className="flex min-h-[160px] w-full max-w-[220px] items-center justify-center rounded-[20px] bg-emerald-50/85 p-4 shadow-soft">

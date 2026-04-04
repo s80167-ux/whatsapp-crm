@@ -269,6 +269,76 @@ function getWhatsAppQr() {
 	};
 }
 
+function getSelfJid() {
+	return sock?.user?.id || null;
+}
+
+function extractPhoneFromJid(jid) {
+	const rawValue = String(jid || '').split('@')[0].split(':')[0].trim();
+	const digits = rawValue.replace(/\D+/g, '');
+	return digits ? normalizePhone(digits) : null;
+}
+
+async function getWhatsAppProfile() {
+	if (!sock || connectionState !== 'open') {
+		return {
+			connected: false,
+			phone: null,
+			username: null,
+			profilePictureUrl: null,
+			businessProfile: null,
+			catalog: null
+		};
+	}
+
+	const jid = getSelfJid();
+	const username = String(sock.user?.name || '').trim() || null;
+	const phone = extractPhoneFromJid(jid);
+
+	const profilePictureUrl = jid
+		? await sock.profilePictureUrl(jid, 'image').catch(() => null)
+		: null;
+
+	const businessProfile = jid
+		? await sock.getBusinessProfile(jid).catch(() => null)
+		: null;
+
+	const catalogResult = jid
+		? await sock.getCatalog({ jid, limit: 10 }).catch(() => ({ products: [] }))
+		: { products: [] };
+
+	return {
+		connected: true,
+		phone,
+		username,
+		profilePictureUrl,
+		businessProfile: businessProfile
+			? {
+				description: businessProfile.description || null,
+				email: businessProfile.email || null,
+				category: businessProfile.category || null,
+				address: businessProfile.address || null,
+				website: Array.isArray(businessProfile.website) ? businessProfile.website.filter(Boolean) : [],
+				businessHours: businessProfile.business_hours || null
+			}
+			: null,
+		catalog: {
+			products: Array.isArray(catalogResult?.products)
+				? catalogResult.products.map((product) => ({
+					id: product.id,
+					name: product.name,
+					description: product.description || null,
+					price: product.price,
+					currency: product.currency,
+					url: product.url || null,
+					availability: product.availability || null,
+					imageUrl: product.imageUrls?.requested || product.imageUrls?.original || Object.values(product.imageUrls || {})[0] || null
+				}))
+				: []
+		}
+	};
+}
+
 async function sendMessageToPhone(phone, message, chatJid) {
 	if (!sock || connectionState !== 'open') throw new Error('WhatsApp is not connected.');
 	const jid = chatJid || phone + '@s.whatsapp.net';
@@ -313,6 +383,7 @@ module.exports = {
 	sendLocationToPhone,
 	getWhatsAppStatus,
 	getWhatsAppQr,
+	getWhatsAppProfile,
 	disconnectWhatsApp,
 	getContactProfile,
 	bindWhatsAppOwner,

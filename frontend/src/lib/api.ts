@@ -56,6 +56,47 @@ export type WhatsAppQr = {
   qr: string | null;
 };
 
+export type WhatsAppProfile = {
+  connected: boolean;
+  phone: string | null;
+  username: string | null;
+  profilePictureUrl: string | null;
+  businessProfile: {
+    description: string | null;
+    email: string | null;
+    category: string | null;
+    address: string | null;
+    website: string[];
+    businessHours: {
+      timezone?: string;
+      config?: Array<{
+        day_of_week: string;
+        mode: string;
+        open_time?: number;
+        close_time?: number;
+      }>;
+      business_config?: Array<{
+        day_of_week: string;
+        mode: string;
+        open_time?: number;
+        close_time?: number;
+      }>;
+    } | null;
+  } | null;
+  catalog: {
+    products: Array<{
+      id: string;
+      name: string;
+      description: string | null;
+      price: number;
+      currency: string;
+      url: string | null;
+      availability: string | null;
+      imageUrl: string | null;
+    }>;
+  } | null;
+};
+
 const configuredApiUrl = import.meta.env.VITE_API_URL;
 const isLocalhost =
   typeof window !== "undefined" &&
@@ -126,6 +167,9 @@ export const api = {
   },
   getWhatsAppQr() {
     return request<WhatsAppQr>("/whatsapp/qr");
+  },
+  getWhatsAppProfile(token: string) {
+    return request<WhatsAppProfile>("/whatsapp/profile", {}, token);
   },
   disconnectWhatsApp(token: string) {
     return request<WhatsAppStatus>(

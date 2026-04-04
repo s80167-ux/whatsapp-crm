@@ -19,6 +19,7 @@ const {
   sendLocationToPhone,
   getWhatsAppStatus,
   getWhatsAppQr,
+  getWhatsAppProfile,
   disconnectWhatsApp,
   getContactProfile,
   bindWhatsAppOwner,
@@ -104,6 +105,15 @@ app.get("/whatsapp/status", (_req, res) => {
 
 app.get("/whatsapp/qr", (_req, res) => {
   res.json(getWhatsAppQr());
+});
+
+app.get("/whatsapp/profile", requireAuth, bindAuthenticatedWhatsAppOwner, async (_req, res) => {
+  try {
+    return res.json(await getWhatsAppProfile());
+  } catch (error) {
+    console.error("Failed to fetch WhatsApp profile:", error);
+    return res.status(500).json({ error: "Failed to fetch WhatsApp profile." });
+  }
 });
 
 app.post("/whatsapp/disconnect", requireAuth, bindAuthenticatedWhatsAppOwner, async (_req, res) => {

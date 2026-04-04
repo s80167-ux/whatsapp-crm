@@ -620,6 +620,7 @@ function App() {
           onDisconnectWhatsApp={handleDisconnectWhatsApp}
           onLogout={handleLogout}
           stats={sidebarStats}
+          token={token}
           userEmail={userEmail}
           whatsAppQr={whatsAppQr}
           whatsAppStatus={whatsAppStatus}
