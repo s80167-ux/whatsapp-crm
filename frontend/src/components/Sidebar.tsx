@@ -47,12 +47,13 @@ export function Sidebar({
     <aside className="glass-panel flex flex-col justify-between self-start border border-white/70 bg-white/58 p-3 xl:sticky xl:top-6">
       <div>
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-[18px] bg-gradient-to-br from-emerald-500 to-teal-600 text-base font-semibold text-white shadow-soft">
-            R
-          </div>
+          <img
+            alt="Rezeki Dashboard logo"
+            className="h-16 w-auto object-contain"
+            src="/asset/rezeki_dashboard_logo_glass.png"
+          />
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-emerald-800/65">Workspace</p>
-            <h2 className="text-base font-semibold text-ink">REZEKI CRM</h2>
           </div>
         </div>
 
