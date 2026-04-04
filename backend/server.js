@@ -35,6 +35,7 @@ if (
 }
 
 const app = express();
+const whatsappRouter = express.Router();
 const port = process.env.PORT || 4000;
 const allowedOrigins = new Set(
   [
@@ -81,6 +82,7 @@ app.get("/", (_req, res) => {
       health: "/health",
       whatsappStatus: "/whatsapp/status",
       whatsappQr: "/whatsapp/qr",
+      whatsappProfile: "/whatsapp/profile",
       whatsappDisconnect: "/whatsapp/disconnect",
       register: "/register",
       login: "/login",
@@ -99,15 +101,15 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.get("/whatsapp/status", (_req, res) => {
+whatsappRouter.get("/status", (_req, res) => {
   res.json(getWhatsAppStatus());
 });
 
-app.get("/whatsapp/qr", (_req, res) => {
+whatsappRouter.get("/qr", (_req, res) => {
   res.json(getWhatsAppQr());
 });
 
-app.get("/whatsapp/profile", requireAuth, bindAuthenticatedWhatsAppOwner, async (_req, res) => {
+whatsappRouter.get("/profile", requireAuth, bindAuthenticatedWhatsAppOwner, async (_req, res) => {
   try {
     return res.json(await getWhatsAppProfile());
   } catch (error) {
@@ -116,7 +118,7 @@ app.get("/whatsapp/profile", requireAuth, bindAuthenticatedWhatsAppOwner, async 
   }
 });
 
-app.post("/whatsapp/disconnect", requireAuth, bindAuthenticatedWhatsAppOwner, async (_req, res) => {
+whatsappRouter.post("/disconnect", requireAuth, bindAuthenticatedWhatsAppOwner, async (_req, res) => {
   try {
     const status = await disconnectWhatsApp();
     return res.json(status);
@@ -125,6 +127,8 @@ app.post("/whatsapp/disconnect", requireAuth, bindAuthenticatedWhatsAppOwner, as
     return res.status(500).json({ error: "Failed to disconnect WhatsApp." });
   }
 });
+
+app.use("/whatsapp", whatsappRouter);
 
 app.post("/register", async (req, res) => {
   try {
@@ -370,6 +374,21 @@ app.post("/send/location", requireAuth, bindAuthenticatedWhatsAppOwner, async (r
 initializeWhatsApp().catch((error) => {
   console.error("Failed to initialize WhatsApp:", error);
 });
+
+console.log(
+  "Registered WhatsApp routes:",
+  whatsappRouter.stack
+    .filter((layer) => layer.route)
+    .map((layer) => {
+      const methods = Object.keys(layer.route.methods)
+        .filter((method) => layer.route.methods[method])
+        .map((method) => method.toUpperCase())
+        .join(",");
+
+      return `${methods} /whatsapp${layer.route.path}`;
+    })
+    .join(" | ")
+);
 
 app.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);
