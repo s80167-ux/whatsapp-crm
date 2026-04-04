@@ -4,7 +4,6 @@ import { ChatWindow } from "./components/ChatWindow";
 import { CustomerPanel } from "./components/CustomerPanel";
 import { LoginForm } from "./components/LoginForm";
 import { Sidebar } from "./components/Sidebar";
-import { TopBar } from "./components/TopBar";
 import { WhatsAppConnectCard } from "./components/WhatsAppConnectCard";
 import { api, type Conversation, type Customer, type Message, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
 import { supabase } from "./lib/supabase";
@@ -335,16 +334,15 @@ function App() {
     return conversations;
   }, [activeView, conversations]);
 
-  const responseRate = useMemo(() => {
-    if (!conversations.length) {
-      return 0;
-    }
-
-    const replied = conversations.filter((conversation) => conversation.lastDirection === "outgoing").length;
-    return Math.round((replied / conversations.length) * 100);
-  }, [conversations]);
-
-  const syncedMessages = useMemo(() => messages.length, [messages]);
+  const sidebarStats = useMemo(
+    () => ({
+      needsReply: conversations.filter((conversation) => conversation.lastDirection === "incoming").length,
+      hotLeads: conversations.filter((conversation) => conversation.status === "hot").length,
+      currentThreadMessages: messages.length,
+      activeContact: selectedConversation?.contactName || customerDraft?.contact_name || selectedPhone || "None"
+    }),
+    [conversations, customerDraft?.contact_name, messages.length, selectedConversation?.contactName, selectedPhone]
+  );
 
   useEffect(() => {
     if (!visibleConversations.length) {
@@ -616,20 +614,13 @@ function App() {
           onChangeView={setActiveView}
           onDisconnectWhatsApp={handleDisconnectWhatsApp}
           onLogout={handleLogout}
+          stats={sidebarStats}
           userEmail={userEmail}
           whatsAppQr={whatsAppQr}
           whatsAppStatus={whatsAppStatus}
         />
 
         <div className="space-y-4">
-          <TopBar
-            activeContactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
-            openChats={visibleConversations.length}
-            responseRate={responseRate}
-            selectedPhone={selectedConversation?.phone || null}
-            syncedMessages={syncedMessages}
-          />
-
           {dashboardError ? (
             <div className="glass-panel px-4 py-3 text-sm text-rose-500">{dashboardError}</div>
           ) : null}

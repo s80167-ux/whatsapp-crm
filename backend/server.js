@@ -38,6 +38,7 @@ const port = process.env.PORT || 4000;
 const allowedOrigins = new Set(
   [
     "http://localhost:5173",
+    "http://127.0.0.1:5173",
     "https://rezekicrm.vercel.app",
     ...String(process.env.FRONTEND_URL || "")
       .split(",")

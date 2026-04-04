@@ -8,6 +8,12 @@ type SidebarProps = {
     pipeline: number;
     broadcast: number;
   };
+  stats: {
+    needsReply: number;
+    hotLeads: number;
+    currentThreadMessages: number;
+    activeContact: string;
+  };
   onChangeView: (view: "inbox" | "pipeline" | "broadcast") => void;
   userEmail: string;
   onLogout: () => void;
@@ -27,6 +33,7 @@ const menu = [
 export function Sidebar({
   activeView,
   counts,
+  stats,
   onChangeView,
   userEmail,
   onLogout,
@@ -37,40 +44,59 @@ export function Sidebar({
   disconnectingWhatsApp
 }: SidebarProps) {
   return (
-    <aside className="glass-panel flex flex-col justify-between self-start border border-white/70 bg-white/58 p-4 xl:sticky xl:top-6">
+    <aside className="glass-panel flex flex-col justify-between self-start border border-white/70 bg-white/58 p-3 xl:sticky xl:top-6">
       <div>
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-[18px] bg-gradient-to-br from-emerald-500 to-teal-600 text-base font-semibold text-white shadow-soft">
-            W
+            R
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-emerald-800/65">Workspace</p>
-            <h2 className="text-base font-semibold text-ink">whatsapp-crm</h2>
+            <h2 className="text-base font-semibold text-ink">REZEKI CRM</h2>
           </div>
         </div>
 
-        <div className="mt-6 space-y-2">
-          {menu.map((item) => (
-            <button
-              key={item.key}
-              className={`flex w-full items-center justify-between rounded-[22px] border px-4 py-3 text-left text-sm font-medium transition ${
-                activeView === item.key
-                  ? "border-emerald-200 bg-emerald-50/90 text-emerald-950 shadow-soft"
-                  : "border-white/45 bg-white/35 text-emerald-950/82 hover:bg-white/60"
-              }`}
-              onClick={() => onChangeView(item.key as "inbox" | "pipeline" | "broadcast")}
-              type="button"
-            >
-              <span>{item.label}</span>
-              <span className="rounded-full bg-emerald-950/6 px-2 py-1 text-xs text-emerald-900/60">
-                {counts[item.key as keyof typeof counts]}
-              </span>
-            </button>
-          ))}
+        <div className="mt-5 rounded-[26px] border border-white/60 bg-white/52 p-3 shadow-soft">
+          <div className="grid grid-cols-2 gap-1.5">
+            {menu.map((item) => (
+              <button
+                key={item.key}
+                className={`flex min-w-0 items-center justify-between rounded-[16px] border px-2.5 py-2 text-left text-xs font-semibold transition ${
+                  activeView === item.key
+                    ? "border-emerald-200 bg-emerald-50/90 text-emerald-950 shadow-soft"
+                    : "border-white/45 bg-white/35 text-emerald-950/82 hover:bg-white/60"
+                }`}
+                onClick={() => onChangeView(item.key as "inbox" | "pipeline" | "broadcast")}
+                type="button"
+              >
+                <span className="truncate">{item.label}</span>
+                <span className="ml-2 rounded-full bg-emerald-950/6 px-1.5 py-0.5 text-[10px] text-emerald-900/60">
+                  {counts[item.key as keyof typeof counts]}
+                </span>
+              </button>
+            ))}
+
+            <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Needs reply</p>
+              <p className="mt-0.5 text-base font-semibold text-ink">{stats.needsReply}</p>
+            </div>
+            <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Hot leads</p>
+              <p className="mt-0.5 text-base font-semibold text-ink">{stats.hotLeads}</p>
+            </div>
+            <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Thread msgs</p>
+              <p className="mt-0.5 text-base font-semibold text-ink">{stats.currentThreadMessages}</p>
+            </div>
+            <div className="col-span-2 rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Active</p>
+              <p className="mt-0.5 truncate text-sm font-semibold text-ink">{stats.activeContact}</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="space-y-3 pt-4">
+      <div className="space-y-3 pt-3">
         <WhatsAppConnectCard
           compact
           disconnecting={disconnectingWhatsApp}
