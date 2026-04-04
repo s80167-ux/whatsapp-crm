@@ -189,11 +189,11 @@ export function WhatsAppConnectCard({
           </div>
 
           <div className="grid gap-2 sm:grid-cols-2">
-            <div className="rounded-[18px] bg-emerald-50/80 px-3 py-2">
+            <div className="min-w-0 rounded-[18px] bg-emerald-50/80 px-3 py-2">
               <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-900/50">Username</p>
               <p className="mt-1 break-words text-sm font-medium text-ink">{profile.username || "Unavailable"}</p>
             </div>
-            <div className="rounded-[18px] bg-emerald-50/80 px-3 py-2">
+            <div className="min-w-0 rounded-[18px] bg-emerald-50/80 px-3 py-2">
               <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-900/50">Number</p>
               <p className="mt-1 break-all text-sm font-medium text-ink">{formatPhone(profile.phone)}</p>
             </div>
@@ -201,12 +201,12 @@ export function WhatsAppConnectCard({
 
           {profile.businessProfile ? (
             <div className="rounded-[18px] bg-emerald-50/80 p-3">
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div>
+              <div className="grid gap-2 md:grid-cols-2">
+                <div className="min-w-0">
                   <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-900/50">Category</p>
-                  <p className="mt-1 text-sm font-medium text-ink">{profile.businessProfile.category || "Unavailable"}</p>
+                  <p className="mt-1 break-words text-sm font-medium text-ink">{profile.businessProfile.category || "Unavailable"}</p>
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-900/50">Email</p>
                   <p className="mt-1 break-all text-sm font-medium text-ink">{profile.businessProfile.email || "Unavailable"}</p>
                 </div>
