@@ -1,4 +1,5 @@
 const { createClient } = require("@supabase/supabase-js");
+const { getPhoneLookupValues, resolveWhatsAppPhone } = require("./wa-identifiers");
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey =
@@ -171,11 +172,13 @@ async function updateOutgoingMessageStatus({ owner_user_id, phone, chat_jid, wa_
 }
 
 async function getMessagesByPhone(phone, ownerUserId) {
+  const lookupValues = await getPhoneLookupValues(phone);
+  const resolvedPhone = await resolveWhatsAppPhone(phone);
   const { data, error } = await supabase
     .from("messages")
     .select("*")
     .eq("owner_user_id", ownerUserId)
-    .eq("phone", phone)
+    .in("phone", lookupValues)
     .order("created_at", { ascending: true });
 
   throwIfTenantSchemaError(error, "messages.owner_user_id");
@@ -184,7 +187,10 @@ async function getMessagesByPhone(phone, ownerUserId) {
     throw error;
   }
 
-  return data;
+  return (data || []).map((item) => ({
+    ...item,
+    phone: resolvedPhone || item.phone
+  }));
 }
 
 async function getConversations(ownerUserId) {
@@ -227,24 +233,46 @@ async function getConversations(ownerUserId) {
     console.warn("Customers lookup failed while building conversations. Falling back to default status.", customerError.message);
   }
 
-  const customerMap = new Map((customerRows || []).map((customer) => [customer.phone, customer]));
+  const customerMap = new Map();
+  const customerChatJidMap = new Map();
+
+  for (const customer of customerRows || []) {
+    const resolvedPhone = await resolveWhatsAppPhone(customer.phone, customer.chat_jid || null);
+
+    if (resolvedPhone) {
+      customerMap.set(resolvedPhone, {
+        ...customer,
+        phone: resolvedPhone
+      });
+    }
+
+    if (customer.chat_jid) {
+      customerChatJidMap.set(customer.chat_jid, {
+        ...customer,
+        phone: resolvedPhone || customer.phone
+      });
+    }
+  }
   const seen = new Set();
   const conversations = [];
 
   for (const row of messageRows || []) {
-    if (seen.has(row.phone)) {
+    const resolvedPhone = await resolveWhatsAppPhone(row.phone, row.chat_jid || null);
+    const matchedCustomer = customerMap.get(resolvedPhone) || customerChatJidMap.get(row.chat_jid) || null;
+
+    if (!resolvedPhone || seen.has(resolvedPhone)) {
       continue;
     }
 
-    seen.add(row.phone);
+    seen.add(resolvedPhone);
     conversations.push({
-      phone: row.phone,
-      chatJid: customerMap.get(row.phone)?.chat_jid || row.chat_jid || null,
-      contactName: customerMap.get(row.phone)?.contact_name || null,
+      phone: resolvedPhone,
+      chatJid: matchedCustomer?.chat_jid || row.chat_jid || null,
+      contactName: matchedCustomer?.contact_name || null,
       lastMessage: row.message,
       timestamp: row.created_at,
       lastDirection: row.direction,
-      status: customerMap.get(row.phone)?.status || "warm"
+      status: matchedCustomer?.status || "warm"
     });
   }
 
@@ -252,11 +280,14 @@ async function getConversations(ownerUserId) {
 }
 
 async function getCustomerByPhone(phone, ownerUserId) {
+  const lookupValues = await getPhoneLookupValues(phone);
   const { data, error } = await supabase
     .from("customers")
     .select("*")
     .eq("owner_user_id", ownerUserId)
-    .eq("phone", phone)
+    .in("phone", lookupValues)
+    .order("updated_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   throwIfTenantSchemaError(error, "customers.owner_user_id");
@@ -265,9 +296,11 @@ async function getCustomerByPhone(phone, ownerUserId) {
     throw error;
   }
 
+  const resolvedPhone = await resolveWhatsAppPhone(phone, data?.chat_jid || null);
+
   return (
     data || {
-      phone,
+      phone: resolvedPhone || phone,
       chat_jid: null,
       contact_name: null,
       status: "warm",
@@ -308,9 +341,10 @@ async function getCustomerInsights(phone, ownerUserId) {
 }
 
 async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, status, notes }) {
+  const canonicalPhone = await resolveWhatsAppPhone(phone, chat_jid || null);
   const payload = {
     owner_user_id,
-    phone,
+    phone: canonicalPhone || phone,
     ...(chat_jid !== undefined ? { chat_jid } : {}),
     ...(contact_name !== undefined ? { contact_name } : {}),
     ...(status !== undefined ? { status } : {}),
@@ -318,11 +352,13 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
     updated_at: new Date().toISOString()
   };
 
+  const lookupValues = await getPhoneLookupValues(phone, chat_jid || null);
   const existing = await supabase
     .from("customers")
     .select("id")
     .eq("owner_user_id", owner_user_id)
-    .eq("phone", phone)
+    .in("phone", lookupValues)
+    .limit(1)
     .maybeSingle();
 
   throwIfTenantSchemaError(existing.error, "customers.owner_user_id");
@@ -380,10 +416,11 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
 }
 
 async function getCustomerOwnerIdsByPhone(phone) {
+  const lookupValues = await getPhoneLookupValues(phone);
   const { data, error } = await supabase
     .from("customers")
     .select("owner_user_id")
-    .eq("phone", phone)
+    .in("phone", lookupValues)
     .not("owner_user_id", "is", null);
 
   throwIfTenantSchemaError(error, "customers.owner_user_id");

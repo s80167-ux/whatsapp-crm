@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Conversation } from "../lib/api";
-import { getDisplayName } from "../lib/display";
+import { getDisplayName, getResolvedPhone } from "../lib/display";
 
 type ChatListProps = {
   activeView: "inbox" | "pipeline" | "broadcast";
@@ -37,9 +37,10 @@ export function ChatList({
     const now = new Date();
 
     return conversations.filter((conversation) => {
+      const resolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid) || "";
       const matchesQuery =
-        conversation.phone.toLowerCase().includes(query.toLowerCase()) ||
-        getDisplayName(conversation.contactName, conversation.phone).toLowerCase().includes(query.toLowerCase()) ||
+        resolvedPhone.toLowerCase().includes(query.toLowerCase()) ||
+        getDisplayName(conversation.contactName, resolvedPhone).toLowerCase().includes(query.toLowerCase()) ||
         conversation.lastMessage.toLowerCase().includes(query.toLowerCase());
 
       if (!matchesQuery) {
@@ -137,25 +138,31 @@ export function ChatList({
       ) : (
         <div className="flex-1 space-y-2 overflow-y-auto pr-1">
           {filteredConversations.map((conversation) => {
-            const active = selectedPhone === conversation.phone;
+            const resolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid);
+            const active = selectedPhone === resolvedPhone;
 
             return (
               <button
-                key={conversation.phone}
+                key={conversation.chatJid || resolvedPhone || conversation.timestamp}
                 className={`w-full rounded-[20px] border px-2 py-2 text-left transition sm:rounded-[24px] sm:px-4 sm:py-3 ${
                   active
                     ? "border-emerald-200 bg-emerald-50/88 shadow-soft"
                     : "border-white/45 bg-white/35 hover:bg-white/60"
                 }`}
-                onClick={() => onSelect(conversation.phone)}
+                disabled={!resolvedPhone}
+                onClick={() => {
+                  if (resolvedPhone) {
+                    onSelect(resolvedPhone);
+                  }
+                }}
                 type="button"
               >
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                   <div className="min-w-0">
                     <p className="break-words text-[11px] font-semibold leading-4 text-ink sm:text-sm sm:leading-5">
-                      {getDisplayName(conversation.contactName, conversation.phone)}
+                      {getDisplayName(conversation.contactName, resolvedPhone)}
                     </p>
-                    <p className="mt-1 break-all text-[10px] text-emerald-900/45 sm:text-xs">{conversation.phone}</p>
+                    <p className="mt-1 break-all text-[10px] text-emerald-900/45 sm:text-xs">{resolvedPhone || "Unavailable"}</p>
                     <p className="mt-1 hidden break-words text-sm leading-5 text-emerald-950/62 md:block">
                       {conversation.lastMessage}
                     </p>

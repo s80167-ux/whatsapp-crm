@@ -6,6 +6,7 @@ import { LoginForm } from "./components/LoginForm";
 import { Sidebar } from "./components/Sidebar";
 import { WhatsAppConnectCard } from "./components/WhatsAppConnectCard";
 import { api, type Conversation, type Customer, type Message, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
+import { getResolvedPhone } from "./lib/display";
 import { supabase } from "./lib/supabase";
 
 type AuthMode = "login" | "register";
@@ -57,11 +58,11 @@ function App() {
           return null;
         }
 
-        if (current && data.some((item) => item.phone === current)) {
+        if (current && data.some((item) => getResolvedPhone(item.phone, item.chatJid) === current)) {
           return current;
         }
 
-        return data[0]?.phone || null;
+        return getResolvedPhone(data[0]?.phone, data[0]?.chatJid) || null;
       });
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to load conversations.");
@@ -302,7 +303,7 @@ function App() {
   }, [saveTimer]);
 
   const selectedConversation = useMemo(
-    () => conversations.find((conversation) => conversation.phone === selectedPhone) || null,
+    () => conversations.find((conversation) => getResolvedPhone(conversation.phone, conversation.chatJid) === selectedPhone) || null,
     [conversations, selectedPhone]
   );
   const activeChatJid = selectedConversation?.chatJid || customerDraft?.chat_jid || null;
@@ -350,11 +351,14 @@ function App() {
       return;
     }
 
-    if (selectedPhone && visibleConversations.some((conversation) => conversation.phone === selectedPhone)) {
+    if (
+      selectedPhone &&
+      visibleConversations.some((conversation) => getResolvedPhone(conversation.phone, conversation.chatJid) === selectedPhone)
+    ) {
       return;
     }
 
-    setSelectedPhone(visibleConversations[0].phone);
+    setSelectedPhone(getResolvedPhone(visibleConversations[0].phone, visibleConversations[0].chatJid));
   }, [selectedPhone, visibleConversations]);
 
   async function handleAuthSubmit() {

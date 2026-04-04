@@ -4,6 +4,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const QRCode = require('qrcode');
 const { saveMessage, upsertCustomer, getCustomerOwnerIdsByPhone } = require('./supabase');
+const { normalizePhone, resolveWhatsAppPhone } = require('./wa-identifiers');
 
 let sock = null;
 let qrData = null;
@@ -29,10 +30,6 @@ async function loadBaileys() {
 	}
 
 	return baileysModulePromise;
-}
-
-function normalizePhone(rawPhone) {
-	return String(rawPhone || '').replace(/\D/g, '');
 }
 
 function bindWhatsAppOwner(ownerUserId) {
@@ -87,7 +84,7 @@ async function persistIncomingMessage(msg) {
 	if (!msg?.message || !msg?.key?.remoteJid || msg.key.fromMe) return;
 	if (msg.key.remoteJid === 'status@broadcast' || msg.key.remoteJid.endsWith('@g.us')) return;
 
-	const phone = normalizePhone(msg.key.remoteJid.split('@')[0]);
+	const phone = await resolveWhatsAppPhone(msg.key.remoteJid, msg.key.remoteJid);
 	const text = extractIncomingText(msg.message).trim();
 	const contactName = extractContactName(msg);
 	if (!phone || !text) return;
