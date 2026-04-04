@@ -1,3 +1,5 @@
+import logoGlass from "../../asset/rezeki_dashboard_logo_glass.png";
+
 type LoginFormProps = {
   email: string;
   password: string;
@@ -31,7 +33,7 @@ export function LoginForm(props: LoginFormProps) {
         <img
           alt="Rezeki Dashboard logo"
           className="mb-4 h-20 w-auto object-contain"
-          src="/asset/rezeki_dashboard_logo_glass.png"
+          src={logoGlass}
         />
         <p className="text-sm text-emerald-950/65">
           Log in to sync conversations, reply from one place, and keep your team focused.

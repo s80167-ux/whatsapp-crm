@@ -1,3 +1,4 @@
+import logoGlass from "../../asset/rezeki_dashboard_logo_glass.png";
 import type { WhatsAppQr, WhatsAppStatus } from "../lib/api";
 import { WhatsAppConnectCard } from "./WhatsAppConnectCard";
 
@@ -50,7 +51,7 @@ export function Sidebar({
           <img
             alt="Rezeki Dashboard logo"
             className="h-16 w-auto object-contain"
-            src="/asset/rezeki_dashboard_logo_glass.png"
+            src={logoGlass}
           />
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-emerald-800/65">Workspace</p>
