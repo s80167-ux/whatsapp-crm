@@ -29,7 +29,7 @@ export function LoginForm(props: LoginFormProps) {
     <div className="glass-panel w-full max-w-md border border-white/70 bg-white/62 p-8">
       <div className="mb-6">
         <p className="text-sm uppercase tracking-[0.35em] text-emerald-800/70">REZEKI CRM</p>
-        <h1 className="mt-3 text-3xl font-semibold text-ink">Rezeki Dashboard</h1>
+        <h1 className="mt-3 text-3xl font-semibold text-ink">REZEKI DASHBOARD</h1>
         <p className="mt-2 text-sm text-emerald-950/65">
           Log in to sync conversations, reply from one place, and keep your team focused.
         </p>
