@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Conversation } from "../lib/api";
-import { getDisplayName, getResolvedPhone } from "../lib/display";
+import { getDisplayName, getDisplayPhone, getResolvedPhone, formatPhoneDisplay } from "../lib/display";
 
 type ChatListProps = {
   activeView: "inbox" | "pipeline" | "broadcast";
@@ -62,7 +62,7 @@ export function ChatList({
   }, [conversations, filter, query]);
 
   return (
-    <section className="glass-panel flex min-h-[220px] flex-col border border-white/70 bg-white/58 p-3 sm:min-h-[420px] sm:p-4 xl:max-h-[calc(100dvh-210px)]">
+    <section className="glass-panel flex min-h-[220px] flex-col border border-white/70 bg-white/58 p-3 sm:min-h-[420px] sm:p-4">
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="hidden text-xs uppercase tracking-[0.25em] text-emerald-800/65 md:block">Conversations</p>
@@ -136,15 +136,16 @@ export function ChatList({
           )}
         </div>
       ) : (
-        <div className="flex-1 space-y-2 overflow-y-auto pr-1">
+        <div className="flex flex-col space-y-2 pr-1">
           {filteredConversations.map((conversation) => {
             const resolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid);
+            const displayPhone = getDisplayPhone(conversation.phone, conversation.chatJid);
             const active = selectedPhone === resolvedPhone;
 
             return (
               <button
                 key={conversation.chatJid || resolvedPhone || conversation.timestamp}
-                className={`w-full rounded-[20px] border px-3 py-3 text-left transition sm:rounded-[24px] sm:px-4 sm:py-3 ${
+                className={`w-full max-w-full min-w-0 overflow-hidden rounded-[20px] border px-3 py-3 text-left transition sm:rounded-[24px] sm:px-4 sm:py-3 ${
                   active
                     ? "border-emerald-200 bg-emerald-50/88 shadow-soft"
                     : "border-white/45 bg-white/35 hover:bg-white/60"
@@ -157,17 +158,19 @@ export function ChatList({
                 }}
                 type="button"
               >
-                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                  <div className="min-w-0">
-                    <p className="break-words text-sm font-semibold leading-5 text-ink sm:text-sm sm:leading-5">
-                      {getDisplayName(conversation.contactName, resolvedPhone)}
+                <div className="min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold leading-5 text-ink sm:text-sm sm:leading-5" title={getDisplayName(conversation.contactName, displayPhone)}>
+                      {getDisplayName(conversation.contactName, displayPhone)}
                     </p>
-                    <p className="mt-1 break-all text-xs text-emerald-900/45 sm:text-xs">{resolvedPhone || "Unavailable"}</p>
-                    <p className="mt-1 hidden break-words text-sm leading-5 text-emerald-950/62 md:block">
+                    <p className="mt-1 truncate text-xs text-emerald-900/45 sm:text-xs" title={formatPhoneDisplay(conversation.phone, conversation.chatJid)}>
+                      {formatPhoneDisplay(conversation.phone, conversation.chatJid)}
+                    </p>
+                    <p className="mt-1 hidden truncate text-sm leading-5 text-emerald-950/62 md:block" title={conversation.lastMessage}>
                       {conversation.lastMessage}
                     </p>
                   </div>
-                  <span className="text-xs text-emerald-900/45 sm:shrink-0 sm:text-xs">{formatTimestamp(conversation.timestamp)}</span>
+                  <span className="shrink-0 text-xs text-emerald-900/45 sm:text-xs">{formatTimestamp(conversation.timestamp)}</span>
                 </div>
               </button>
             );

@@ -60,6 +60,60 @@ export function WhatsAppConnectCard({
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [profile, setProfile] = useState<WhatsAppProfile | null>(null);
+  const [syncDays, setSyncDays] = useState<number>(7);
+  const [savingSync, setSavingSync] = useState(false);
+  const [clearingDb, setClearingDb] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    api.getWhatsAppSettings(token)
+      .then((data) => {
+        if (!cancelled) setSyncDays(data.history_sync_days);
+      })
+      .catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  async function handleSyncDaysChange(newDays: number) {
+    setSyncDays(newDays);
+    setSavingSync(true);
+    try {
+      await api.updateWhatsAppSettings(newDays, token);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingSync(false);
+    }
+  }
+
+  async function handleClearDatabase(e: React.MouseEvent) {
+    e.stopPropagation();
+    console.log("Handle clear database triggered");
+    
+    const firstConfirm = window.confirm("Are you sure you want to completely erase all messages and customer conversations? This action is irreversible!");
+    if (!firstConfirm) return;
+
+    const secondConfirm = window.confirm("FINAL WARNING: This will permanently delete ALL history. Type OK to proceed.");
+    if (!secondConfirm) return;
+
+    console.log("Clear database confirmed, calling API...");
+    setClearingDb(true);
+    try {
+      await api.clearDatabase(token);
+      console.log("Database wiped successfully");
+      alert("Database wiped successfully. You can now start fresh.");
+      window.location.reload();
+    } catch (e) {
+      console.error("Clear database failed:", e);
+      alert("Failed to wipe database: " + String(e));
+    } finally {
+      setClearingDb(false);
+    }
+  }
 
   const helperText = status?.connected
     ? "Your WhatsApp session is active and ready to sync messages."
@@ -306,6 +360,56 @@ export function WhatsAppConnectCard({
 
         {profilePanel}
 
+        <div className="mt-4 border-t border-emerald-900/10 pt-3">
+          <button
+            className="text-[10px] font-semibold uppercase tracking-wider text-emerald-900/40 hover:text-emerald-900/60 transition-colors"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            type="button"
+          >
+            {showAdvanced ? "Hide Advanced Settings" : "Show Advanced Settings"}
+          </button>
+
+          {showAdvanced && (
+            <div className="mt-3 space-y-4">
+              <div className="border-t border-emerald-900/10 pt-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-medium text-emerald-950/72" htmlFor="sync-days-compact">Sync window</label>
+                  <select
+                    id="sync-days-compact"
+                    className="rounded-lg border border-emerald-200 bg-white/70 px-2 py-1 text-[10px] text-emerald-900 shadow-sm outline-none transition-colors focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                    disabled={savingSync}
+                    onChange={(e) => handleSyncDaysChange(Number(e.target.value))}
+                    value={syncDays}
+                  >
+                    <option value={1}>1 Day (Yesterday)</option>
+                    <option value={7}>1 Week (Recent)</option>
+                    <option value={30}>1 Month</option>
+                    <option value={90}>3 Months</option>
+                    <option value={180}>6 Months</option>
+                  </select>
+                </div>
+                <p className="mt-1.5 text-[9px] text-emerald-950/50 leading-tight">
+                  Timeframe for fetching past messages during handshake.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between border-t border-rose-900/10 pt-3">
+                <div>
+                  <p className="text-[10px] font-medium text-rose-950/72">Danger Zone</p>
+                  <p className="text-[9px] text-rose-950/50">Wipe messages & sync fresh</p>
+                </div>
+                <button
+                  className="rounded-lg bg-rose-100 px-2 py-1 text-[10px] font-semibold text-rose-700 transition hover:bg-rose-200 disabled:opacity-50"
+                  onClick={handleClearDatabase}
+                  disabled={clearingDb}
+                >
+                  {clearingDb ? "Clearing..." : "Clear"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
       </div>
     );
   }
@@ -371,6 +475,43 @@ export function WhatsAppConnectCard({
                 <p>4. Wait for the status badge to change to Connected.</p>
               </>
             )}
+          </div>
+          
+          <div className="mt-5 border-t border-emerald-900/10 pt-4">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-emerald-950/72" htmlFor="sync-days">Sync previous chats</label>
+              <select
+                id="sync-days"
+                className="rounded-lg border border-emerald-200 bg-white/70 px-2.5 py-1.5 text-sm text-emerald-900 shadow-sm outline-none transition-colors focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                disabled={savingSync}
+                onChange={(e) => handleSyncDaysChange(Number(e.target.value))}
+                value={syncDays}
+              >
+                <option value={1}>1 Day (Yesterday onward)</option>
+                <option value={7}>1 Week (Recent)</option>
+                <option value={30}>1 Month</option>
+                <option value={90}>3 Months</option>
+                <option value={180}>6 Months</option>
+                <option value={3650}>All Time</option>
+              </select>
+            </div>
+            <p className="mt-2 text-xs text-emerald-950/50">
+              When you link a new device or reconnect, we will fetch past messages within this timeframe.
+            </p>
+          </div>
+
+          <div className="mt-4 flex items-center justify-between border-t border-rose-900/10 pt-4">
+            <div>
+              <p className="text-sm font-medium text-rose-950/72">Danger Zone</p>
+              <p className="text-xs text-rose-950/50">Wipe all messages & sync fresh</p>
+            </div>
+            <button 
+              className="rounded-lg bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-200 disabled:opacity-50"
+              onClick={handleClearDatabase}
+              disabled={clearingDb}
+            >
+              {clearingDb ? "Clearing..." : "Clear Database"}
+            </button>
           </div>
         </div>
       </div>

@@ -47,7 +47,7 @@ export function Sidebar({
   const [isWorkspaceCollapsed, setIsWorkspaceCollapsed] = useState(true);
 
   return (
-    <aside className="glass-panel flex flex-col justify-between self-start border border-white/70 bg-white/58 p-3 xl:sticky xl:top-6">
+    <aside className="glass-panel flex flex-col justify-between self-start border border-white/70 bg-white/58 p-3 xl:sticky xl:top-6 max-h-[calc(100vh-3rem)] overflow-y-auto custom-scrollbar">
       <div>
         <div className="flex items-center gap-3">
           <img
@@ -145,8 +145,25 @@ export function Sidebar({
         <div className="flex flex-col rounded-[28px] border border-white/60 bg-white/62 p-4 shadow-soft">
           <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Signed in</p>
           <p className="mt-2 break-all text-sm font-medium text-ink">{userEmail}</p>
-          <button className="secondary-button mt-3 w-full sm:mt-auto" onClick={onLogout} type="button">
-            Logout
+          <button
+            aria-label="Logout"
+            className="secondary-button group mt-3 flex w-fit items-center justify-center gap-0 overflow-hidden px-3 sm:mt-auto"
+            onClick={onLogout}
+            title="Logout"
+            type="button"
+          >
+            <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
+              <path
+                d="M15 7V5a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-2M10 12h10m0 0-3-3m3 3-3 3"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+              />
+            </svg>
+            <span className="max-w-0 overflow-hidden whitespace-nowrap text-sm transition-all duration-200 group-hover:ml-2 group-hover:max-w-20">
+              Logout
+            </span>
           </button>
         </div>
       </div>

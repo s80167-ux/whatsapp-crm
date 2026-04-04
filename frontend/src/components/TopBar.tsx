@@ -1,17 +1,20 @@
+import { getDisplayPhone } from "../lib/display";
+
 type TopBarProps = {
   activeContactName: string | null;
+  activeChatJid?: string | null;
   openChats: number;
   responseRate: number;
   selectedPhone: string | null;
   syncedMessages: number;
 };
 
-export function TopBar({ activeContactName, openChats, responseRate, selectedPhone, syncedMessages }: TopBarProps) {
+export function TopBar({ activeContactName, activeChatJid, openChats, responseRate, selectedPhone, syncedMessages }: TopBarProps) {
   const stats = [
     { label: "Open chats", value: `${openChats}` },
     { label: "Response rate", value: `${responseRate}%` },
     { label: "Synced messages", value: `${syncedMessages}` },
-    { label: "Active contact", value: activeContactName || selectedPhone || "None" }
+    { label: "Active contact", value: activeContactName || getDisplayPhone(selectedPhone, activeChatJid) || "None" }
   ];
 
   return (

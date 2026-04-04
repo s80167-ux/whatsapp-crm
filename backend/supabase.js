@@ -121,7 +121,7 @@ function throwIfTenantSchemaError(error, columnName) {
   }
 }
 
-async function saveMessage({ owner_user_id, phone, chat_jid, wa_message_id, message, direction, send_status }) {
+async function saveMessage({ owner_user_id, phone, chat_jid, wa_message_id, message, direction, send_status, created_at }) {
   let query = supabase
     .from("messages")
     .insert({
@@ -131,7 +131,8 @@ async function saveMessage({ owner_user_id, phone, chat_jid, wa_message_id, mess
       ...(wa_message_id ? { wa_message_id } : {}),
       message,
       direction,
-      ...(send_status ? { send_status } : {})
+      ...(send_status ? { send_status } : {}),
+      ...(created_at ? { created_at } : {})
     })
     .select()
     .single();
@@ -151,7 +152,8 @@ async function saveMessage({ owner_user_id, phone, chat_jid, wa_message_id, mess
         owner_user_id,
         phone,
         message,
-        direction
+        direction,
+        ...(created_at ? { created_at } : {})
       })
       .select()
       .single());
@@ -391,11 +393,12 @@ async function getCustomerByPhone(phone, ownerUserId) {
 
 async function getCustomerInsights(phone, ownerUserId) {
   const customer = await getCustomerByPhone(phone, ownerUserId);
+  const lookupValues = await getPhoneLookupValues(phone, customer?.chat_jid || null);
   const { data: messages, error } = await supabase
     .from("messages")
     .select("direction, created_at, message")
     .eq("owner_user_id", ownerUserId)
-    .eq("phone", phone)
+    .in("phone", lookupValues)
     .order("created_at", { ascending: false });
 
   throwIfTenantSchemaError(error, "messages.owner_user_id");
@@ -539,6 +542,43 @@ async function getCustomerOwnerIdsByPhone(phone) {
   return (data || []).map((row) => row.owner_user_id).filter(Boolean);
 }
 
+async function getWhatsAppSettings(ownerUserId) {
+  const { data, error } = await supabase
+    .from("whatsapp_profiles")
+    .select("history_sync_days")
+    .eq("owner_user_id", ownerUserId)
+    .maybeSingle();
+
+  if (error && error.code !== "42P01") {
+    console.error("Failed to fetch WhatsApp settings:", error);
+  }
+
+  return { history_sync_days: data?.history_sync_days ?? 7 };
+}
+
+async function upsertWhatsAppProfile({ owner_user_id, phone, username, profile_picture_url, history_sync_days }) {
+  const payload = {
+    owner_user_id,
+    ...(phone !== undefined ? { phone } : {}),
+    ...(username !== undefined ? { username } : {}),
+    ...(profile_picture_url !== undefined ? { profile_picture_url } : {}),
+    ...(history_sync_days !== undefined ? { history_sync_days } : {}),
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabase
+    .from("whatsapp_profiles")
+    .upsert(payload, { onConflict: "owner_user_id" })
+    .select()
+    .single();
+
+  if (error && error.code !== "42P01") {
+    throw error;
+  }
+
+  return data;
+}
+
 module.exports = {
   supabase,
   saveMessage,
@@ -548,5 +588,8 @@ module.exports = {
   getCustomerByPhone,
   getCustomerInsights,
   upsertCustomer,
-  getCustomerOwnerIdsByPhone
+  getCustomerOwnerIdsByPhone,
+  getWhatsAppSettings,
+  upsertWhatsAppProfile,
+  supabase
 };

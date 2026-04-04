@@ -1,14 +1,18 @@
-import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ComponentProps, type ReactNode } from "react";
 import type { Message } from "../lib/api";
-import { getDisplayName } from "../lib/display";
+import { CustomerPanel } from "./CustomerPanel";
+import { getDisplayName, getDisplayPhone, formatPhoneDisplay } from "../lib/display";
 
 type ChatWindowProps = {
   contactName: string | null;
   phone: string | null;
+  chatJid?: string | null;
+  profilePictureUrl?: string | null;
   messages: Message[];
   messageText: string;
   loading: boolean;
   sending: boolean;
+  customerPanelProps?: ComponentProps<typeof CustomerPanel> | null;
   onChangeMessage: (value: string) => void;
   onSend: () => void;
   onSendAttachment: (file: File, caption: string) => Promise<void> | void;
@@ -72,10 +76,13 @@ export function ChatWindow(props: ChatWindowProps) {
   const {
     contactName,
     phone,
+    chatJid,
+    profilePictureUrl,
     messages,
     messageText,
     loading,
     sending,
+    customerPanelProps,
     onChangeMessage,
     onSend,
     onSendAttachment,
@@ -100,6 +107,11 @@ export function ChatWindow(props: ChatWindowProps) {
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [composerError, setComposerError] = useState("");
+  const [showCustomerProfile, setShowCustomerProfile] = useState(false);
+
+  const displayPhone = getDisplayPhone(phone, chatJid);
+  const title = getDisplayName(contactName, displayPhone);
+  const avatarLabel = title.slice(0, 2).toUpperCase();
 
   function updateStickToBottom() {
     const container = listRef.current;
@@ -142,17 +154,31 @@ export function ChatWindow(props: ChatWindowProps) {
 
     if (changedConversation) {
       stickToBottomRef.current = true;
-      bottomRef.current?.scrollIntoView({ behavior: "auto" });
+      
+      requestAnimationFrame(() => {
+        if (listRef.current) {
+          listRef.current.scrollTop = listRef.current.scrollHeight;
+        }
+      });
+
       setShowQuickReplies(false);
       setShowAttachmentMenu(false);
       setSelectedFile(null);
       setAttachmentCaption("");
       setComposerError("");
+      setShowCustomerProfile(false);
       return;
     }
 
     if (hasNewLastMessage && stickToBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      requestAnimationFrame(() => {
+        if (listRef.current) {
+          listRef.current.scrollTo({
+            top: listRef.current.scrollHeight,
+            behavior: "smooth"
+          });
+        }
+      });
     }
   }, [messages, phone]);
 
@@ -269,14 +295,56 @@ export function ChatWindow(props: ChatWindowProps) {
   return (
     <section className="glass-panel flex min-h-[120px] flex-col overflow-visible border border-white/70 bg-white/58 p-3 sm:min-h-[520px] sm:p-4 xl:max-h-[calc(100dvh-210px)]">
       <div className="mb-3 rounded-[26px] border border-white/60 bg-white/72 px-4 py-3 shadow-soft">
-        <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Active conversation</p>
-        <h3 className="mt-1 text-lg font-semibold text-ink sm:text-xl">{getDisplayName(contactName, phone)}</h3>
-        <p className="mt-1 break-all text-sm text-emerald-900/45">{phone}</p>
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Active conversation</p>
+            <h3 className="mt-1 text-lg font-semibold text-ink sm:text-xl">{title}</h3>
+            <p className="mt-1 break-all text-sm text-emerald-900/45">{formatPhoneDisplay(phone, chatJid)}</p>
+          </div>
+
+          {customerPanelProps ? (
+            <button
+              aria-label={showCustomerProfile ? "Hide customer profile" : "Show customer profile"}
+              className="group flex shrink-0 items-center gap-3 rounded-[22px] bg-emerald-50/80 px-2.5 py-2 shadow-soft transition hover:bg-white"
+              onClick={() => setShowCustomerProfile((current) => !current)}
+              type="button"
+            >
+              {profilePictureUrl ? (
+                <img
+                  alt={title}
+                  className="h-12 w-12 rounded-2xl object-cover shadow-soft"
+                  src={profilePictureUrl}
+                />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-sm font-semibold text-white shadow-soft">
+                  {avatarLabel}
+                </div>
+              )}
+              <div className="hidden min-w-0 text-left sm:block">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-800/55">Profile</p>
+                <p className="truncate text-sm font-medium text-emerald-950/72 group-hover:text-emerald-950">
+                  {showCustomerProfile ? "Hide customer" : "View customer"}
+                </p>
+              </div>
+            </button>
+          ) : null}
+        </div>
       </div>
+
+      {showCustomerProfile && customerPanelProps ? (
+        <div className="mb-3">
+          <CustomerPanel
+            {...customerPanelProps}
+            mobileCollapsed={false}
+            onClose={() => setShowCustomerProfile(false)}
+            variant="inline"
+          />
+        </div>
+      ) : null}
 
       <div
         ref={listRef}
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-[28px] border border-emerald-100/80 bg-[rgba(219,245,228,0.7)] p-3 sm:p-4"
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-[28px] border border-emerald-100/80 bg-[rgba(233,246,238,0.92)] p-3 sm:p-4"
         onScroll={updateStickToBottom}
       >
         {loading ? (
@@ -292,16 +360,16 @@ export function ChatWindow(props: ChatWindowProps) {
               className={`flex ${item.direction === "outgoing" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[88%] rounded-[24px] px-4 py-3 shadow-soft sm:max-w-[80%] ${
+                className={`max-w-[88%] overflow-hidden rounded-[24px] px-4 py-3 shadow-soft sm:max-w-[80%] ${
                   item.direction === "outgoing"
-                    ? "bg-gradient-to-br from-emerald-500 to-green-400 text-white"
-                    : "border border-white/75 bg-white/92 text-emerald-950/82"
+                    ? "bg-gradient-to-br from-emerald-700 via-emerald-600 to-green-500 text-white"
+                    : "border border-emerald-200/90 bg-white text-emerald-950/88"
                 }`}
               >
-                <p className="text-sm leading-6">{item.message}</p>
+                <p className="whitespace-pre-wrap break-words text-sm leading-6">{item.message}</p>
                 <p
                   className={`mt-2 text-right text-[11px] ${
-                    item.direction === "outgoing" ? "text-white/75" : "text-emerald-900/42"
+                    item.direction === "outgoing" ? "text-white/78" : "text-emerald-900/46"
                   }`}
                 >
                   {item.direction === "outgoing"

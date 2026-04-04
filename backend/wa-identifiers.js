@@ -11,16 +11,29 @@ function normalizePhone(rawPhone) {
   return String(rawPhone || "").replace(/\D/g, "");
 }
 
-function extractDigits(value) {
+function getIdentifierMeta(value) {
   const rawValue = String(value || "").trim();
 
   if (!rawValue) {
-    return "";
+    return {
+      rawValue: "",
+      server: "",
+      digits: ""
+    };
   }
 
-  const jidUser = rawValue.split("@")[0] || "";
+  const [jidUser = "", server = ""] = rawValue.split("@");
   const deviceFreeValue = jidUser.split(":")[0] || "";
-  return normalizePhone(deviceFreeValue);
+
+  return {
+    rawValue,
+    server: server.trim().toLowerCase(),
+    digits: normalizePhone(deviceFreeValue)
+  };
+}
+
+function extractDigits(value) {
+  return getIdentifierMeta(value).digits;
 }
 
 async function readMappingFile(fileName) {
@@ -59,14 +72,56 @@ async function resolveLidFromPhone(value) {
   return normalizePhone(await readMappingFile(`lid-mapping-${digits}.json`)) || null;
 }
 
-async function resolveWhatsAppPhone(primaryValue, chatJid) {
-  const fromPrimary = await resolvePhoneFromIdentifier(primaryValue);
+async function resolveIdentifierCandidate(value) {
+  const meta = getIdentifierMeta(value);
 
-  if (fromPrimary) {
-    return fromPrimary;
+  if (!meta.digits) {
+    return null;
   }
 
-  return resolvePhoneFromIdentifier(chatJid);
+  const mappedPhone = await readMappingFile(`lid-mapping-${meta.digits}_reverse.json`);
+  const canonicalPhone = normalizePhone(mappedPhone || meta.digits) || null;
+
+  return {
+    ...meta,
+    canonicalPhone,
+    isMapped: Boolean(mappedPhone),
+    isDirectPhoneJid: meta.server === "s.whatsapp.net" || meta.server === "c.us",
+    isLidJid: meta.server === "lid"
+  };
+}
+
+async function resolveWhatsAppPhone(primaryValue, chatJid) {
+  const [primaryCandidate, chatCandidate] = await Promise.all([
+    resolveIdentifierCandidate(primaryValue),
+    resolveIdentifierCandidate(chatJid)
+  ]);
+
+  const candidates = [primaryCandidate, chatCandidate].filter(Boolean);
+
+  const mappedCandidate = candidates.find((candidate) => candidate.isMapped);
+
+  if (mappedCandidate?.canonicalPhone) {
+    return mappedCandidate.canonicalPhone;
+  }
+
+  const directPhoneCandidate = candidates.find((candidate) => candidate.isDirectPhoneJid);
+
+  if (directPhoneCandidate?.canonicalPhone) {
+    return directPhoneCandidate.canonicalPhone;
+  }
+
+  const nonLidCandidate = candidates.find((candidate) => !candidate.isLidJid);
+
+  if (nonLidCandidate?.canonicalPhone) {
+    return nonLidCandidate.canonicalPhone;
+  }
+
+  if (primaryCandidate?.canonicalPhone) {
+    return primaryCandidate.canonicalPhone;
+  }
+
+  return chatCandidate?.canonicalPhone || null;
 }
 
 async function getPhoneLookupValues(value, chatJid) {

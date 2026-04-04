@@ -11,7 +11,9 @@ const {
   saveMessage,
   getCustomerByPhone,
   getCustomerInsights,
-  upsertCustomer
+  upsertCustomer,
+  getWhatsAppSettings,
+  upsertWhatsAppProfile
 } = require("./supabase");
 const {
   initializeWhatsApp,
@@ -119,6 +121,31 @@ whatsappRouter.get("/profile", requireAuth, bindAuthenticatedWhatsAppOwner, asyn
   }
 });
 
+whatsappRouter.get("/settings", requireAuth, async (req, res) => {
+  try {
+    const settings = await getWhatsAppSettings(req.user.sub);
+    return res.json(settings);
+  } catch (error) {
+    console.error("Failed to fetch WhatsApp settings:", error);
+    return res.status(500).json({ error: "Failed to fetch WhatsApp settings." });
+  }
+});
+
+whatsappRouter.put("/settings", requireAuth, async (req, res) => {
+  try {
+    const { history_sync_days } = req.body;
+    if (typeof history_sync_days !== "number" || history_sync_days < 1) {
+      return res.status(400).json({ error: "Invalid history sync days." });
+    }
+    await upsertWhatsAppProfile({ owner_user_id: req.user.sub, history_sync_days });
+    const settings = await getWhatsAppSettings(req.user.sub);
+    return res.json(settings);
+  } catch (error) {
+    console.error("Failed to update WhatsApp settings:", error);
+    return res.status(500).json({ error: "Failed to update WhatsApp settings." });
+  }
+});
+
 whatsappRouter.post("/disconnect", requireAuth, bindAuthenticatedWhatsAppOwner, async (_req, res) => {
   try {
     const status = await disconnectWhatsApp();
@@ -126,6 +153,29 @@ whatsappRouter.post("/disconnect", requireAuth, bindAuthenticatedWhatsAppOwner, 
   } catch (error) {
     console.error("Failed to disconnect WhatsApp:", error);
     return res.status(500).json({ error: "Failed to disconnect WhatsApp." });
+  }
+});
+
+whatsappRouter.delete("/clear", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const owner_user_id = req.user?.sub;
+    if (!owner_user_id) throw new Error("No user ID found");
+
+    console.log(`[CLEAR DB] Wiping tables for owner: ${owner_user_id}`);
+    const { supabase } = require('./supabase');
+
+    const messageResult = await supabase.from('messages').delete().eq('owner_user_id', owner_user_id);
+    if (messageResult.error) console.error(`[CLEAR DB] Message deletion error:`, messageResult.error);
+    else console.log(`[CLEAR DB] Messages wiped successfully.`);
+
+    const customerResult = await supabase.from('customers').delete().eq('owner_user_id', owner_user_id);
+    if (customerResult.error) console.error(`[CLEAR DB] Customer deletion error:`, customerResult.error);
+    else console.log(`[CLEAR DB] Customers wiped successfully.`);
+
+    res.json({ success: true, message: "Database cleared successfully" });
+  } catch (error) {
+    console.error(`[CLEAR DB] Unhandled error:`, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -174,6 +224,7 @@ app.get("/conversations", requireAuth, bindAuthenticatedWhatsAppOwner, async (re
     return res.status(500).json({ error: "Failed to fetch conversations." });
   }
 });
+
 
 app.get("/messages/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {

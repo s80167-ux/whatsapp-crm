@@ -48,3 +48,14 @@ on public.messages (owner_user_id, phone, created_at desc);
 
 create unique index if not exists customers_owner_phone_idx
 on public.customers (owner_user_id, phone);
+
+create table if not exists public.whatsapp_profiles (
+  owner_user_id uuid primary key references auth.users(id) on delete cascade,
+  phone text,
+  username text,
+  profile_picture_url text,
+  history_sync_days int not null default 7,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.whatsapp_profiles disable row level security;

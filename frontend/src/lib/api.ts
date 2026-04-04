@@ -109,6 +109,10 @@ export type WhatsAppProfile = {
   } | null;
 };
 
+export type WhatsAppSettings = {
+  history_sync_days: number;
+};
+
 const configuredApiUrl = import.meta.env.VITE_API_URL;
 const isLocalhost =
   typeof window !== "undefined" &&
@@ -188,11 +192,31 @@ export const api = {
   getWhatsAppProfile(token: string) {
     return request<WhatsAppProfile>("/whatsapp/profile", {}, token);
   },
+  clearDatabase(token: string) {
+    return request<{ success: boolean; message: string }>(
+      "/whatsapp/clear",
+      { method: "DELETE" },
+      token
+    );
+  },
   disconnectWhatsApp(token: string) {
     return request<WhatsAppStatus>(
       "/whatsapp/disconnect",
       {
         method: "POST"
+      },
+      token
+    );
+  },
+  getWhatsAppSettings(token: string) {
+    return request<WhatsAppSettings>("/whatsapp/settings", {}, token);
+  },
+  updateWhatsAppSettings(history_sync_days: number, token: string) {
+    return request<WhatsAppSettings>(
+      "/whatsapp/settings",
+      {
+        method: "PUT",
+        body: JSON.stringify({ history_sync_days })
       },
       token
     );

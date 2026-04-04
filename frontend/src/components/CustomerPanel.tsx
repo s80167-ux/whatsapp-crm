@@ -1,9 +1,11 @@
 import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type CustomerStatus } from "../lib/api";
+import { formatPhoneDisplay, getDisplayPhone } from "../lib/display";
 
-type CustomerPanelProps = {
+export type CustomerPanelProps = {
   about: string | null;
   contactName: string | null;
   phone: string | null;
+  chatJid?: string | null;
   profilePictureUrl: string | null;
   status: CustomerStatus;
   notes: string;
@@ -19,6 +21,8 @@ type CustomerPanelProps = {
   onToggleMobileCollapse?: () => void;
   onStatusChange: (value: CustomerStatus) => void;
   onNotesChange: (value: string) => void;
+  onClose?: () => void;
+  variant?: "panel" | "inline";
 };
 
 function getInitials(contactName: string | null, phone: string | null) {
@@ -52,6 +56,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
     about,
     contactName,
     phone,
+    chatJid,
     profilePictureUrl,
     status,
     notes,
@@ -66,36 +71,66 @@ export function CustomerPanel(props: CustomerPanelProps) {
     mobileCollapsed = false,
     onToggleMobileCollapse,
     onStatusChange,
-    onNotesChange
+    onNotesChange,
+    onClose,
+    variant = "panel"
   } = props;
 
-  const title = contactName || phone || "No customer selected";
+  const visiblePhone = getDisplayPhone(phone, chatJid);
+  const title = contactName || visiblePhone || "No customer selected";
   const initials = getInitials(contactName, phone);
   const activityLabel = lastDirection ? `${lastDirection === "incoming" ? "Incoming" : "Outgoing"} message` : "No synced messages";
   const usernameLabel = contactName || "Unavailable";
-  const phoneLabel = phone || "Unavailable";
+  const phoneLabel = formatPhoneDisplay(phone, chatJid);
+  const isInline = variant === "inline";
+  const contentClasses = isInline
+    ? "mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1"
+    : `${mobileCollapsed ? "hidden" : "mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1"} lg:mt-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:space-y-3 lg:overflow-y-auto lg:pr-1`;
 
   return (
-    <aside className="glass-panel flex flex-col overflow-hidden border border-white/70 bg-white/58 p-4">
-      <button
-        className="flex w-full items-center justify-between gap-3 text-left lg:hidden"
-        onClick={onToggleMobileCollapse}
-        type="button"
-      >
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Customer info</p>
-          <p className="mt-1 truncate text-sm font-medium text-ink">{title}</p>
+    <aside className={`glass-panel flex flex-col overflow-hidden border border-white/70 bg-white/58 p-4 ${isInline ? "shadow-soft" : ""}`}>
+      {isInline ? (
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Customer profile</p>
+            <p className="mt-1 truncate text-sm font-medium text-ink">{title}</p>
+          </div>
+          {onClose ? (
+            <button
+              aria-label="Close customer profile"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/82 text-emerald-900/60 shadow-soft transition hover:bg-white hover:text-emerald-950"
+              onClick={onClose}
+              type="button"
+            >
+              <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
+                <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+              </svg>
+            </button>
+          ) : null}
         </div>
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/70 text-emerald-900/65 shadow-soft">
-          <svg className={`h-4 w-4 transition ${mobileCollapsed ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24">
-            <path d="m6 9 6 6 6-6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-          </svg>
-        </span>
-      </button>
+      ) : (
+        <>
+          <button
+            className="flex w-full items-center justify-between gap-3 text-left lg:hidden"
+            onClick={onToggleMobileCollapse}
+            type="button"
+          >
+            <div className="min-w-0">
+              <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Customer info</p>
+              <p className="mt-1 truncate text-sm font-medium text-ink">{title}</p>
+            </div>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/70 text-emerald-900/65 shadow-soft">
+              <svg className={`h-4 w-4 transition ${mobileCollapsed ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24">
+                <path d="m6 9 6 6 6-6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+              </svg>
+            </span>
+          </button>
 
-      <p className="hidden text-xs uppercase tracking-[0.25em] text-emerald-800/65 lg:block">Customer info</p>
+          <p className="hidden text-xs uppercase tracking-[0.25em] text-emerald-800/65 lg:block">Customer info</p>
+        </>
+      )}
 
-      <div className={`${mobileCollapsed ? "hidden" : "mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1"} lg:mt-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:space-y-3 lg:overflow-y-auto lg:pr-1`}>
+      <div className={contentClasses}>
         <div className="rounded-[28px] bg-white/68 p-4 shadow-soft">
           <div className="flex flex-col gap-4 sm:items-center sm:text-center lg:items-start lg:text-left xl:items-center xl:text-center">
             {profilePictureUrl ? (
