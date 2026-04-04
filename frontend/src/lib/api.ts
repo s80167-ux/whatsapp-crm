@@ -1,3 +1,7 @@
+export const CUSTOMER_STATUSES = ["new_lead", "interested", "processing", "closed_won", "closed_lost"] as const;
+
+export type CustomerStatus = (typeof CUSTOMER_STATUSES)[number];
+
 export type AuthResponse = {
   token: string;
   user: {
@@ -13,7 +17,7 @@ export type Conversation = {
   lastMessage: string;
   timestamp: string;
   lastDirection: "incoming" | "outgoing";
-  status: "hot" | "warm" | "cold";
+  status: CustomerStatus;
 };
 
 export type Message = {
@@ -31,7 +35,7 @@ export type Customer = {
   phone: string;
   chat_jid?: string | null;
   contact_name?: string | null;
-  status: "hot" | "warm" | "cold";
+  status: CustomerStatus;
   notes: string;
   updated_at?: string;
   profile_picture_url?: string | null;

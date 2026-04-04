@@ -3,6 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
+const VALID_CUSTOMER_STATUSES = ["new_lead", "interested", "processing", "closed_won", "closed_lost"];
 const { registerUser, loginUser, requireAuth } = require("./auth");
 const {
   getConversations,
@@ -210,8 +211,8 @@ app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
       return res.status(400).json({ error: "Phone is required." });
     }
 
-    if (!["hot", "warm", "cold"].includes(status)) {
-      return res.status(400).json({ error: "Status must be hot, warm, or cold." });
+    if (!VALID_CUSTOMER_STATUSES.includes(status)) {
+      return res.status(400).json({ error: "Status must be one of: new_lead, interested, processing, closed_won, closed_lost." });
     }
 
     await upsertCustomer({

@@ -5,13 +5,14 @@ import { CustomerPanel } from "./components/CustomerPanel";
 import { LoginForm } from "./components/LoginForm";
 import { Sidebar } from "./components/Sidebar";
 import { WhatsAppConnectCard } from "./components/WhatsAppConnectCard";
-import { api, type Conversation, type Customer, type Message, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
+import { api, CUSTOMER_STATUSES, type Conversation, type Customer, type Message, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
 import { getResolvedPhone } from "./lib/display";
 import { supabase } from "./lib/supabase";
 
 type AuthMode = "login" | "register";
 type SidebarView = "inbox" | "pipeline" | "broadcast";
 const conversationPollMs = 8000;
+const ACTIVE_CUSTOMER_STATUSES = CUSTOMER_STATUSES.filter((status) => !status.startsWith("closed_"));
 
 function App() {
   const [mode, setMode] = useState<AuthMode>("login");
@@ -314,7 +315,7 @@ function App() {
 
     return {
       inbox: conversations.length,
-      pipeline: conversations.filter((conversation) => ["hot", "warm"].includes(conversation.status)).length,
+      pipeline: conversations.filter((conversation) => ACTIVE_CUSTOMER_STATUSES.includes(conversation.status)).length,
       broadcast: conversations.filter((conversation) => now - new Date(conversation.timestamp).getTime() > 24 * 60 * 60 * 1000)
         .length
     };
@@ -324,7 +325,7 @@ function App() {
     const now = Date.now();
 
     if (activeView === "pipeline") {
-      return conversations.filter((conversation) => ["hot", "warm"].includes(conversation.status));
+      return conversations.filter((conversation) => ACTIVE_CUSTOMER_STATUSES.includes(conversation.status));
     }
 
     if (activeView === "broadcast") {
@@ -339,7 +340,7 @@ function App() {
   const sidebarStats = useMemo(
     () => ({
       needsReply: conversations.filter((conversation) => conversation.lastDirection === "incoming").length,
-      hotLeads: conversations.filter((conversation) => conversation.status === "hot").length,
+      activeLeads: conversations.filter((conversation) => ACTIVE_CUSTOMER_STATUSES.includes(conversation.status)).length,
       currentThreadMessages: messages.length,
       activeContact: selectedConversation?.contactName || customerDraft?.contact_name || selectedPhone || "None"
     }),
@@ -584,7 +585,7 @@ function App() {
     setSaveTimer(timeout);
   }
 
-  const selectedStatus = customerDraft?.status || "warm";
+  const selectedStatus = customerDraft?.status || "new_lead";
   const selectedNotes = customerDraft?.notes || "";
 
   if (!token) {
@@ -688,7 +689,7 @@ function App() {
                       last_message_at: customerDraft?.last_message_at || null,
                       last_message_preview: customerDraft?.last_message_preview || null,
                       last_direction: customerDraft?.last_direction || null,
-                      status: customerDraft?.status || "warm",
+                      status: customerDraft?.status || "new_lead",
                       notes: value
                     };
 
@@ -773,7 +774,7 @@ function App() {
                     last_message_at: customerDraft?.last_message_at || null,
                     last_message_preview: customerDraft?.last_message_preview || null,
                     last_direction: customerDraft?.last_direction || null,
-                    status: customerDraft?.status || "warm",
+                    status: customerDraft?.status || "new_lead",
                     notes: value
                   };
 

@@ -1,3 +1,5 @@
+import { CUSTOMER_STATUSES, type CustomerStatus } from "../lib/api";
+
 type CustomerPanelProps = {
   about: string | null;
   contactName: string | null;
@@ -19,7 +21,13 @@ type CustomerPanelProps = {
   onNotesChange: (value: string) => void;
 };
 
-const statuses = ["hot", "warm", "cold"];
+const statusLabels: Record<CustomerStatus, string> = {
+  new_lead: "New Lead",
+  interested: "Interested",
+  processing: "Processing",
+  closed_won: "Close Won",
+  closed_lost: "Close Lost"
+};
 
 function getInitials(contactName: string | null, phone: string | null) {
   const source = contactName || phone || "?";
@@ -167,10 +175,10 @@ export function CustomerPanel(props: CustomerPanelProps) {
           <p className="text-sm font-medium text-emerald-950/70">Lead status</p>
           {loading ? <p className="mt-2 text-xs text-emerald-900/45">Loading customer details...</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            {statuses.map((item) => (
+            {CUSTOMER_STATUSES.map((item) => (
               <button
                 key={item}
-                className={`rounded-full px-4 py-2 text-sm font-medium capitalize transition ${
+                className={`rounded-full px-4 py-2 text-sm font-medium transition ${
                   status === item
                     ? "bg-gradient-to-r from-emerald-500 to-green-400 text-white shadow-soft"
                     : "bg-white/80 text-emerald-900/60 hover:bg-white"
@@ -178,7 +186,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
                 onClick={() => onStatusChange(item)}
                 type="button"
               >
-                {item}
+                {statusLabels[item]}
               </button>
             ))}
           </div>

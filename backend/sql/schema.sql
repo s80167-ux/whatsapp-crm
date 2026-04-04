@@ -20,7 +20,7 @@ create table if not exists public.customers (
   phone text not null,
   chat_jid text,
   contact_name text,
-  status text not null default 'warm' check (status in ('hot', 'warm', 'cold')),
+  status text not null default 'new_lead' check (status in ('new_lead', 'interested', 'processing', 'closed_won', 'closed_lost')),
   notes text not null default '',
   updated_at timestamptz not null default now()
 );
@@ -33,6 +33,10 @@ alter table public.customers add column if not exists id uuid default gen_random
 alter table public.customers add column if not exists owner_user_id uuid references auth.users(id) on delete cascade;
 alter table public.customers add column if not exists chat_jid text;
 alter table public.customers add column if not exists contact_name text;
+alter table public.customers alter column status set default 'new_lead';
+alter table public.customers drop constraint if exists customers_status_check;
+alter table public.customers add constraint customers_status_check
+  check (status in ('new_lead', 'interested', 'processing', 'closed_won', 'closed_lost'));
 
 alter table public.customers disable row level security;
 

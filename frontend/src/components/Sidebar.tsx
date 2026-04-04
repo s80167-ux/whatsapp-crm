@@ -13,7 +13,7 @@ type SidebarProps = {
   };
   stats: {
     needsReply: number;
-    hotLeads: number;
+    activeLeads: number;
     currentThreadMessages: number;
     activeContact: string;
   };
@@ -105,8 +105,8 @@ export function Sidebar({
                 <p className="mt-0.5 text-base font-semibold text-ink">{stats.needsReply}</p>
               </div>
               <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
-                <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Hot leads</p>
-                <p className="mt-0.5 text-base font-semibold text-ink">{stats.hotLeads}</p>
+                <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Active leads</p>
+                <p className="mt-0.5 text-base font-semibold text-ink">{stats.activeLeads}</p>
               </div>
               <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
                 <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Thread msgs</p>

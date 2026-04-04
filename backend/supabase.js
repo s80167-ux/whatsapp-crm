@@ -272,7 +272,7 @@ async function getConversations(ownerUserId) {
       lastMessage: row.message,
       timestamp: row.created_at,
       lastDirection: row.direction,
-      status: matchedCustomer?.status || "warm"
+      status: matchedCustomer?.status || "new_lead"
     });
   }
 
@@ -303,7 +303,7 @@ async function getCustomerByPhone(phone, ownerUserId) {
       phone: resolvedPhone || phone,
       chat_jid: null,
       contact_name: null,
-      status: "warm",
+      status: "new_lead",
       notes: ""
     }
   );
