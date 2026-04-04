@@ -147,7 +147,7 @@ export function Sidebar({
           <p className="mt-2 break-all text-sm font-medium text-ink">{userEmail}</p>
           <button
             aria-label="Logout"
-            className="secondary-button group mt-3 flex w-fit items-center justify-center gap-0 overflow-hidden px-3 sm:mt-auto"
+            className="group mt-3 flex w-fit appearance-none items-center justify-center gap-0 overflow-hidden border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-emerald-900/72 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent sm:mt-auto"
             onClick={onLogout}
             title="Logout"
             type="button"

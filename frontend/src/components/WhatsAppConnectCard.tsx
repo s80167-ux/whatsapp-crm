@@ -170,7 +170,7 @@ export function WhatsAppConnectCard({
   const profileIconButton = canViewProfile ? (
     <button
       aria-label={showProfilePanel ? "Hide WhatsApp profile" : "Show WhatsApp profile"}
-      className={`secondary-button flex h-10 w-10 items-center justify-center rounded-full p-0 ${showProfilePanel ? "bg-emerald-100 text-emerald-950" : ""}`}
+      className={`flex h-10 w-10 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent ${showProfilePanel ? "text-emerald-950" : ""}`}
       onClick={() => setShowProfilePanel((current) => !current)}
       title={showProfilePanel ? "Hide WhatsApp profile" : "Show WhatsApp profile"}
       type="button"
@@ -190,7 +190,7 @@ export function WhatsAppConnectCard({
   const disconnectIconButton = canDisconnect ? (
     <button
       aria-label={disconnectLabel}
-      className="secondary-button flex h-10 w-10 items-center justify-center rounded-full p-0"
+      className="flex h-10 w-10 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-rose-700 focus:bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
       disabled={disconnecting}
       onClick={onDisconnect}
       title={disconnectLabel}
