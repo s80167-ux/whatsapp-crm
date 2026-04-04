@@ -4,3 +4,5 @@ dist/
 .DS_Store
 backend/baileys_auth/
 frontend/dist/
+.vscode/
+frontend/.env.local
