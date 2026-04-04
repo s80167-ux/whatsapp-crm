@@ -9,8 +9,6 @@ type ChatWindowProps = {
   messageText: string;
   loading: boolean;
   sending: boolean;
-  mobileCollapsed?: boolean;
-  onToggleMobileCollapse?: () => void;
   onChangeMessage: (value: string) => void;
   onSend: () => void;
   onSendAttachment: (file: File, caption: string) => Promise<void> | void;
@@ -78,8 +76,6 @@ export function ChatWindow(props: ChatWindowProps) {
     messageText,
     loading,
     sending,
-    mobileCollapsed = false,
-    onToggleMobileCollapse,
     onChangeMessage,
     onSend,
     onSendAttachment,
@@ -272,23 +268,6 @@ export function ChatWindow(props: ChatWindowProps) {
 
   return (
     <section className="glass-panel flex min-h-[120px] flex-col overflow-visible border border-white/70 bg-white/58 p-3 sm:min-h-[520px] sm:p-4 xl:max-h-[calc(100dvh-210px)]">
-      <button
-        className="mb-3 flex w-full items-center justify-between gap-3 rounded-[26px] border border-white/60 bg-white/72 px-4 py-3 text-left shadow-soft lg:hidden"
-        onClick={onToggleMobileCollapse}
-        type="button"
-      >
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Active conversation</p>
-          <p className="mt-1 truncate text-sm font-medium text-ink">{getDisplayName(contactName, phone)}</p>
-        </div>
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/70 text-emerald-900/65 shadow-soft">
-          <svg className={`h-4 w-4 transition ${mobileCollapsed ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24">
-            <path d="m6 9 6 6 6-6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-          </svg>
-        </span>
-      </button>
-
-      <div className={`${mobileCollapsed ? "hidden" : "block"} lg:block`}>
       <div className="mb-3 rounded-[26px] border border-white/60 bg-white/72 px-4 py-3 shadow-soft">
         <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Active conversation</p>
         <h3 className="mt-1 text-lg font-semibold text-ink sm:text-xl">{getDisplayName(contactName, phone)}</h3>
@@ -595,7 +574,6 @@ export function ChatWindow(props: ChatWindowProps) {
           </button>
           </div>
         </div>
-      </div>
       </div>
     </section>
   );

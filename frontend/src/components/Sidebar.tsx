@@ -1,3 +1,4 @@
+import { useState } from "react";
 import logoGlass from "../../asset/rezeki_dashboard_logo_glass.png";
 import type { WhatsAppQr, WhatsAppStatus } from "../lib/api";
 import { WhatsAppConnectCard } from "./WhatsAppConnectCard";
@@ -44,6 +45,8 @@ export function Sidebar({
   loadingWhatsApp,
   disconnectingWhatsApp
 }: SidebarProps) {
+  const [isWorkspaceCollapsed, setIsWorkspaceCollapsed] = useState(true);
+
   return (
     <aside className="glass-panel flex flex-col justify-between self-start border border-white/70 bg-white/58 p-3 xl:sticky xl:top-6">
       <div>
@@ -59,40 +62,58 @@ export function Sidebar({
         </div>
 
         <div className="mt-5 rounded-[26px] border border-white/60 bg-white/52 p-3 shadow-soft">
-          <div className="grid grid-cols-2 gap-1.5">
-            {menu.map((item) => (
-              <button
-                key={item.key}
-                className={`relative min-w-0 rounded-[16px] border px-2.5 py-2 pr-9 text-left text-xs font-semibold transition ${
-                  activeView === item.key
-                    ? "border-emerald-200 bg-emerald-50/90 text-emerald-950 shadow-soft"
-                    : "border-white/45 bg-white/35 text-emerald-950/82 hover:bg-white/60"
-                }`}
-                onClick={() => onChangeView(item.key as "inbox" | "pipeline" | "broadcast")}
-                type="button"
-              >
-                <span className="block break-words leading-4">{item.label}</span>
-                <span className="absolute right-2 top-2 rounded-full bg-emerald-950/6 px-1.5 py-0.5 text-[10px] text-emerald-900/60">
-                  {counts[item.key as keyof typeof counts]}
-                </span>
-              </button>
-            ))}
+          <button
+            className="flex w-full items-center justify-between gap-3 text-left xl:hidden"
+            onClick={() => setIsWorkspaceCollapsed((current) => !current)}
+            type="button"
+          >
+            <div className="min-w-0">
+              <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Workspace</p>
+              <p className="mt-1 truncate text-sm font-medium text-ink">{menu.find((item) => item.key === activeView)?.label || "Inbox"}</p>
+            </div>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/70 text-emerald-900/65 shadow-soft">
+              <svg className={`h-4 w-4 transition ${isWorkspaceCollapsed ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24">
+                <path d="m6 9 6 6 6-6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+              </svg>
+            </span>
+          </button>
 
-            <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
-              <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Needs reply</p>
-              <p className="mt-0.5 text-base font-semibold text-ink">{stats.needsReply}</p>
-            </div>
-            <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
-              <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Hot leads</p>
-              <p className="mt-0.5 text-base font-semibold text-ink">{stats.hotLeads}</p>
-            </div>
-            <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
-              <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Thread msgs</p>
-              <p className="mt-0.5 text-base font-semibold text-ink">{stats.currentThreadMessages}</p>
-            </div>
-            <div className="col-span-2 rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
-              <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Active</p>
-              <p className="mt-0.5 truncate text-sm font-semibold text-ink">{stats.activeContact}</p>
+          <div className={`${isWorkspaceCollapsed ? "hidden" : "mt-3 block"} xl:mt-0 xl:block`}>
+            <div className="grid grid-cols-2 gap-1.5">
+              {menu.map((item) => (
+                <button
+                  key={item.key}
+                  className={`relative min-w-0 rounded-[16px] border px-2.5 py-2 pr-9 text-left text-xs font-semibold transition ${
+                    activeView === item.key
+                      ? "border-emerald-200 bg-emerald-50/90 text-emerald-950 shadow-soft"
+                      : "border-white/45 bg-white/35 text-emerald-950/82 hover:bg-white/60"
+                  }`}
+                  onClick={() => onChangeView(item.key as "inbox" | "pipeline" | "broadcast")}
+                  type="button"
+                >
+                  <span className="block break-words leading-4">{item.label}</span>
+                  <span className="absolute right-2 top-2 rounded-full bg-emerald-950/6 px-1.5 py-0.5 text-[10px] text-emerald-900/60">
+                    {counts[item.key as keyof typeof counts]}
+                  </span>
+                </button>
+              ))}
+
+              <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Needs reply</p>
+                <p className="mt-0.5 text-base font-semibold text-ink">{stats.needsReply}</p>
+              </div>
+              <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Hot leads</p>
+                <p className="mt-0.5 text-base font-semibold text-ink">{stats.hotLeads}</p>
+              </div>
+              <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Thread msgs</p>
+                <p className="mt-0.5 text-base font-semibold text-ink">{stats.currentThreadMessages}</p>
+              </div>
+              <div className="col-span-2 rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
+                <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Active</p>
+                <p className="mt-0.5 truncate text-sm font-semibold text-ink">{stats.activeContact}</p>
+              </div>
             </div>
           </div>
         </div>

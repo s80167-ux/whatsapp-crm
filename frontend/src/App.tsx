@@ -41,7 +41,6 @@ function App() {
   const [whatsAppQr, setWhatsAppQr] = useState<WhatsAppQr | null>(null);
   const [loadingWhatsApp, setLoadingWhatsApp] = useState(true);
   const [disconnectingWhatsApp, setDisconnectingWhatsApp] = useState(false);
-  const [isMobileChatCollapsed, setIsMobileChatCollapsed] = useState(true);
   const [isMobileCustomerCollapsed, setIsMobileCustomerCollapsed] = useState(true);
 
   async function loadConversations(activeToken: string, silent = false) {
@@ -656,6 +655,92 @@ function App() {
                 whatsAppConnected={Boolean(whatsAppStatus?.connected)}
               />
 
+              <div className="hidden lg:block">
+                <CustomerPanel
+                  contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
+                  about={customerDraft?.about || null}
+                  incomingCount={customerDraft?.incoming_count}
+                  lastDirection={customerDraft?.last_direction || null}
+                  lastMessageAt={customerDraft?.last_message_at || null}
+                  lastMessagePreview={customerDraft?.last_message_preview || null}
+                  loading={loadingCustomer}
+                  mobileCollapsed={isMobileCustomerCollapsed}
+                  notes={selectedNotes}
+                  onToggleMobileCollapse={() => setIsMobileCustomerCollapsed((current) => !current)}
+                  outgoingCount={customerDraft?.outgoing_count}
+                  profilePictureUrl={customerDraft?.profile_picture_url || null}
+                  saving={savingCustomer}
+                  onNotesChange={(value) => {
+                    if (!selectedPhone) {
+                      return;
+                    }
+
+                    const nextCustomer: Customer = {
+                      phone: selectedPhone,
+                      chat_jid: customerDraft?.chat_jid || selectedConversation?.chatJid || null,
+                      contact_name: customerDraft?.contact_name || selectedConversation?.contactName || null,
+                      profile_picture_url: customerDraft?.profile_picture_url || null,
+                      about: customerDraft?.about || null,
+                      total_messages: customerDraft?.total_messages,
+                      incoming_count: customerDraft?.incoming_count,
+                      outgoing_count: customerDraft?.outgoing_count,
+                      last_message_at: customerDraft?.last_message_at || null,
+                      last_message_preview: customerDraft?.last_message_preview || null,
+                      last_direction: customerDraft?.last_direction || null,
+                      status: customerDraft?.status || "warm",
+                      notes: value
+                    };
+
+                    setCustomerDraft(nextCustomer);
+                    scheduleCustomerSave(nextCustomer);
+                  }}
+                  onStatusChange={(value) => {
+                    if (!selectedPhone) {
+                      return;
+                    }
+
+                    const nextCustomer: Customer = {
+                      phone: selectedPhone,
+                      chat_jid: customerDraft?.chat_jid || selectedConversation?.chatJid || null,
+                      contact_name: customerDraft?.contact_name || selectedConversation?.contactName || null,
+                      profile_picture_url: customerDraft?.profile_picture_url || null,
+                      about: customerDraft?.about || null,
+                      total_messages: customerDraft?.total_messages,
+                      incoming_count: customerDraft?.incoming_count,
+                      outgoing_count: customerDraft?.outgoing_count,
+                      last_message_at: customerDraft?.last_message_at || null,
+                      last_message_preview: customerDraft?.last_message_preview || null,
+                      last_direction: customerDraft?.last_direction || null,
+                      status: value as Customer["status"],
+                      notes: customerDraft?.notes || ""
+                    };
+
+                    setCustomerDraft(nextCustomer);
+                    scheduleCustomerSave(nextCustomer, true);
+                  }}
+                  phone={selectedPhone}
+                  status={selectedStatus}
+                  totalMessages={customerDraft?.total_messages}
+                />
+              </div>
+            </div>
+
+            <div className="order-2 lg:order-none lg:col-start-2 lg:col-end-3 xl:col-start-3 xl:col-end-4">
+              <ChatWindow
+                contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
+                loading={loadingMessages}
+                messageText={chatInput}
+                messages={messages}
+                onChangeMessage={setChatInput}
+                onSendAttachment={handleSendAttachment}
+                onSendLocation={handleSendLocation}
+                onSend={handleSend}
+                phone={selectedPhone}
+                sending={sending}
+              />
+            </div>
+
+            <div className="order-3 lg:hidden">
               <CustomerPanel
                 contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
                 about={customerDraft?.about || null}
@@ -723,23 +808,6 @@ function App() {
                 totalMessages={customerDraft?.total_messages}
               />
             </div>
-
-            <div className="lg:col-start-2 lg:col-end-3 xl:col-start-3 xl:col-end-4">
-              <ChatWindow
-                contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
-                loading={loadingMessages}
-                messageText={chatInput}
-                messages={messages}
-                onChangeMessage={setChatInput}
-                onSendAttachment={handleSendAttachment}
-                onSendLocation={handleSendLocation}
-                onSend={handleSend}
-                phone={selectedPhone}
-                mobileCollapsed={isMobileChatCollapsed}
-                onToggleMobileCollapse={() => setIsMobileChatCollapsed((current) => !current)}
-                sending={sending}
-              />
-              </div>
           </div>
         </div>
       </div>
