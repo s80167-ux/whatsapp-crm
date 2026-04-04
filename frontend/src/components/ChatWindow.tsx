@@ -108,10 +108,13 @@ export function ChatWindow(props: ChatWindowProps) {
   const [longitude, setLongitude] = useState("");
   const [composerError, setComposerError] = useState("");
   const [showCustomerProfile, setShowCustomerProfile] = useState(false);
+  const [showAllMessages, setShowAllMessages] = useState(false);
 
   const displayPhone = getDisplayPhone(phone, chatJid);
   const title = getDisplayName(contactName, displayPhone);
   const avatarLabel = title.slice(0, 2).toUpperCase();
+  const visibleMessages = showAllMessages ? messages : messages.slice(-6);
+  const hiddenMessageCount = Math.max(messages.length - visibleMessages.length, 0);
 
   function updateStickToBottom() {
     const container = listRef.current;
@@ -167,6 +170,7 @@ export function ChatWindow(props: ChatWindowProps) {
       setAttachmentCaption("");
       setComposerError("");
       setShowCustomerProfile(false);
+      setShowAllMessages(false);
       return;
     }
 
@@ -294,35 +298,35 @@ export function ChatWindow(props: ChatWindowProps) {
 
   return (
     <section className="glass-panel flex min-h-[120px] flex-col overflow-visible border border-white/70 bg-white/58 p-3 sm:min-h-[520px] sm:p-4 xl:max-h-[calc(100dvh-210px)]">
-      <div className="mb-3 rounded-[26px] border border-white/60 bg-white/72 px-4 py-3 shadow-soft">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Active conversation</p>
-            <h3 className="mt-1 text-lg font-semibold text-ink sm:text-xl">{title}</h3>
-            <p className="mt-1 break-all text-sm text-emerald-900/45">{formatPhoneDisplay(phone, chatJid)}</p>
+      <div className="mb-3 rounded-[26px] border border-white/60 bg-white/72 px-3 py-2 shadow-soft sm:px-4 sm:py-3">
+        <div className="flex items-start justify-between gap-2 sm:gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-800/65">Active conversation</p>
+            <h3 className="mt-0.5 truncate pr-2 text-sm font-semibold text-ink sm:text-lg">{title}</h3>
+            <p className="mt-0.5 truncate pr-2 text-[11px] text-emerald-900/45 sm:text-sm">{formatPhoneDisplay(phone, chatJid)}</p>
           </div>
 
           {customerPanelProps ? (
             <button
               aria-label={showCustomerProfile ? "Hide customer profile" : "Show customer profile"}
-              className="group flex shrink-0 items-center gap-3 rounded-[22px] bg-emerald-50/80 px-2.5 py-2 shadow-soft transition hover:bg-white"
+              className="group flex shrink-0 items-center gap-2 self-start rounded-[22px] bg-emerald-50/80 px-1.5 py-1.5 shadow-soft transition hover:bg-white sm:px-2 sm:py-1.5"
               onClick={() => setShowCustomerProfile((current) => !current)}
               type="button"
             >
               {profilePictureUrl ? (
                 <img
                   alt={title}
-                  className="h-12 w-12 rounded-2xl object-cover shadow-soft"
+                  className="h-8 w-8 rounded-2xl object-cover shadow-soft sm:h-10 sm:w-10"
                   src={profilePictureUrl}
                 />
               ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-sm font-semibold text-white shadow-soft">
+                <div className="flex h-8 w-8 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-[10px] font-semibold text-white shadow-soft sm:h-10 sm:w-10 sm:text-xs">
                   {avatarLabel}
                 </div>
               )}
-              <div className="hidden min-w-0 text-left sm:block">
+              <div className="hidden min-w-0 text-left md:block">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-800/55">Profile</p>
-                <p className="truncate text-sm font-medium text-emerald-950/72 group-hover:text-emerald-950">
+                <p className="truncate text-xs font-medium text-emerald-950/72 group-hover:text-emerald-950">
                   {showCustomerProfile ? "Hide customer" : "View customer"}
                 </p>
               </div>
@@ -344,7 +348,7 @@ export function ChatWindow(props: ChatWindowProps) {
 
       <div
         ref={listRef}
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-[28px] border border-emerald-100/80 bg-[rgba(233,246,238,0.92)] p-3 sm:p-4"
+        className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-[28px] border border-emerald-100/80 bg-[rgba(233,246,238,0.92)] p-2 sm:space-y-3 sm:p-4"
         onScroll={updateStickToBottom}
       >
         {loading ? (
@@ -354,31 +358,45 @@ export function ChatWindow(props: ChatWindowProps) {
             No messages in this conversation yet.
           </div>
         ) : (
-          messages.map((item) => (
-            <div
-              key={item.id}
-              className={`flex ${item.direction === "outgoing" ? "justify-end" : "justify-start"}`}
-            >
+          <>
+            {hiddenMessageCount > 0 ? (
+              <div className="flex justify-center pb-1">
+                <button
+                  className="border border-emerald-200/80 bg-white/92 px-3 py-1 text-[11px] font-medium text-emerald-900/70 transition hover:bg-white hover:text-emerald-950"
+                  onClick={() => setShowAllMessages((current) => !current)}
+                  type="button"
+                >
+                  {showAllMessages ? "Show latest 6 messages" : `View ${hiddenMessageCount} earlier messages`}
+                </button>
+              </div>
+            ) : null}
+
+            {visibleMessages.map((item) => (
               <div
-                className={`max-w-[88%] overflow-hidden rounded-[24px] px-4 py-3 shadow-soft sm:max-w-[80%] ${
-                  item.direction === "outgoing"
-                    ? "bg-gradient-to-br from-emerald-700 via-emerald-600 to-green-500 text-white"
-                    : "border border-emerald-200/90 bg-white text-emerald-950/88"
-                }`}
+                key={item.id}
+                className={`flex ${item.direction === "outgoing" ? "justify-end" : "justify-start"}`}
               >
-                <p className="whitespace-pre-wrap break-words text-sm leading-6">{item.message}</p>
-                <p
-                  className={`mt-2 text-right text-[11px] ${
-                    item.direction === "outgoing" ? "text-white/78" : "text-emerald-900/46"
+                <div
+                  className={`max-w-[92%] overflow-hidden rounded-[24px] px-3 py-2 shadow-soft sm:max-w-[80%] sm:px-4 sm:py-3 ${
+                    item.direction === "outgoing"
+                      ? "bg-gradient-to-br from-emerald-700 via-emerald-600 to-green-500 text-white"
+                      : "border border-emerald-200/90 bg-white text-emerald-950/88"
                   }`}
                 >
-                  {item.direction === "outgoing"
-                    ? `${formatTime(item.created_at)} | ${formatStatus(item)}`
-                    : formatTime(item.created_at)}
-                </p>
+                  <p className="whitespace-pre-wrap break-words text-[13px] leading-5 sm:text-sm sm:leading-6">{item.message}</p>
+                  <p
+                    className={`mt-1.5 text-right text-[10px] sm:mt-2 sm:text-[11px] ${
+                      item.direction === "outgoing" ? "text-white/78" : "text-emerald-900/46"
+                    }`}
+                  >
+                    {item.direction === "outgoing"
+                      ? `${formatTime(item.created_at)} | ${formatStatus(item)}`
+                      : formatTime(item.created_at)}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))
+            ))}
+          </>
         )}
         <div ref={bottomRef} />
       </div>
@@ -576,8 +594,8 @@ export function ChatWindow(props: ChatWindowProps) {
         <div className="rounded-[26px] border border-white/60 bg-white/72 p-2 shadow-soft">
           <div className="flex items-center gap-2">
           <button
-            className={`secondary-button flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl p-0 sm:h-12 sm:w-12 ${
-              showQuickReplies ? "bg-emerald-100 text-emerald-950" : ""
+            className={`flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent sm:h-11 sm:w-11 ${
+              showQuickReplies ? "text-emerald-950" : ""
             }`}
             onClick={() => {
               setShowQuickReplies((current) => !current);
@@ -601,8 +619,8 @@ export function ChatWindow(props: ChatWindowProps) {
           </button>
 
           <button
-            className={`secondary-button flex h-12 w-12 items-center justify-center rounded-2xl p-0 ${
-              showAttachmentMenu ? "bg-emerald-100 text-emerald-950" : ""
+            className={`flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent sm:h-11 sm:w-11 ${
+              showAttachmentMenu ? "text-emerald-950" : ""
             }`}
             onClick={() => {
               setShowAttachmentMenu((current) => !current);

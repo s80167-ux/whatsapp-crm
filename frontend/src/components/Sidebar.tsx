@@ -1,6 +1,7 @@
 import { useState } from "react";
 import logoGlass from "../../asset/rezeki_dashboard_logo_glass.png";
 import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type CustomerStatus, type WhatsAppQr, type WhatsAppStatus } from "../lib/api";
+import { supabase } from "../lib/supabase";
 import { WhatsAppConnectCard } from "./WhatsAppConnectCard";
 
 type SidebarProps = {
@@ -45,6 +46,48 @@ export function Sidebar({
   disconnectingWhatsApp
 }: SidebarProps) {
   const [isWorkspaceCollapsed, setIsWorkspaceCollapsed] = useState(true);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [nextPassword, setNextPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+
+  async function handleChangePassword() {
+    const trimmedPassword = nextPassword.trim();
+
+    setPasswordError("");
+    setPasswordSuccess("");
+
+    if (trimmedPassword.length < 6) {
+      setPasswordError("Password must be at least 6 characters.");
+      return;
+    }
+
+    if (trimmedPassword !== confirmPassword.trim()) {
+      setPasswordError("Passwords do not match.");
+      return;
+    }
+
+    setPasswordSaving(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password: trimmedPassword });
+
+      if (error) {
+        throw error;
+      }
+
+      setNextPassword("");
+      setConfirmPassword("");
+      setPasswordSuccess("Password updated successfully.");
+      setShowPasswordForm(false);
+    } catch (error) {
+      setPasswordError(error instanceof Error ? error.message : "Failed to update password.");
+    } finally {
+      setPasswordSaving(false);
+    }
+  }
 
   return (
     <aside className="glass-panel flex flex-col justify-between self-start border border-white/70 bg-white/58 p-3 xl:sticky xl:top-6 max-h-[calc(100vh-3rem)] overflow-y-auto custom-scrollbar">
@@ -145,26 +188,94 @@ export function Sidebar({
         <div className="flex flex-col rounded-[28px] border border-white/60 bg-white/62 p-4 shadow-soft">
           <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Signed in</p>
           <p className="mt-2 break-all text-sm font-medium text-ink">{userEmail}</p>
-          <button
-            aria-label="Logout"
-            className="group mt-3 flex w-fit appearance-none items-center justify-center gap-0 overflow-hidden border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-emerald-900/72 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent sm:mt-auto"
-            onClick={onLogout}
-            title="Logout"
-            type="button"
-          >
-            <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
-              <path
-                d="M15 7V5a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-2M10 12h10m0 0-3-3m3 3-3 3"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              aria-label={showPasswordForm ? "Hide change password form" : "Show change password form"}
+              className="group flex w-fit appearance-none items-center justify-center gap-0 overflow-hidden border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-emerald-900/72 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent"
+              onClick={() => {
+                setShowPasswordForm((current) => !current);
+                setPasswordError("");
+                setPasswordSuccess("");
+              }}
+              title="Change password"
+              type="button"
+            >
+              <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
+                <path
+                  d="M16 10V7a4 4 0 1 0-8 0v3M7 21h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2Z"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                />
+              </svg>
+              <span className="max-w-0 overflow-hidden whitespace-nowrap text-sm opacity-0 transition-all duration-200 group-hover:ml-2 group-hover:max-w-40 group-hover:opacity-100">
+                Change password
+              </span>
+            </button>
+
+            <button
+              aria-label="Logout"
+              className="group flex w-fit appearance-none items-center justify-center gap-0 overflow-hidden border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-emerald-900/72 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent"
+              onClick={onLogout}
+              title="Logout"
+              type="button"
+            >
+              <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
+                <path
+                  d="M15 7V5a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-2M10 12h10m0 0-3-3m3 3-3 3"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                />
+              </svg>
+              <span className="max-w-0 overflow-hidden whitespace-nowrap text-sm opacity-0 transition-all duration-200 group-hover:ml-2 group-hover:max-w-20 group-hover:opacity-100">
+                Logout
+              </span>
+            </button>
+          </div>
+
+          {showPasswordForm ? (
+            <div className="mt-4 space-y-3 border-t border-emerald-900/10 pt-4">
+              <input
+                className="input-glass"
+                onChange={(event) => setNextPassword(event.target.value)}
+                placeholder="New password"
+                type="password"
+                value={nextPassword}
               />
-            </svg>
-            <span className="max-w-0 overflow-hidden whitespace-nowrap text-sm transition-all duration-200 group-hover:ml-2 group-hover:max-w-20">
-              Logout
-            </span>
-          </button>
+              <input
+                className="input-glass"
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                placeholder="Confirm new password"
+                type="password"
+                value={confirmPassword}
+              />
+              {passwordError ? <p className="text-xs text-rose-500">{passwordError}</p> : null}
+              {passwordSuccess ? <p className="text-xs text-emerald-700">{passwordSuccess}</p> : null}
+              <div className="flex gap-2">
+                <button className="primary-button px-4 py-2" disabled={passwordSaving} onClick={handleChangePassword} type="button">
+                  {passwordSaving ? "Saving..." : "Update password"}
+                </button>
+                <button
+                  className="secondary-button px-4 py-2"
+                  onClick={() => {
+                    setShowPasswordForm(false);
+                    setNextPassword("");
+                    setConfirmPassword("");
+                    setPasswordError("");
+                    setPasswordSuccess("");
+                  }}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : passwordSuccess ? (
+            <p className="mt-3 text-xs text-emerald-700">{passwordSuccess}</p>
+          ) : null}
         </div>
       </div>
     </aside>
