@@ -5,7 +5,7 @@ import { CustomerPanel } from "./components/CustomerPanel";
 import { LoginForm } from "./components/LoginForm";
 import { Sidebar } from "./components/Sidebar";
 import { WhatsAppConnectCard } from "./components/WhatsAppConnectCard";
-import { api, CUSTOMER_STATUSES, type Conversation, type Customer, type Message, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
+import { api, CUSTOMER_STATUSES, type Conversation, type Customer, type CustomerStatus, type Message, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
 import { getResolvedPhone } from "./lib/display";
 import { supabase } from "./lib/supabase";
 
@@ -43,6 +43,19 @@ function App() {
   const [loadingWhatsApp, setLoadingWhatsApp] = useState(true);
   const [disconnectingWhatsApp, setDisconnectingWhatsApp] = useState(false);
   const [isMobileCustomerCollapsed, setIsMobileCustomerCollapsed] = useState(true);
+
+  function updateConversationStatus(phone: string, status: CustomerStatus) {
+    setConversations((current) =>
+      current.map((conversation) =>
+        conversation.phone === phone
+          ? {
+              ...conversation,
+              status
+            }
+          : conversation
+      )
+    );
+  }
 
   async function loadConversations(activeToken: string, silent = false) {
     if (!silent) {
@@ -102,6 +115,7 @@ function App() {
     try {
       const data = await api.getCustomer(phone, activeToken);
       setCustomerDraft(data);
+      updateConversationStatus(data.phone, data.status);
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to load customer.");
     } finally {
@@ -128,6 +142,7 @@ function App() {
         token
       );
       setCustomerDraft(savedCustomer);
+      updateConversationStatus(savedCustomer.phone, savedCustomer.status);
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to save customer.");
     } finally {
@@ -311,13 +326,8 @@ function App() {
   const activeChatJid = selectedConversation?.chatJid || customerDraft?.chat_jid || null;
 
   const sidebarCounts = useMemo(() => {
-    const now = Date.now();
-
     return {
-      inbox: conversations.length,
-      pipeline: conversations.filter((conversation) => ACTIVE_CUSTOMER_STATUSES.includes(conversation.status)).length,
-      broadcast: conversations.filter((conversation) => now - new Date(conversation.timestamp).getTime() > 24 * 60 * 60 * 1000)
-        .length
+      inbox: conversations.length
     };
   }, [conversations]);
 
@@ -339,8 +349,13 @@ function App() {
 
   const sidebarStats = useMemo(
     () => ({
-      needsReply: conversations.filter((conversation) => conversation.lastDirection === "incoming").length,
-      activeLeads: conversations.filter((conversation) => ACTIVE_CUSTOMER_STATUSES.includes(conversation.status)).length,
+      statusCounts: {
+        new_lead: conversations.filter((conversation) => conversation.status === "new_lead").length,
+        interested: conversations.filter((conversation) => conversation.status === "interested").length,
+        processing: conversations.filter((conversation) => conversation.status === "processing").length,
+        closed_won: conversations.filter((conversation) => conversation.status === "closed_won").length,
+        closed_lost: conversations.filter((conversation) => conversation.status === "closed_lost").length
+      },
       currentThreadMessages: messages.length,
       activeContact: selectedConversation?.contactName || customerDraft?.contact_name || selectedPhone || "None"
     }),
@@ -718,6 +733,7 @@ function App() {
                     };
 
                     setCustomerDraft(nextCustomer);
+                    updateConversationStatus(nextCustomer.phone, nextCustomer.status);
                     scheduleCustomerSave(nextCustomer, true);
                   }}
                   phone={selectedPhone}
@@ -803,6 +819,7 @@ function App() {
                   };
 
                   setCustomerDraft(nextCustomer);
+                    updateConversationStatus(nextCustomer.phone, nextCustomer.status);
                   scheduleCustomerSave(nextCustomer, true);
                 }}
                 phone={selectedPhone}

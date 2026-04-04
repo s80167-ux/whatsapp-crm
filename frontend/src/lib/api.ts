@@ -2,6 +2,14 @@ export const CUSTOMER_STATUSES = ["new_lead", "interested", "processing", "close
 
 export type CustomerStatus = (typeof CUSTOMER_STATUSES)[number];
 
+export const CUSTOMER_STATUS_LABELS: Record<CustomerStatus, string> = {
+  new_lead: "New Lead",
+  interested: "Interested",
+  processing: "Processing",
+  closed_won: "Close Won",
+  closed_lost: "Close Lost"
+};
+
 export type AuthResponse = {
   token: string;
   user: {

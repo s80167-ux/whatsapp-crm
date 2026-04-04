@@ -1,6 +1,6 @@
 import { useState } from "react";
 import logoGlass from "../../asset/rezeki_dashboard_logo_glass.png";
-import type { WhatsAppQr, WhatsAppStatus } from "../lib/api";
+import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type CustomerStatus, type WhatsAppQr, type WhatsAppStatus } from "../lib/api";
 import { WhatsAppConnectCard } from "./WhatsAppConnectCard";
 
 type SidebarProps = {
@@ -8,12 +8,9 @@ type SidebarProps = {
   token: string;
   counts: {
     inbox: number;
-    pipeline: number;
-    broadcast: number;
   };
   stats: {
-    needsReply: number;
-    activeLeads: number;
+    statusCounts: Record<CustomerStatus, number>;
     currentThreadMessages: number;
     activeContact: string;
   };
@@ -27,11 +24,7 @@ type SidebarProps = {
   disconnectingWhatsApp: boolean;
 };
 
-const menu = [
-  { key: "inbox", label: "Inbox" },
-  { key: "pipeline", label: "Pipeline" },
-  { key: "broadcast", label: "Broadcast" }
-];
+const menu = [{ key: "inbox", label: "Inbox" }];
 
 export function Sidebar({
   activeView,
@@ -85,7 +78,7 @@ export function Sidebar({
               {menu.map((item) => (
                 <button
                   key={item.key}
-                  className={`relative min-w-0 rounded-[16px] border px-2.5 py-2 pr-9 text-left text-xs font-semibold transition ${
+                  className={`relative col-span-2 min-w-0 rounded-[16px] border px-2.5 py-2 pr-9 text-left text-xs font-semibold transition ${
                     activeView === item.key
                       ? "border-emerald-200 bg-emerald-50/90 text-emerald-950 shadow-soft"
                       : "border-white/45 bg-white/35 text-emerald-950/82 hover:bg-white/60"
@@ -95,19 +88,18 @@ export function Sidebar({
                 >
                   <span className="block break-words leading-4">{item.label}</span>
                   <span className="absolute right-2 top-2 rounded-full bg-emerald-950/6 px-1.5 py-0.5 text-[10px] text-emerald-900/60">
-                    {counts[item.key as keyof typeof counts]}
+                    {counts.inbox}
                   </span>
                 </button>
               ))}
 
-              <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
-                <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Needs reply</p>
-                <p className="mt-0.5 text-base font-semibold text-ink">{stats.needsReply}</p>
-              </div>
-              <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
-                <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Active leads</p>
-                <p className="mt-0.5 text-base font-semibold text-ink">{stats.activeLeads}</p>
-              </div>
+              {CUSTOMER_STATUSES.map((status) => (
+                <div key={status} className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
+                  <p className="text-[10px] uppercase tracking-[0.14em] text-emerald-900/50">{CUSTOMER_STATUS_LABELS[status]}</p>
+                  <p className="mt-0.5 text-base font-semibold text-ink">{stats.statusCounts[status]}</p>
+                </div>
+              ))}
+
               <div className="rounded-[16px] border border-white/55 bg-white/72 px-2.5 py-2">
                 <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-900/50">Thread msgs</p>
                 <p className="mt-0.5 text-base font-semibold text-ink">{stats.currentThreadMessages}</p>

@@ -1,11 +1,11 @@
-import { CUSTOMER_STATUSES, type CustomerStatus } from "../lib/api";
+import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type CustomerStatus } from "../lib/api";
 
 type CustomerPanelProps = {
   about: string | null;
   contactName: string | null;
   phone: string | null;
   profilePictureUrl: string | null;
-  status: string;
+  status: CustomerStatus;
   notes: string;
   totalMessages?: number;
   incomingCount?: number;
@@ -17,16 +17,8 @@ type CustomerPanelProps = {
   saving: boolean;
   mobileCollapsed?: boolean;
   onToggleMobileCollapse?: () => void;
-  onStatusChange: (value: string) => void;
+  onStatusChange: (value: CustomerStatus) => void;
   onNotesChange: (value: string) => void;
-};
-
-const statusLabels: Record<CustomerStatus, string> = {
-  new_lead: "New Lead",
-  interested: "Interested",
-  processing: "Processing",
-  closed_won: "Close Won",
-  closed_lost: "Close Lost"
 };
 
 function getInitials(contactName: string | null, phone: string | null) {
@@ -186,7 +178,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
                 onClick={() => onStatusChange(item)}
                 type="button"
               >
-                {statusLabels[item]}
+                {CUSTOMER_STATUS_LABELS[item]}
               </button>
             ))}
           </div>
