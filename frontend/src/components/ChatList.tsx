@@ -189,7 +189,10 @@ export function ChatList({
                           />
                         )}
                         {conversation.unreadCount && conversation.unreadCount > 0 ? (
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white/50">
+                          <span
+                            className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white/50"
+                            title={`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
+                          >
                             {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
                           </span>
                         ) : null}
