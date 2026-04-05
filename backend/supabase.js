@@ -110,6 +110,42 @@ function isDuplicateCustomerPrimaryKeyError(error) {
   return error?.code === "23505" && String(error?.message || "").includes("customers_pkey");
 }
 
+function isDuplicateConstraintError(error, constraintName) {
+  return error?.code === "23505" && String(error?.message || "").includes(constraintName);
+}
+
+function getJidMeta(value) {
+  const rawValue = String(value || "").trim();
+
+  if (!rawValue) {
+    return {
+      digits: "",
+      server: ""
+    };
+  }
+
+  const [user = "", server = ""] = rawValue.split("@");
+  return {
+    digits: user.split(":")[0]?.replace(/\D/g, "") || "",
+    server: server.trim().toLowerCase()
+  };
+}
+
+function shouldPreserveExistingPhone(existingPhone, nextPhone, chatJid) {
+  const normalizedExistingPhone = String(existingPhone || "").trim();
+  const normalizedNextPhone = String(nextPhone || "").trim();
+  const { digits, server } = getJidMeta(chatJid);
+
+  return Boolean(
+    normalizedExistingPhone &&
+    normalizedNextPhone &&
+    server === "lid" &&
+    digits &&
+    normalizedNextPhone === digits &&
+    normalizedExistingPhone !== normalizedNextPhone
+  );
+}
+
 function tenantSchemaError(error) {
   const wrappedError = new Error(
     "Database tenant isolation is not configured. Run backend/sql/tenant_isolation.sql in Supabase and backfill owner_user_id before using the dashboard."
@@ -209,6 +245,49 @@ async function findExistingMessage({ owner_user_id, phone, chat_jid, wa_message_
   return fallback.data || null;
 }
 
+async function findExistingCustomer({ owner_user_id, phone, chat_jid }) {
+  if (chat_jid) {
+    const byChatJid = await supabase
+      .from("customers")
+      .select("*")
+      .eq("owner_user_id", owner_user_id)
+      .eq("chat_jid", chat_jid)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    throwIfTenantSchemaError(byChatJid.error, "customers.owner_user_id");
+
+    if (!isMissingColumnError(byChatJid.error, "customers.chat_jid")) {
+      if (byChatJid.error) {
+        throw byChatJid.error;
+      }
+
+      if (byChatJid.data) {
+        return byChatJid.data;
+      }
+    }
+  }
+
+  const lookupValues = await getPhoneLookupValues(phone, chat_jid || null);
+  const existing = await supabase
+    .from("customers")
+    .select("*")
+    .eq("owner_user_id", owner_user_id)
+    .in("phone", lookupValues)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  throwIfTenantSchemaError(existing.error, "customers.owner_user_id");
+
+  if (existing.error) {
+    throw existing.error;
+  }
+
+  return existing.data || null;
+}
+
 async function saveMessage({ owner_user_id, phone, chat_jid, wa_message_id, message, direction, send_status, created_at, media_type, media_mime_type, media_file_name, media_data_url }) {
   const existingMessage = await findExistingMessage({
     owner_user_id,
@@ -270,6 +349,22 @@ async function saveMessage({ owner_user_id, phone, chat_jid, wa_message_id, mess
   }
 
   throwIfTenantSchemaError(error, "messages.owner_user_id");
+
+  if (isDuplicateConstraintError(error, "messages_owner_wa_message_id_idx") && wa_message_id) {
+    const duplicate = await findExistingMessage({
+      owner_user_id,
+      phone,
+      chat_jid,
+      wa_message_id,
+      message,
+      direction,
+      created_at
+    });
+
+    if (duplicate) {
+      return duplicate;
+    }
+  }
 
   if (error) {
     throw error;
@@ -552,33 +647,31 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
   };
   let writePayload = payload;
 
-  const lookupValues = await getPhoneLookupValues(phone, chat_jid || null);
-  const existing = await supabase
-    .from("customers")
-    .select("*")
-    .eq("owner_user_id", owner_user_id)
-    .in("phone", lookupValues)
-    .limit(1)
-    .maybeSingle();
+  const existingCustomer = await findExistingCustomer({
+    owner_user_id,
+    phone,
+    chat_jid
+  });
 
-  throwIfTenantSchemaError(existing.error, "customers.owner_user_id");
-
-  if (existing.error) {
-    throw existing.error;
+  if (shouldPreserveExistingPhone(existingCustomer?.phone, writePayload.phone, chat_jid)) {
+    writePayload = {
+      ...writePayload,
+      phone: existingCustomer.phone
+    };
   }
 
   let data;
   let error;
 
-  if (existing.data?.id) {
-    if (!hasCustomerChanges(existing.data, writePayload)) {
-      return normalizeCustomerRecord(existing.data);
+  if (existingCustomer?.id) {
+    if (!hasCustomerChanges(existingCustomer, writePayload)) {
+      return normalizeCustomerRecord(existingCustomer);
     }
 
     ({ data, error } = await supabase
       .from("customers")
       .update(writePayload)
-      .eq("id", existing.data.id)
+      .eq("id", existingCustomer.id)
       .select("*")
       .single());
   } else {
@@ -595,11 +688,11 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
     const { chat_jid: _ignored, ...fallbackPayload } = writePayload;
     writePayload = fallbackPayload;
 
-    if (existing.data?.id) {
+    if (existingCustomer?.id) {
       ({ data, error } = await supabase
         .from("customers")
         .update(writePayload)
-        .eq("id", existing.data.id)
+        .eq("id", existingCustomer.id)
         .select("*")
         .single());
     } else {
@@ -617,11 +710,11 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
     const { profile_picture_url: _p, about: _a, ...fallbackPayload } = writePayload;
     writePayload = fallbackPayload;
 
-    if (existing.data?.id) {
+    if (existingCustomer?.id) {
       ({ data, error } = await supabase
         .from("customers")
         .update(writePayload)
-        .eq("id", existing.data.id)
+        .eq("id", existingCustomer.id)
         .select("*")
         .single());
     } else {
@@ -639,11 +732,11 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
     const { unread_count: _uc, ...fallbackPayload } = writePayload;
     writePayload = fallbackPayload;
 
-    if (existing.data?.id) {
+    if (existingCustomer?.id) {
       ({ data, error } = await supabase
         .from("customers")
         .update(writePayload)
-        .eq("id", existing.data.id)
+        .eq("id", existingCustomer.id)
         .select("*")
         .single());
     } else {
@@ -664,11 +757,11 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
       notes: withStoredStatusMetadata(status, notes)
     };
 
-    if (existing.data?.id) {
+    if (existingCustomer?.id) {
       ({ data, error } = await supabase
         .from("customers")
         .update(legacyPayload)
-        .eq("id", existing.data.id)
+        .eq("id", existingCustomer.id)
         .select("*")
         .single());
     } else {
@@ -680,6 +773,26 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
     }
 
     throwIfTenantSchemaError(error, "customers.owner_user_id");
+  }
+
+  if (
+    isDuplicateConstraintError(error, "customers_owner_phone_idx") ||
+    isDuplicateConstraintError(error, "customers_owner_chat_jid_idx")
+  ) {
+    const duplicate = await findExistingCustomer({
+      owner_user_id,
+      phone: writePayload.phone,
+      chat_jid
+    });
+
+    if (duplicate?.id) {
+      ({ data, error } = await supabase
+        .from("customers")
+        .update(writePayload)
+        .eq("id", duplicate.id)
+        .select("*")
+        .single());
+    }
   }
 
   if (error) {
