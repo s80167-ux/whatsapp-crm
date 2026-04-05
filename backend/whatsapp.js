@@ -680,6 +680,56 @@ async function sendLocationToPhone({ phone, chatJid, latitude, longitude, name, 
 	});
 }
 
+async function deleteMessageFromPhone({ phone, chatJid, waMessageId, direction }) {
+	if (!waMessageId) {
+		return {
+			attempted: false,
+			deleted: false,
+			warning: 'WhatsApp message ID is not available for this message.'
+		};
+	}
+
+	if (direction !== 'outgoing') {
+		return {
+			attempted: false,
+			deleted: false,
+			warning: 'Remote WhatsApp deletion is only available for outgoing messages.'
+		};
+	}
+
+	if (!sock || connectionState !== 'open') {
+		return {
+			attempted: false,
+			deleted: false,
+			warning: 'WhatsApp is not connected.'
+		};
+	}
+
+	const remoteJid = chatJid || phone + '@s.whatsapp.net';
+
+	try {
+		await sock.sendMessage(remoteJid, {
+			delete: {
+				remoteJid,
+				fromMe: true,
+				id: waMessageId
+			}
+		});
+
+		return {
+			attempted: true,
+			deleted: true,
+			warning: null
+		};
+	} catch (error) {
+		return {
+			attempted: true,
+			deleted: false,
+			warning: error instanceof Error ? error.message : 'Failed to delete the WhatsApp message.'
+		};
+	}
+}
+
 async function getContactProfile(phone, chatJid) {
 	if (!sock || connectionState !== 'open') return { profilePictureUrl: null, about: null };
 	const jid = chatJid || phone + '@s.whatsapp.net';
@@ -699,6 +749,7 @@ module.exports = {
 	sendMessageToPhone,
 	sendAttachmentToPhone,
 	sendLocationToPhone,
+	deleteMessageFromPhone,
 	getWhatsAppStatus,
 	getWhatsAppQr,
 	getWhatsAppProfile,

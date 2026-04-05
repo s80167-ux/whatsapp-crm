@@ -9,7 +9,7 @@ type NavigationItem = {
 const navItems: NavigationItem[] = [
   { key: "inbox", label: "Inbox" },
   { key: "contacts", label: "Contacts" },
-  { key: "analytics", label: "Analytics", disabled: true },
+  { key: "analytics", label: "Sales", disabled: true },
   { key: "settings", label: "Settings", disabled: true }
 ];
 
@@ -76,12 +76,13 @@ function getItemIcon(label: string) {
           <path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
       );
-    case "Analytics":
+    case "Sales":
       return (
         <svg fill="none" height="16" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="16">
-          <line x1="18" x2="18" y1="20" y2="10" />
-          <line x1="12" x2="12" y1="20" y2="4" />
-          <line x1="6" x2="6" y1="20" y2="14" />
+          <path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
+          <path d="M14 2v6h6" />
+          <path d="M9 12h6" />
+          <path d="M9 16h6" />
         </svg>
       );
     case "Settings":

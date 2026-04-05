@@ -1,13 +1,10 @@
 import { useState } from "react";
 import logo from "../../asset/rezeki_dashboard_logo_glass.png";
-import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type CustomerStatus, type WhatsAppQr, type WhatsAppStatus } from "../lib/api";
-import { supabase } from "../lib/supabase";
-import { WhatsAppConnectCard } from "./WhatsAppConnectCard";
+import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type CustomerStatus } from "../lib/api";
 
 type SidebarProps = {
   activeView: "inbox" | "pipeline" | "broadcast";
   activeStatusFilter: CustomerStatus | null;
-  token: string;
   counts: {
     inbox: number;
   };
@@ -18,13 +15,6 @@ type SidebarProps = {
   };
   onChangeView: (view: "inbox" | "pipeline" | "broadcast") => void;
   onStatusFilterChange: (status: CustomerStatus | null) => void;
-  userEmail: string;
-  onLogout: () => void;
-  onDisconnectWhatsApp: () => void;
-  whatsAppStatus: WhatsAppStatus | null;
-  whatsAppQr: WhatsAppQr | null;
-  loadingWhatsApp: boolean;
-  disconnectingWhatsApp: boolean;
 };
 
 function getStatusIcon(status: CustomerStatus) {
@@ -72,100 +62,102 @@ function getStatusIcon(status: CustomerStatus) {
 
 const menu = [{ key: "inbox", label: "Inbox" }];
 
+function getStatusCardClasses(status: CustomerStatus, active: boolean) {
+  switch (status) {
+    case "new_lead":
+      return active
+        ? "border-yellow-200 bg-yellow-50 text-yellow-800"
+        : "border-yellow-100 bg-white text-yellow-700 hover:bg-yellow-50";
+    case "interested":
+      return active
+        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+        : "border-emerald-100 bg-white text-emerald-700 hover:bg-emerald-50";
+    case "processing":
+      return active
+        ? "border-blue-200 bg-blue-50 text-blue-800"
+        : "border-blue-100 bg-white text-blue-700 hover:bg-blue-50";
+    case "closed_won":
+      return active
+        ? "border-slate-300 bg-slate-100 text-slate-900"
+        : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50";
+    case "closed_lost":
+      return active
+        ? "border-rose-200 bg-rose-50 text-rose-800"
+        : "border-rose-100 bg-white text-rose-700 hover:bg-rose-50";
+    default:
+      return active
+        ? "border-transparent bg-[#e9edef] text-whatsapp-deep"
+        : "border-transparent bg-white text-whatsapp-muted hover:bg-[#f5f6f6] shadow-sm";
+  }
+}
+
+function getStatusIconClasses(status: CustomerStatus, active: boolean) {
+  switch (status) {
+    case "new_lead":
+      return active ? "bg-yellow-100 text-yellow-700" : "bg-yellow-50 text-yellow-700";
+    case "interested":
+      return active ? "bg-emerald-100 text-emerald-700" : "bg-emerald-50 text-emerald-700";
+    case "processing":
+      return active ? "bg-blue-100 text-blue-700" : "bg-blue-50 text-blue-700";
+    case "closed_won":
+      return active ? "bg-slate-200 text-slate-800" : "bg-slate-100 text-slate-800";
+    case "closed_lost":
+      return active ? "bg-rose-100 text-rose-700" : "bg-rose-50 text-rose-700";
+    default:
+      return active ? "bg-white text-whatsapp-dark" : "bg-whatsapp-soft text-whatsapp-muted group-hover:bg-white group-hover:text-whatsapp-dark";
+  }
+}
+
+function getStatusCountClasses(status: CustomerStatus, active: boolean) {
+  switch (status) {
+    case "new_lead":
+      return active ? "bg-yellow-600 text-white" : "bg-yellow-100 text-yellow-800";
+    case "interested":
+      return active ? "bg-emerald-600 text-white" : "bg-emerald-100 text-emerald-800";
+    case "processing":
+      return active ? "bg-blue-600 text-white" : "bg-blue-100 text-blue-800";
+    case "closed_won":
+      return active ? "bg-slate-800 text-white" : "bg-slate-200 text-slate-800";
+    case "closed_lost":
+      return active ? "bg-rose-600 text-white" : "bg-rose-100 text-rose-800";
+    default:
+      return active ? "bg-whatsapp-dark text-white" : "bg-whatsapp-soft text-whatsapp-muted group-hover:bg-white";
+  }
+}
+
 export function Sidebar({
   activeView,
   activeStatusFilter,
-  token,
   counts,
   stats,
   onChangeView,
-  onStatusFilterChange,
-  userEmail,
-  onLogout,
-  onDisconnectWhatsApp,
-  whatsAppStatus,
-  whatsAppQr,
-  loadingWhatsApp,
-  disconnectingWhatsApp
+  onStatusFilterChange
 }: SidebarProps) {
-  const [isWorkspaceCollapsed, setIsWorkspaceCollapsed] = useState(true);
-  const [showPasswordForm, setShowPasswordForm] = useState(false);
-  const [nextPassword, setNextPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordError, setPasswordError] = useState("");
-  const [passwordSuccess, setPasswordSuccess] = useState("");
-  const [passwordSaving, setPasswordSaving] = useState(false);
-
-  async function handleChangePassword() {
-    const trimmedPassword = nextPassword.trim();
-
-    setPasswordError("");
-    setPasswordSuccess("");
-
-    if (trimmedPassword.length < 6) {
-      setPasswordError("Password must be at least 6 characters.");
-      return;
-    }
-
-    if (trimmedPassword !== confirmPassword.trim()) {
-      setPasswordError("Passwords do not match.");
-      return;
-    }
-
-    setPasswordSaving(true);
-
-    try {
-      const { error } = await supabase.auth.updateUser({ password: trimmedPassword });
-
-      if (error) {
-        throw error;
-      }
-
-      setNextPassword("");
-      setConfirmPassword("");
-      setPasswordSuccess("Password updated successfully.");
-      setShowPasswordForm(false);
-    } catch (error) {
-      setPasswordError(error instanceof Error ? error.message : "Failed to update password.");
-    } finally {
-      setPasswordSaving(false);
-    }
-  }
-
   return (
     <aside className="glass-panel flex min-w-0 flex-col gap-4 self-start p-3 xl:sticky xl:top-6">
       <div className="space-y-4">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 xl:flex-col xl:items-start">
           <img
             alt="Rezeki Dashboard logo"
-            className="h-24 w-auto object-contain"
+            className="h-20 w-auto object-contain sm:h-24"
             src={logo}
           />
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-whatsapp-muted">Workspace</p>
+          <div className="min-w-0 xl:w-full">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted sm:text-xs sm:tracking-[0.26em]">
+              Workspace
+            </p>
           </div>
         </div>
 
         <div className="rounded-xl border border-whatsapp-line bg-[#f8f5f2] p-2.5">
-          <button
-            className="flex w-full items-center justify-between gap-3 text-left"
-            onClick={() => setIsWorkspaceCollapsed((current) => !current)}
-            type="button"
-          >
-            <div className="min-w-0">
-              <p className="text-[10px] uppercase tracking-[0.22em] text-whatsapp-muted">Workspace</p>
-              <p className="mt-1 truncate text-xs font-medium text-ink sm:text-sm">
-                {activeStatusFilter ? CUSTOMER_STATUS_LABELS[activeStatusFilter] : menu.find((item) => item.key === activeView)?.label || "Inbox"}
-              </p>
-            </div>
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-whatsapp-muted shadow-soft">
-              <svg className={`h-4 w-4 transition ${isWorkspaceCollapsed ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24">
-                <path d="m6 9 6 6 6-6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-              </svg>
-            </span>
-          </button>
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-[0.22em] text-whatsapp-muted">Workspace</p>
+            <p className="mt-1 truncate text-xs font-medium text-ink sm:text-sm">
+              {activeStatusFilter ? CUSTOMER_STATUS_LABELS[activeStatusFilter] : menu.find((item) => item.key === activeView)?.label || "Inbox"}
+            </p>
+          </div>
 
-          <div className={isWorkspaceCollapsed ? "hidden" : "mt-2 block"}>
+          <div className="mt-2 block">
             <div className="grid grid-cols-2 gap-1">
               {menu.map((item) => (
                 <button
@@ -199,23 +191,19 @@ export function Sidebar({
               {CUSTOMER_STATUSES.map((status) => (
                 <button
                   key={status}
-                  className={`group relative flex flex-col items-start rounded-lg border p-2 transition-all duration-300 ${
-                    activeStatusFilter === status
-                      ? "border-transparent bg-[#e9edef] text-whatsapp-deep"
-                      : "border-transparent bg-white hover:bg-[#f5f6f6] shadow-sm"
-                  }`}
+                  className={`group relative flex flex-col items-start rounded-lg border p-2 transition-all duration-300 ${getStatusCardClasses(status, activeStatusFilter === status)}`}
                   onClick={() => onStatusFilterChange(activeStatusFilter === status ? null : status)}
                   type="button"
                 >
                   <div className="flex w-full items-center justify-between gap-2">
-                    <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors ${activeStatusFilter === status ? "bg-white text-whatsapp-dark" : "bg-whatsapp-soft text-whatsapp-muted group-hover:bg-white group-hover:text-whatsapp-dark"}`}>
+                    <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors ${getStatusIconClasses(status, activeStatusFilter === status)}`}>
                       {getStatusIcon(status)}
                     </div>
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold shadow-sm transition-all duration-300 ${activeStatusFilter === status ? "bg-whatsapp-dark text-white" : "bg-whatsapp-soft text-whatsapp-muted group-hover:bg-white"}`}>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold shadow-sm transition-all duration-300 ${getStatusCountClasses(status, activeStatusFilter === status)}`}>
                       {stats.statusCounts[status]}
                     </span>
                   </div>
-                  <p className="mt-1.5 text-[8px] font-bold uppercase tracking-[0.12em] text-whatsapp-muted group-hover:text-whatsapp-deep">{CUSTOMER_STATUS_LABELS[status]}</p>
+                  <p className={`mt-1.5 text-[8px] font-bold uppercase tracking-[0.12em] ${activeStatusFilter === status ? "text-current" : "text-whatsapp-muted group-hover:text-current"}`}>{CUSTOMER_STATUS_LABELS[status]}</p>
                 </button>
               ))}
 
@@ -248,108 +236,6 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className="space-y-4 xl:mt-auto xl:border-t xl:border-whatsapp-line/80 xl:pt-4">
-        <WhatsAppConnectCard
-          compact
-          disconnecting={disconnectingWhatsApp}
-          loading={loadingWhatsApp}
-          onDisconnect={onDisconnectWhatsApp}
-          qr={whatsAppQr}
-          status={whatsAppStatus}
-          token={token}
-        />
-
-        <div className="flex flex-col rounded-xl border border-whatsapp-line bg-white p-4 shadow-soft">
-          <p className="text-xs uppercase tracking-[0.25em] text-whatsapp-muted">Signed in</p>
-          <p className="mt-2 break-all text-sm font-medium text-ink">{userEmail}</p>
-          <div className="mt-3 flex items-center gap-3">
-            <button
-              aria-label={showPasswordForm ? "Hide change password form" : "Show change password form"}
-              className="icon-hover-trigger flex w-fit appearance-none items-center justify-center gap-0 overflow-visible border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-whatsapp-muted transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent"
-              onClick={() => {
-                setShowPasswordForm((current) => !current);
-                setPasswordError("");
-                setPasswordSuccess("");
-              }}
-              type="button"
-            >
-              <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
-                <path
-                  d="M16 10V7a4 4 0 1 0-8 0v3M7 21h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2Z"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                />
-              </svg>
-              <span className="icon-hover-label">
-                Change password
-              </span>
-            </button>
-
-            <button
-              aria-label="Logout"
-              className="icon-hover-trigger flex w-fit appearance-none items-center justify-center gap-0 overflow-visible border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-whatsapp-muted transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent"
-              onClick={onLogout}
-              type="button"
-            >
-              <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
-                <path
-                  d="M15 7V5a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-2M10 12h10m0 0-3-3m3 3-3 3"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                />
-              </svg>
-              <span className="icon-hover-label">
-                Logout
-              </span>
-            </button>
-          </div>
-
-          {showPasswordForm ? (
-            <div className="mt-4 space-y-3 border-t border-whatsapp-line pt-4">
-              <input
-                className="input-glass"
-                onChange={(event) => setNextPassword(event.target.value)}
-                placeholder="New password"
-                type="password"
-                value={nextPassword}
-              />
-              <input
-                className="input-glass"
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                placeholder="Confirm new password"
-                type="password"
-                value={confirmPassword}
-              />
-              {passwordError ? <p className="text-xs text-rose-500">{passwordError}</p> : null}
-              {passwordSuccess ? <p className="text-xs text-whatsapp-dark">{passwordSuccess}</p> : null}
-              <div className="flex gap-2">
-                <button className="primary-button px-4 py-2" disabled={passwordSaving} onClick={handleChangePassword} type="button">
-                  {passwordSaving ? "Saving..." : "Update password"}
-                </button>
-                <button
-                  className="secondary-button px-4 py-2"
-                  onClick={() => {
-                    setShowPasswordForm(false);
-                    setNextPassword("");
-                    setConfirmPassword("");
-                    setPasswordError("");
-                    setPasswordSuccess("");
-                  }}
-                  type="button"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : passwordSuccess ? (
-            <p className="mt-3 text-xs text-whatsapp-dark">{passwordSuccess}</p>
-          ) : null}
-        </div>
-      </div>
     </aside>
   );
 }

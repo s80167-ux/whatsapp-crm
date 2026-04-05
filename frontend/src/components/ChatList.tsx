@@ -5,7 +5,9 @@ import { getDisplayName, getDisplayPhone, getResolvedPhone, formatPhoneDisplay }
 type ChatListProps = {
   activeView: "inbox" | "pipeline" | "broadcast";
   conversations: Conversation[];
+  deletingConversationKey: string | null;
   onRefresh: () => void;
+  onDeleteConversation: (phone: string, chatJid?: string | null) => void;
   selectedPhone: string | null;
   loading: boolean;
   refreshing: boolean;
@@ -23,7 +25,9 @@ function formatTimestamp(value: string) {
 export function ChatList({
   activeView,
   conversations,
+  deletingConversationKey,
   onRefresh,
+  onDeleteConversation,
   selectedPhone,
   loading,
   refreshing,
@@ -143,74 +147,110 @@ export function ChatList({
             const resolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid);
             const displayPhone = getDisplayPhone(conversation.phone, conversation.chatJid);
             const active = selectedPhone === resolvedPhone;
+            const conversationKey = conversation.chatJid || resolvedPhone || conversation.timestamp;
+            const deleting = deletingConversationKey === conversationKey;
 
             return (
-              <button
-                key={conversation.chatJid || resolvedPhone || conversation.timestamp}
-                className={`group relative w-full max-w-full min-w-0 overflow-hidden rounded-lg border px-3 py-3 text-left transition-all duration-300 sm:px-4 sm:py-3 ${
-                  active
-                    ? "border-transparent bg-[#e9edef] shadow-none"
-                    : "border-transparent bg-white hover:bg-[#f5f6f6] shadow-none"
-                }`}
-                disabled={!resolvedPhone}
-                onClick={() => {
-                  if (resolvedPhone) {
-                    onSelect(resolvedPhone);
-                  }
-                }}
-                type="button"
-              >
-                <div className="min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                       <p className={`truncate text-sm font-bold leading-5 transition-colors sm:text-sm ${active ? "text-whatsapp-deep" : "text-ink group-hover:text-whatsapp-deep"}`}>
-                        {getDisplayName(conversation.contactName, displayPhone)}
-                      </p>
-                      <div className="flex items-center gap-2">
-                        {conversation.status && (
-                          <div
-                            className={`icon-hover-trigger chat-status-dot h-3 w-3 shrink-0 shadow-sm transition-transform hover:scale-110 active:scale-95 ${
-                              conversation.status === "new_lead"
-                                ? "chat-status-dot-new-lead"
-                                : conversation.status === "interested"
-                                ? "chat-status-dot-interested"
-                                : conversation.status === "processing"
-                                ? "chat-status-dot-processing"
-                                : conversation.status === "closed_won"
-                                ? "chat-status-dot-closed-won"
-                                : "chat-status-dot-closed-lost"
-                            }`}
-                          >
-                            <span className="icon-hover-label">
-                              {`Status: ${
-                                conversation.status.charAt(0).toUpperCase() +
-                                conversation.status.slice(1).replace(/_/g, " ")
+              <div key={conversationKey} className="group relative">
+                <button
+                  className={`relative w-full max-w-full min-w-0 overflow-hidden rounded-lg border px-3 py-3 text-left transition-all duration-300 sm:px-4 sm:py-3 ${
+                    active
+                      ? "border-transparent bg-[#e9edef] shadow-none"
+                      : "border-transparent bg-white hover:bg-[#f5f6f6] shadow-none"
+                  }`}
+                  disabled={!resolvedPhone || deleting}
+                  onClick={() => {
+                    if (resolvedPhone) {
+                      onSelect(resolvedPhone);
+                    }
+                  }}
+                  type="button"
+                >
+                  <div className="min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className={`truncate text-sm font-bold leading-5 transition-colors sm:text-sm ${active ? "text-whatsapp-deep" : "text-ink group-hover:text-whatsapp-deep"}`}>
+                          {getDisplayName(conversation.contactName, displayPhone)}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          {conversation.status && (
+                            <div
+                              className={`icon-hover-trigger chat-status-dot h-3 w-3 shrink-0 shadow-sm transition-transform hover:scale-110 active:scale-95 ${
+                                conversation.status === "new_lead"
+                                  ? "chat-status-dot-new-lead"
+                                  : conversation.status === "interested"
+                                  ? "chat-status-dot-interested"
+                                  : conversation.status === "processing"
+                                  ? "chat-status-dot-processing"
+                                  : conversation.status === "closed_won"
+                                  ? "chat-status-dot-closed-won"
+                                  : "chat-status-dot-closed-lost"
                               }`}
+                            >
+                              <span className="icon-hover-label">
+                                {`Status: ${
+                                  conversation.status.charAt(0).toUpperCase() +
+                                  conversation.status.slice(1).replace(/_/g, " ")
+                                }`}
+                              </span>
+                            </div>
+                          )}
+                          {conversation.unreadCount && conversation.unreadCount > 0 ? (
+                            <span
+                              className="icon-hover-trigger chat-unread-badge flex h-5 min-w-[20px] items-center justify-center bg-blue-500 px-1 text-[10px] font-bold text-white shadow-sm"
+                            >
+                              {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+                              <span className="icon-hover-label">
+                                {`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
+                              </span>
                             </span>
-                          </div>
-                        )}
-                        {conversation.unreadCount && conversation.unreadCount > 0 ? (
-                          <span
-                            className="icon-hover-trigger chat-unread-badge flex h-5 min-w-[20px] items-center justify-center bg-blue-500 px-1 text-[10px] font-bold text-white shadow-sm"
+                          ) : null}
+                          <button
+                            aria-label={deleting ? "Deleting chat" : "Delete chat"}
+                            className="icon-hover-trigger flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-whatsapp-muted transition hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                            disabled={deleting || !resolvedPhone}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+
+                              if (!resolvedPhone) {
+                                return;
+                              }
+
+                              if (!window.confirm(`Delete chat with ${getDisplayName(conversation.contactName, displayPhone)}? This will remove the conversation from the database.`)) {
+                                return;
+                              }
+
+                              onDeleteConversation(resolvedPhone, conversation.chatJid);
+                            }}
+                            type="button"
                           >
-                            {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
-                            <span className="icon-hover-label">
-                              {`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
-                            </span>
-                          </span>
-                        ) : null}
-                        <span className={`shrink-0 text-[10px] font-medium transition-colors sm:text-[10px] ${active ? "text-whatsapp-dark" : "text-whatsapp-muted"}`}>{formatTimestamp(conversation.timestamp)}</span>
+                            {deleting ? (
+                              <span className="text-[10px] font-semibold">...</span>
+                            ) : (
+                              <svg aria-hidden="true" fill="none" height="15" viewBox="0 0 24 24" width="15">
+                                <path d="M3 6h18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                                <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                                <path d="M10 11v6M14 11v6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                              </svg>
+                            )}
+                            <span className="icon-hover-label">{deleting ? "Deleting chat" : "Delete chat"}</span>
+                          </button>
+                          <span className={`shrink-0 text-[10px] font-medium transition-colors sm:text-[10px] ${active ? "text-whatsapp-dark" : "text-whatsapp-muted"}`}>{formatTimestamp(conversation.timestamp)}</span>
+                        </div>
                       </div>
+                      <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors sm:text-[11px] ${active ? "text-whatsapp-dark/80" : "text-whatsapp-muted"}`}>
+                        {formatPhoneDisplay(conversation.phone, conversation.chatJid)}
+                      </p>
+                      <p className={`mt-1.5 hidden truncate text-xs leading-4 transition-colors md:block ${active ? "text-ink/80" : "text-whatsapp-muted group-hover:text-ink/80"}`}>
+                        {conversation.lastMessage}
+                      </p>
                     </div>
-                    <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors sm:text-[11px] ${active ? "text-whatsapp-dark/80" : "text-whatsapp-muted"}`}>
-                      {formatPhoneDisplay(conversation.phone, conversation.chatJid)}
-                    </p>
-                    <p className={`mt-1.5 hidden truncate text-xs leading-4 transition-colors md:block ${active ? "text-ink/80" : "text-whatsapp-muted group-hover:text-ink/80"}`}>
-                      {conversation.lastMessage}
-                    </p>
                   </div>
-                </div>
-              </button>
+                </button>
+
+              </div>
             );
           })}
         </div>

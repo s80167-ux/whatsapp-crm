@@ -36,6 +36,18 @@ textarea {
   font: inherit;
 }
 
+.input-glass:-webkit-autofill,
+.input-glass:-webkit-autofill:hover,
+.input-glass:-webkit-autofill:focus,
+.auth-input-field:-webkit-autofill,
+.auth-input-field:-webkit-autofill:hover,
+.auth-input-field:-webkit-autofill:focus {
+  -webkit-text-fill-color: #15221d;
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
+  box-shadow: 0 0 0 1000px #ffffff inset;
+  caret-color: #15221d;
+}
+
 .force-rounded {
   border-radius: 9999px !important;
 }
@@ -67,7 +79,7 @@ textarea {
 }
 
 .chat-status-dot-processing {
-  background-color: #38bdf8;
+  background-color: #2563eb;
 }
 
 .chat-status-dot-closed-won {
@@ -94,21 +106,27 @@ textarea {
   left: 50%;
   top: 100%;
   z-index: 30;
-  margin-top: 0.35rem;
-  transform: translateX(-50%);
+  margin-top: 0.45rem;
+  transform: translateX(-50%) translateY(4px);
   white-space: nowrap;
-  font-size: 10px;
+  padding: 0.38rem 0.55rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #ffffff;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.03em;
-  color: rgba(21, 34, 29, 0.88);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  color: #000000;
   opacity: 0;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.92), 0 4px 10px rgba(7, 94, 84, 0.18);
-  transition: opacity 0.18s ease;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16), 0 3px 8px rgba(15, 23, 42, 0.08);
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
 .icon-hover-trigger:hover .icon-hover-label,
 .icon-hover-trigger:focus-visible .icon-hover-label {
   opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .custom-scrollbar,

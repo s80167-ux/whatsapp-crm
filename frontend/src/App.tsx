@@ -5,9 +5,8 @@ import { ContactList } from "./components/ContactList";
 import { CustomerPanel } from "./components/CustomerPanel";
 import type { CustomerPanelProps } from "./components/CustomerPanel";
 import { LoginForm } from "./components/LoginForm";
-import { NavigationHeader } from "./components/NavigationHeader";
 import { Sidebar } from "./components/Sidebar";
-import { WhatsAppConnectCard } from "./components/WhatsAppConnectCard";
+import { TopBar } from "./components/TopBar";
 import { api, CUSTOMER_STATUSES, type Conversation, type Customer, type CustomerStatus, type Message, type SalesLeadItem, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
 import { getResolvedPhone } from "./lib/display";
 import { supabase } from "./lib/supabase";
@@ -85,6 +84,8 @@ function App() {
   const [connectedWhatsAppPhone, setConnectedWhatsAppPhone] = useState<string | null>(null);
   const [loadingWhatsApp, setLoadingWhatsApp] = useState(true);
   const [disconnectingWhatsApp, setDisconnectingWhatsApp] = useState(false);
+  const [deletingConversationKey, setDeletingConversationKey] = useState<string | null>(null);
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
 
   useEffect(() => {
     setCustomerPanelCollapsed(false);
@@ -249,6 +250,75 @@ function App() {
     }
   }
 
+  async function handleDeleteConversation(phone: string, chatJid?: string | null) {
+    if (!token) {
+      return;
+    }
+
+    const resolvedPhone = getResolvedPhone(phone, chatJid);
+    const conversationKey = String(chatJid || resolvedPhone || phone || "").trim() || null;
+
+    setDeletingConversationKey(conversationKey);
+    setDashboardError("");
+
+    try {
+      await api.deleteConversation(phone, token, chatJid);
+
+      setConversations((current) =>
+        current.filter((conversation) => {
+          const conversationResolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid);
+          const matchesPhone = Boolean(resolvedPhone && conversationResolvedPhone === resolvedPhone);
+          const matchesChatJid = Boolean(chatJid && conversation.chatJid === chatJid);
+
+          return !matchesPhone && !matchesChatJid;
+        })
+      );
+
+      if (selectedPhone && resolvedPhone && selectedPhone === resolvedPhone) {
+        setSelectedPhone(null);
+        setMessages([]);
+        setCustomerDraft(null);
+        setSalesLeadItems([]);
+      }
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "Failed to delete conversation.");
+    } finally {
+      setDeletingConversationKey(null);
+    }
+  }
+
+  async function handleDeleteMessage(message: Message) {
+    if (!token || deletingMessageId === message.id) {
+      return;
+    }
+
+    const targetPhone = getResolvedPhone(message.phone, message.chat_jid) || message.phone;
+    const targetChatJid = message.chat_jid || activeChatJid || null;
+
+    setDeletingMessageId(message.id);
+    setDashboardError("");
+
+    try {
+      await api.deleteMessage(message.id, token);
+
+      setMessages((current) => current.filter((item) => item.id !== message.id));
+
+      await loadConversations(token, true);
+
+      if (selectedPhone && selectedPhone === targetPhone) {
+        await Promise.allSettled([
+          loadMessages(targetPhone, token, true),
+          loadCustomer(targetPhone, token, true),
+          loadCustomerSalesItems(targetPhone, token, targetChatJid, true)
+        ]);
+      }
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "Failed to delete message.");
+    } finally {
+      setDeletingMessageId(null);
+    }
+  }
+
   async function persistCustomer(nextCustomer: Customer) {
     if (!token) {
       return;
@@ -280,6 +350,7 @@ function App() {
 
   async function handleCreateSalesLeadItem(payload: {
     messageId: string;
+    status: CustomerStatus;
     productType: string;
     packageName: string;
     price: number;
@@ -302,6 +373,24 @@ function App() {
       );
 
       setSalesLeadItems((current) => [item, ...current]);
+
+      if (payload.status !== selectedStatus) {
+        const savedCustomer = await api.saveCustomer(
+          selectedPhone,
+          {
+            status: payload.status,
+            notes: selectedNotes
+          },
+          token
+        );
+
+        setCustomerDraft(savedCustomer);
+        updateConversationStatus({
+          phone: savedCustomer.phone,
+          chatJid: savedCustomer.chat_jid,
+          status: savedCustomer.status
+        });
+      }
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to save sales lead item.");
       throw error;
@@ -811,6 +900,7 @@ function App() {
         profilePictureUrl: customerDraft?.profile_picture_url || null,
         saving: savingCustomer,
         status: selectedStatus,
+        statusCounts: sidebarStats.statusCounts,
         totalMessages: customerDraft?.total_messages,
         onNotesChange: (value) => {
           if (!selectedPhone) {
@@ -835,35 +925,6 @@ function App() {
 
           setCustomerDraft(nextCustomer);
           scheduleCustomerSave(nextCustomer);
-        },
-        onStatusChange: (value) => {
-          if (!selectedPhone) {
-            return;
-          }
-
-          const nextCustomer: Customer = {
-            phone: selectedPhone,
-            chat_jid: activeCustomerChatJid,
-            contact_name: customerDraft?.contact_name || selectedConversation?.contactName || null,
-            profile_picture_url: customerDraft?.profile_picture_url || null,
-            about: customerDraft?.about || null,
-            total_messages: customerDraft?.total_messages,
-            incoming_count: customerDraft?.incoming_count,
-            outgoing_count: customerDraft?.outgoing_count,
-            last_message_at: customerDraft?.last_message_at || null,
-            last_message_preview: customerDraft?.last_message_preview || null,
-            last_direction: customerDraft?.last_direction || null,
-            status: value as Customer["status"],
-            notes: customerDraft?.notes || ""
-          };
-
-          setCustomerDraft(nextCustomer);
-          updateConversationStatus({
-            phone: nextCustomer.phone,
-            chatJid: nextCustomer.chat_jid,
-            status: nextCustomer.status
-          });
-          scheduleCustomerSave(nextCustomer, true);
         }
       }
     : null;
@@ -892,24 +953,27 @@ function App() {
   return (
     <main className="min-h-screen bg-app px-4 py-6 text-ink">
       <div className="mx-auto max-w-[1600px] space-y-4">
-        <NavigationHeader activeTab={activeDashboardTab} onChangeTab={setActiveDashboardTab} />
-        <div className="space-y-4 xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(280px,1fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
-          <Sidebar
-            activeView={activeView}
-          activeStatusFilter={activeStatusFilter}
-          counts={sidebarCounts}
+        <TopBar
+          activeTab={activeDashboardTab}
           disconnectingWhatsApp={disconnectingWhatsApp}
           loadingWhatsApp={loadingWhatsApp}
-          onChangeView={setActiveView}
-          onStatusFilterChange={setActiveStatusFilter}
+          onChangeTab={setActiveDashboardTab}
           onDisconnectWhatsApp={handleDisconnectWhatsApp}
           onLogout={handleLogout}
-          stats={sidebarStats}
           token={token}
           userEmail={userEmail}
           whatsAppQr={whatsAppQr}
           whatsAppStatus={whatsAppStatus}
         />
+        <div className="space-y-4 xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(280px,1fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
+          <Sidebar
+            activeView={activeView}
+            activeStatusFilter={activeStatusFilter}
+            counts={sidebarCounts}
+            onChangeView={setActiveView}
+            onStatusFilterChange={setActiveStatusFilter}
+            stats={sidebarStats}
+          />
 
         <div className="space-y-4 xl:contents">
           {dashboardError ? (
@@ -922,7 +986,9 @@ function App() {
                 <ChatList
                   activeView={activeView}
                   conversations={visibleConversations}
+                  deletingConversationKey={deletingConversationKey}
                   loading={loadingChats}
+                  onDeleteConversation={handleDeleteConversation}
                   onRefresh={() => {
                     if (!token) {
                       return;
@@ -977,12 +1043,14 @@ function App() {
                   contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
                   customerPanelProps={customerPanelProps}
                   chatJid={customerDraft?.chat_jid || selectedConversation?.chatJid || null}
+                  deletingMessageId={deletingMessageId}
                   loading={loadingMessages}
                   loadingSalesLeadItems={loadingSalesLeadItems}
                   messageText={chatInput}
                   messages={messages}
                   onChangeMessage={setChatInput}
                   onCreateSalesLeadItem={handleCreateSalesLeadItem}
+                  onDeleteMessage={handleDeleteMessage}
                   onSendAttachment={handleSendAttachment}
                   onSendLocation={handleSendLocation}
                   onSend={handleSend}

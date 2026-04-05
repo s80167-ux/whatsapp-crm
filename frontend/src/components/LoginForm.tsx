@@ -78,9 +78,9 @@ export function LoginForm(props: LoginFormProps) {
 
         <label className="block">
           <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Password</span>
-          <div className="relative">
+          <div className="relative flex items-center rounded-lg border border-whatsapp-line bg-white transition focus-within:border-whatsapp-dark focus-within:ring-2 focus-within:ring-whatsapp-green/15">
             <input
-              className="input-glass pr-12"
+              className="auth-input-field w-full rounded-lg border-0 bg-transparent px-4 py-2.5 pr-14 text-sm text-ink outline-none placeholder:text-whatsapp-muted"
               onChange={(event) => onPasswordChange(event.target.value)}
               placeholder="Enter your password"
               type={showPassword ? "text" : "password"}
@@ -88,7 +88,7 @@ export function LoginForm(props: LoginFormProps) {
             />
             <button
               type="button"
-              className="icon-hover-trigger absolute right-3 top-1/2 flex -translate-y-1/2 items-center justify-center text-whatsapp-muted transition-colors hover:text-whatsapp-deep"
+              className="icon-hover-trigger absolute inset-y-0 right-4 z-10 my-auto flex h-5 w-5 items-center justify-center text-whatsapp-muted transition-colors hover:text-whatsapp-deep"
               onClick={() => setShowPassword(!showPassword)}
               aria-label={showPassword ? "Hide password" : "Show password"}
             >

@@ -14,6 +14,8 @@ const {
   getCustomerSalesItems,
   createCustomerSalesItem,
   clearConversationUnreadCount,
+  deleteConversation,
+  deleteMessage,
   upsertCustomer,
   getWhatsAppSettings,
   upsertWhatsAppProfile
@@ -23,6 +25,7 @@ const {
   sendMessageToPhone,
   sendAttachmentToPhone,
   sendLocationToPhone,
+  deleteMessageFromPhone,
   getWhatsAppStatus,
   getWhatsAppQr,
   getWhatsAppProfile,
@@ -61,6 +64,10 @@ const upload = multer({
   }
 });
 
+function isAllowedLocalDevOrigin(origin) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1):(\d+)$/.test(String(origin || "").trim());
+}
+
 function getAttachmentMediaType(mimeType) {
   const normalizedMimeType = String(mimeType || "").trim().toLowerCase();
 
@@ -88,7 +95,7 @@ function getAttachmentPreviewText(file, caption) {
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.has(origin)) {
+      if (!origin || allowedOrigins.has(origin) || isAllowedLocalDevOrigin(origin)) {
         callback(null, true);
         return;
       }
@@ -271,6 +278,61 @@ app.post("/conversations/:phone/read", requireAuth, bindAuthenticatedWhatsAppOwn
   } catch (error) {
     console.error("Failed to clear unread count:", error);
     return res.status(500).json({ error: "Failed to clear unread count." });
+  }
+});
+
+app.delete("/conversations/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const phone = normalizePhone(req.params.phone);
+    const chatJid = typeof req.body?.chatJid === "string" ? req.body.chatJid.trim() || null : null;
+
+    if (!phone) {
+      return res.status(400).json({ error: "Phone is required." });
+    }
+
+    const result = await deleteConversation({
+      owner_user_id: req.user.sub,
+      phone,
+      chat_jid: chatJid
+    });
+
+    return res.json({ success: true, ...result });
+  } catch (error) {
+    console.error("Failed to delete conversation:", error);
+    return res.status(500).json({ error: "Failed to delete conversation." });
+  }
+});
+
+app.delete("/messages/:messageId", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const messageId = String(req.params.messageId || "").trim();
+
+    if (!messageId) {
+      return res.status(400).json({ error: "Message ID is required." });
+    }
+
+    const deletedMessage = await deleteMessage({
+      owner_user_id: req.user.sub,
+      message_id: messageId
+    });
+
+    const whatsapp = await deleteMessageFromPhone({
+      phone: deletedMessage.phone,
+      chatJid: deletedMessage.chat_jid || null,
+      waMessageId: deletedMessage.wa_message_id || null,
+      direction: deletedMessage.direction
+    });
+
+    return res.json({
+      success: true,
+      deletedMessageId: deletedMessage.id,
+      phone: deletedMessage.phone,
+      chatJid: deletedMessage.chat_jid || null,
+      whatsapp
+    });
+  } catch (error) {
+    console.error("Failed to delete message:", error);
+    return res.status(error.status || 500).json({ error: error.message || "Failed to delete message." });
   }
 });
 

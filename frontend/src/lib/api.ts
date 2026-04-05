@@ -132,6 +132,18 @@ export type WhatsAppSettings = {
   history_sync_days: number;
 };
 
+export type DeleteMessageResponse = {
+  success: boolean;
+  deletedMessageId: string;
+  phone: string;
+  chatJid?: string | null;
+  whatsapp: {
+    attempted: boolean;
+    deleted: boolean;
+    warning?: string | null;
+  };
+};
+
 const configuredApiUrl = import.meta.env.VITE_API_URL;
 const isLocalhost =
   typeof window !== "undefined" &&
@@ -249,6 +261,25 @@ export const api = {
       {
         method: "POST",
         body: JSON.stringify({ chatJid: chatJid || null })
+      },
+      token
+    );
+  },
+  deleteConversation(phone: string, token: string, chatJid?: string | null) {
+    return request<{ success: boolean; deletedMessages: number; deletedCustomers: number }>(
+      `/conversations/${phone}`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({ chatJid: chatJid || null })
+      },
+      token
+    );
+  },
+  deleteMessage(messageId: string, token: string) {
+    return request<DeleteMessageResponse>(
+      `/messages/${messageId}`,
+      {
+        method: "DELETE"
       },
       token
     );

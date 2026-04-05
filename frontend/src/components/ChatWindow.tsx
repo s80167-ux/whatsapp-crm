@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ComponentProps, type ReactNode } from "react";
-import { CUSTOMER_STATUS_LABELS, type CustomerStatus, type Message, type SalesLeadItem } from "../lib/api";
+import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type CustomerStatus, type Message, type SalesLeadItem } from "../lib/api";
 import { CustomerPanel } from "./CustomerPanel";
 import { getDisplayName, getDisplayPhone, formatPhoneDisplay } from "../lib/display";
 
@@ -9,6 +9,7 @@ type ChatWindowProps = {
   chatJid?: string | null;
   profilePictureUrl?: string | null;
   messages: Message[];
+  deletingMessageId?: string | null;
   salesLeadItems?: SalesLeadItem[];
   salesLeadStatus?: CustomerStatus;
   loadingSalesLeadItems?: boolean;
@@ -20,11 +21,13 @@ type ChatWindowProps = {
   onChangeMessage: (value: string) => void;
   onCreateSalesLeadItem?: (payload: {
     messageId: string;
+    status: CustomerStatus;
     productType: string;
     packageName: string;
     price: number;
     quantity: number;
   }) => Promise<void> | void;
+  onDeleteMessage?: (message: Message) => Promise<void> | void;
   onSend: () => void;
   onSendQuickReply: (value: string) => Promise<void> | void;
   onSendAttachment: (file: File, caption: string) => Promise<void> | void;
@@ -61,7 +64,7 @@ const defaultQuickReplies: QuickReply[] = [
   { id: "default-budget", text: "Can you share your preferred package or budget?" },
   { id: "default-update", text: "I have noted your request and will update you soon." }
 ];
-const commonEmojis = ["😀", "😂", "😍", "🙏", "👍", "❤️", "🎉", "😄"];
+const commonEmojis = ["\u{1F600}", "\u{1F602}", "\u{1F60D}", "\u{1F64F}", "\u{1F44D}", "\u{2764}\u{FE0F}", "\u{1F389}", "\u{1F604}"];
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString([], {
@@ -84,6 +87,23 @@ function formatCurrency(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(value);
+}
+
+function getLeadStatusBadgeClasses(status: CustomerStatus) {
+  switch (status) {
+    case "new_lead":
+      return "border-yellow-200 bg-yellow-50 text-yellow-700";
+    case "interested":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    case "processing":
+      return "border-blue-200 bg-blue-50 text-blue-700";
+    case "closed_won":
+      return "border-slate-300 bg-slate-100 text-slate-800";
+    case "closed_lost":
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    default:
+      return "border-whatsapp-line bg-whatsapp-canvas text-whatsapp-deep";
+  }
 }
 
 function formatStatus(message: Message) {
@@ -389,6 +409,7 @@ export function ChatWindow(props: ChatWindowProps) {
     chatJid,
     profilePictureUrl,
     messages,
+    deletingMessageId = null,
     salesLeadItems = [],
     salesLeadStatus,
     loadingSalesLeadItems = false,
@@ -399,6 +420,7 @@ export function ChatWindow(props: ChatWindowProps) {
     customerPanelProps,
     onChangeMessage,
     onCreateSalesLeadItem,
+    onDeleteMessage,
     onSend,
     onSendQuickReply,
     onSendAttachment,
@@ -434,6 +456,7 @@ export function ChatWindow(props: ChatWindowProps) {
   const [leadPackageName, setLeadPackageName] = useState("");
   const [leadPrice, setLeadPrice] = useState("");
   const [leadQuantity, setLeadQuantity] = useState("1");
+  const [leadStatus, setLeadStatus] = useState<CustomerStatus>(salesLeadStatus || "new_lead");
   const [leadFormError, setLeadFormError] = useState("");
   const [showAllMessages, setShowAllMessages] = useState(false);
   const [expandedQuickReplyMessageId, setExpandedQuickReplyMessageId] = useState<string | null>(null);
@@ -458,6 +481,7 @@ export function ChatWindow(props: ChatWindowProps) {
     const packageName = leadPackageName.trim();
     const price = Number(leadPrice);
     const quantity = Number(leadQuantity);
+    const status = leadStatus;
 
     if (!productType || !packageName) {
       setLeadFormError("Product type and package are required.");
@@ -479,6 +503,7 @@ export function ChatWindow(props: ChatWindowProps) {
     try {
       await onCreateSalesLeadItem({
         messageId: expandedLeadRegistrationMessageId,
+        status,
         productType,
         packageName,
         price,
@@ -489,10 +514,15 @@ export function ChatWindow(props: ChatWindowProps) {
       setLeadPackageName("");
       setLeadPrice("");
       setLeadQuantity("1");
+      setLeadStatus(status);
     } catch (error) {
       setLeadFormError(error instanceof Error ? error.message : "Failed to save sales lead details.");
     }
   }
+
+  useEffect(() => {
+    setLeadStatus(salesLeadStatus || "new_lead");
+  }, [salesLeadStatus]);
 
   function updateStickToBottom() {
     const container = listRef.current;
@@ -591,6 +621,7 @@ export function ChatWindow(props: ChatWindowProps) {
       setLeadPackageName("");
       setLeadPrice("");
       setLeadQuantity("1");
+      setLeadStatus(salesLeadStatus || "new_lead");
       setLeadFormError("");
       setShowAllMessages(false);
       setExpandedQuickReplyMessageId(null);
@@ -718,6 +749,26 @@ export function ChatWindow(props: ChatWindowProps) {
 
   function handleDeleteQuickReply(replyId: string) {
     setQuickReplies((current) => current.filter((item) => item.id !== replyId));
+  }
+
+  function handleDeleteMessageClick(message: Message) {
+    if (!onDeleteMessage) {
+      return;
+    }
+
+    const confirmed = window.confirm("Delete this message from the CRM? WhatsApp will also be updated when possible.");
+
+    if (!confirmed) {
+      return;
+    }
+
+    setExpandedQuickReplyMessageId((current) => (current === message.id ? null : current));
+    setExpandedEmojiMessageId((current) => (current === message.id ? null : current));
+    setExpandedAttachmentMessageId((current) => (current === message.id ? null : current));
+    setExpandedLeadRegistrationMessageId((current) => (current === message.id ? null : current));
+    setLeadFormError("");
+    setComposerError("");
+    void onDeleteMessage(message);
   }
 
   async function handleQuickReplyAttachmentSelection(event: ChangeEvent<HTMLInputElement>) {
@@ -951,7 +1002,7 @@ export function ChatWindow(props: ChatWindowProps) {
   }
 
   return (
-    <section className="glass-panel flex min-h-[120px] flex-col overflow-visible p-2 sm:min-h-[520px] sm:p-3 xl:max-h-[calc(100dvh-210px)]">
+    <section className="glass-panel relative flex min-h-[120px] flex-col overflow-visible p-2 sm:min-h-[520px] sm:p-3 xl:max-h-[calc(100dvh-210px)]">
       <div className="mb-2 rounded-xl border border-whatsapp-line bg-white px-3 py-2 shadow-soft sm:px-4 sm:py-3">
         <div className="flex items-start justify-between gap-2 sm:gap-4">
           <div className="min-w-0 flex-1">
@@ -983,7 +1034,7 @@ export function ChatWindow(props: ChatWindowProps) {
               {customerPanelProps ? (
                 <button
                   aria-label={showCustomerProfile ? "Hide customer profile" : "Show customer profile"}
-                  className="group flex items-center gap-2 rounded-lg border border-whatsapp-line bg-[#f8f5f2] px-1.5 py-1.5 shadow-soft transition hover:bg-white sm:px-2 sm:py-1.5"
+                  className="icon-hover-trigger group flex items-center gap-2 rounded-lg border border-whatsapp-line bg-[#f8f5f2] px-1.5 py-1.5 shadow-soft transition hover:bg-white sm:px-2 sm:py-1.5"
                   onClick={() => setShowCustomerProfile((current) => !current)}
                   type="button"
                 >
@@ -1004,6 +1055,7 @@ export function ChatWindow(props: ChatWindowProps) {
                       {showCustomerProfile ? "Hide customer" : "View customer"}
                     </p>
                   </div>
+                  <span className="icon-hover-label">{showCustomerProfile ? "Hide customer" : "View customer"}</span>
                 </button>
               ) : null}
             </div>
@@ -1012,13 +1064,15 @@ export function ChatWindow(props: ChatWindowProps) {
       </div>
 
       {showCustomerProfile && customerPanelProps ? (
-        <div className="mb-3">
-          <CustomerPanel
-            {...customerPanelProps}
-            mobileCollapsed={false}
-            onClose={() => setShowCustomerProfile(false)}
-            variant="inline"
-          />
+        <div className="pointer-events-none absolute inset-0 z-20 p-2 sm:p-3">
+          <div className="pointer-events-auto h-full overflow-hidden rounded-2xl border border-whatsapp-line/80 bg-white/90 shadow-[0_24px_60px_rgba(16,33,29,0.18)] backdrop-blur-sm">
+            <CustomerPanel
+              {...customerPanelProps}
+              mobileCollapsed={false}
+              onClose={() => setShowCustomerProfile(false)}
+              variant="inline"
+            />
+          </div>
         </div>
       ) : null}
 
@@ -1047,15 +1101,20 @@ export function ChatWindow(props: ChatWindowProps) {
               </div>
             ) : null}
 
-            {visibleMessages.map((item) => (
+            {visibleMessages.map((item) => {
+              const renderableText = getRenderableMessageText(item);
+              const canDeleteMessage = Boolean(onDeleteMessage) && !item.id.startsWith("temp-");
+              const isDeletingMessage = deletingMessageId === item.id;
+              const showIncomingActions = item.direction === "incoming" && quickReplies.length > 0;
+              const linkedSalesLeadItems = salesLeadItems.filter((salesItem) => salesItem.message_id === item.id);
+              const hasLinkedSalesLead = linkedSalesLeadItems.length > 0;
+              const linkedLeadStatus = salesLeadStatus || "new_lead";
+
+              return (
               <div
                 key={item.id}
                 className={`flex flex-col ${item.direction === "outgoing" ? "items-end" : "items-start"}`}
               >
-                {(() => {
-                  const renderableText = getRenderableMessageText(item);
-
-                  return (
                 <div
                   className={`max-w-[92%] overflow-hidden px-3 py-2 shadow-soft sm:max-w-[80%] sm:px-4 sm:py-3 ${
                     item.direction === "outgoing"
@@ -1063,11 +1122,24 @@ export function ChatWindow(props: ChatWindowProps) {
                       : "chat-bubble-incoming border border-whatsapp-line bg-white text-ink/90"
                   }`}
                 >
+                  {hasLinkedSalesLead ? (
+                    <div className="mb-2 flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${getLeadStatusBadgeClasses(linkedLeadStatus)}`}
+                      >
+                        <span className="h-2 w-2 rounded-full bg-current opacity-80" />
+                        {CUSTOMER_STATUS_LABELS[linkedLeadStatus]}
+                      </span>
+                      <span className="text-[10px] font-medium text-whatsapp-muted">
+                        {linkedSalesLeadItems.length} lead{linkedSalesLeadItems.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                  ) : null}
                   {isImageMessage(item) ? (
                     <div className="mb-2 inline-flex max-w-[220px] flex-col overflow-hidden rounded-lg border border-whatsapp-line bg-[#f7f1ea]">
                       <button
                         aria-label="Open image preview"
-                        className="group relative block w-full text-left"
+                        className="icon-hover-trigger group relative block w-full text-left"
                         onClick={() =>
                           setMediaLightbox({
                             src: item.media_data_url || "",
@@ -1086,6 +1158,7 @@ export function ChatWindow(props: ChatWindowProps) {
                         <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 py-2 text-xs font-medium text-white opacity-0 transition group-hover:opacity-100">
                           Click to enlarge
                         </span>
+                        <span className="icon-hover-label">Open image preview</span>
                       </button>
                       <div className="flex items-center justify-end border-t border-whatsapp-line bg-white px-2 py-2">
                         <a
@@ -1117,10 +1190,28 @@ export function ChatWindow(props: ChatWindowProps) {
                       : formatTime(item.created_at)}
                   </p>
                 </div>
-                  );
-                })()}
 
-                {item.direction === "incoming" && quickReplies.length > 0 ? (
+                {canDeleteMessage && !showIncomingActions ? (
+                  <div className="mt-2 flex max-w-[92%] items-center gap-2 overflow-hidden sm:max-w-[80%]">
+                    <button
+                      aria-label={isDeletingMessage ? "Deleting message" : "Delete message"}
+                      className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-55"
+                      disabled={isDeletingMessage}
+                      onClick={() => handleDeleteMessageClick(item)}
+                      type="button"
+                    >
+                      <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                        <path d="M4 7h16" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                        <path d="M10 11v6M14 11v6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                        <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                        <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                      </svg>
+                      <span className="icon-hover-label">{isDeletingMessage ? "Deleting..." : "Delete message"}</span>
+                    </button>
+                  </div>
+                ) : null}
+
+                {showIncomingActions ? (
                   <div className="mt-2 flex max-w-[92%] items-center gap-2 overflow-hidden sm:max-w-[80%]">
                     <button
                       aria-label={expandedQuickReplyMessageId === item.id ? "Hide quick replies" : "Show quick replies"}
@@ -1201,6 +1292,24 @@ export function ChatWindow(props: ChatWindowProps) {
                       </button>
                     ) : null}
 
+                    {canDeleteMessage ? (
+                      <button
+                        aria-label={isDeletingMessage ? "Deleting message" : "Delete message"}
+                        className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-55"
+                        disabled={isDeletingMessage}
+                        onClick={() => handleDeleteMessageClick(item)}
+                        type="button"
+                      >
+                        <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                          <path d="M4 7h16" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                          <path d="M10 11v6M14 11v6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                          <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                          <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                        </svg>
+                        <span className="icon-hover-label">{isDeletingMessage ? "Deleting..." : "Delete message"}</span>
+                      </button>
+                    ) : null}
+
                     {expandedQuickReplyMessageId === item.id ? (
                       <div className="custom-scrollbar-x flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-1">
                         {quickReplies.map((reply) => (
@@ -1211,7 +1320,7 @@ export function ChatWindow(props: ChatWindowProps) {
                             onClick={() => void handleSendQuickReplyClick(reply)}
                             type="button"
                           >
-                            {reply.attachment ? `📎 ${getQuickReplyLabel(reply)}` : getQuickReplyLabel(reply)}
+                            {reply.attachment ? `[Attachment] ${getQuickReplyLabel(reply)}` : getQuickReplyLabel(reply)}
                           </button>
                         ))}
                       </div>
@@ -1260,21 +1369,40 @@ export function ChatWindow(props: ChatWindowProps) {
                         <h4 className="mt-1 text-sm font-semibold text-ink sm:text-base">Register sales products for this customer</h4>
                       </div>
                       {salesLeadStatus ? (
-                        <span className="rounded-full border border-whatsapp-line bg-whatsapp-soft px-3 py-1 text-[11px] font-semibold text-whatsapp-deep">
+                        <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${getLeadStatusBadgeClasses(salesLeadStatus)}`}>
                           {CUSTOMER_STATUS_LABELS[salesLeadStatus]}
                         </span>
                       ) : null}
                     </div>
 
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label className="block sm:col-span-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">Lead status</span>
+                        <select
+                          className="input-glass mt-1"
+                          onChange={(event) => setLeadStatus(event.target.value as CustomerStatus)}
+                          value={leadStatus}
+                        >
+                          {CUSTOMER_STATUSES.map((status) => (
+                            <option key={status} value={status}>
+                              {CUSTOMER_STATUS_LABELS[status]}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       <label className="block">
                         <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">Product type</span>
-                        <input
+                        <select
                           className="input-glass mt-1"
                           onChange={(event) => setLeadProductType(event.target.value)}
-                          placeholder="Water filter, solar, plan..."
                           value={leadProductType}
-                        />
+                        >
+                          <option value="">Select product type</option>
+                          <option value="Mobile">Mobile</option>
+                          <option value="Fixed">Fixed</option>
+                          <option value="Solution">Solution</option>
+                          <option value="Managed Services">Managed Services</option>
+                        </select>
                       </label>
                       <label className="block">
                         <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">Package</span>
@@ -1353,7 +1481,7 @@ export function ChatWindow(props: ChatWindowProps) {
                                     <p className="mt-1 text-xs text-whatsapp-muted">{salesItem.package_name}</p>
                                   </div>
                                   {salesLeadStatus ? (
-                                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-whatsapp-deep shadow-soft">
+                                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] shadow-soft ${getLeadStatusBadgeClasses(salesLeadStatus)}`}>
                                       {CUSTOMER_STATUS_LABELS[salesLeadStatus]}
                                     </span>
                                   ) : null}
@@ -1382,7 +1510,8 @@ export function ChatWindow(props: ChatWindowProps) {
                   </div>
                 ) : null}
               </div>
-            ))}
+              );
+            })}
           </>
         )}
         <div ref={bottomRef} />
@@ -1410,7 +1539,7 @@ export function ChatWindow(props: ChatWindowProps) {
                     onClick={() => void handlePickQuickReply(reply)}
                     type="button"
                   >
-                    {reply.attachment ? `📎 ${getQuickReplyContentLabel(reply)}` : getQuickReplyContentLabel(reply)}
+                    {reply.attachment ? `[Attachment] ${getQuickReplyContentLabel(reply)}` : getQuickReplyContentLabel(reply)}
                   </button>
                   <button
                     aria-label={`Delete quick reply: ${getQuickReplyContentLabel(reply)}`}

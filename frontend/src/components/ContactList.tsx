@@ -47,17 +47,17 @@ function getInitials(contactName: string | null, phone: string | null) {
 function getStatusBadgeClass(status: CustomerStatus) {
   switch (status) {
     case "new_lead":
-      return "bg-amber-100 text-amber-800";
+      return "border border-yellow-200 bg-yellow-50 text-yellow-700";
     case "interested":
-      return "bg-emerald-100 text-emerald-800";
+      return "border border-emerald-200 bg-emerald-50 text-emerald-700";
     case "processing":
-      return "bg-sky-100 text-sky-800";
+      return "border border-blue-200 bg-blue-50 text-blue-700";
     case "closed_won":
-      return "bg-blue-100 text-blue-800";
+      return "border border-slate-300 bg-slate-100 text-slate-800";
     case "closed_lost":
-      return "bg-rose-100 text-rose-800";
+      return "border border-rose-200 bg-rose-50 text-rose-700";
     default:
-      return "bg-emerald-100 text-emerald-800";
+      return "border border-whatsapp-line bg-whatsapp-canvas text-whatsapp-deep";
   }
 }
 

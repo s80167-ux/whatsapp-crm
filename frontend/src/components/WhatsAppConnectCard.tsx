@@ -60,6 +60,7 @@ export function WhatsAppConnectCard({
   const [savingSync, setSavingSync] = useState(false);
   const [clearingDb, setClearingDb] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showQrOverlay, setShowQrOverlay] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -158,6 +159,12 @@ export function WhatsAppConnectCard({
     }
   }, [status?.connected]);
 
+  useEffect(() => {
+    if (!shouldShowQrPanel) {
+      setShowQrOverlay(false);
+    }
+  }, [shouldShowQrPanel]);
+
   const profileIconButton = canViewProfile ? (
     <button
       aria-label={showProfilePanel ? "Hide WhatsApp profile" : "Show WhatsApp profile"}
@@ -203,6 +210,42 @@ export function WhatsAppConnectCard({
         />
       </svg>
       <span className="icon-hover-label">{disconnectLabel}</span>
+    </button>
+  ) : null;
+
+  const settingsIconButton = (
+    <button
+      aria-label={showAdvanced ? "Hide WhatsApp settings" : "Show WhatsApp settings"}
+      className={`icon-hover-trigger flex h-8 w-8 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent ${showAdvanced ? "text-whatsapp-deep" : ""}`}
+      onClick={() => setShowAdvanced((current) => !current)}
+      type="button"
+    >
+      <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+        <circle cx="12" cy="12" r="3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        <path
+          d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33 1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+        />
+      </svg>
+      <span className="icon-hover-label">{showAdvanced ? "Hide WhatsApp settings" : "Show WhatsApp settings"}</span>
+    </button>
+  );
+
+  const qrIconButton = shouldShowQrPanel ? (
+    <button
+      aria-label={showQrOverlay ? "Hide WhatsApp QR code" : "Show WhatsApp QR code"}
+      className={`icon-hover-trigger flex h-8 w-8 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent ${showQrOverlay ? "text-whatsapp-deep" : ""}`}
+      onClick={() => setShowQrOverlay((current) => !current)}
+      type="button"
+    >
+      <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+        <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+        <path d="M14 14h2v2h-2zM18 14h2v6h-6v-2h4zM14 18h2v2h-2z" fill="currentColor" />
+      </svg>
+      <span className="icon-hover-label">{showQrOverlay ? "Hide WhatsApp QR code" : "Show WhatsApp QR code"}</span>
     </button>
   ) : null;
 
@@ -314,45 +357,54 @@ export function WhatsAppConnectCard({
 
   if (compact) {
     return (
-      <div className="rounded-[24px] border border-whatsapp-line bg-white p-3 shadow-soft">
-        <div className="flex items-start justify-between gap-3">
+      <div className="relative overflow-visible px-1 py-2 sm:p-2 lg:min-w-[210px] lg:px-2 lg:py-1.5">
+        <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.2em] text-whatsapp-muted">WhatsApp</p>
             <p className="mt-1 text-sm font-semibold leading-5 text-ink">{compactStatusTitle(status, loading)}</p>
           </div>
           <div className="flex items-center gap-1">
             {profileIconButton}
+            {qrIconButton}
+            {settingsIconButton}
             {disconnectIconButton}
           </div>
         </div>
 
-        {shouldShowQrPanel ? (
-          <div className="mt-3 rounded-[18px] border border-whatsapp-line bg-whatsapp-canvas p-3 shadow-soft">
-            <div className="flex justify-center rounded-[16px] bg-white p-3">
-            {qr?.qr ? (
+        {showQrOverlay ? (
+          <div className="absolute right-0 top-0 z-40 w-[220px] rounded-[22px] border border-whatsapp-line bg-white/95 p-3 shadow-soft backdrop-blur sm:w-[240px]">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">WhatsApp QR</p>
+              <button
+                aria-label="Close WhatsApp QR code"
+                className="icon-hover-trigger flex h-7 w-7 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent"
+                onClick={() => setShowQrOverlay(false)}
+                type="button"
+              >
+                <svg fill="none" height="14" viewBox="0 0 24 24" width="14">
+                  <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                </svg>
+                <span className="icon-hover-label">Close WhatsApp QR code</span>
+              </button>
+            </div>
+
+            <div className="mt-2 flex justify-center">
+              {qr?.qr ? (
                 <img alt="WhatsApp QR code" className="h-40 w-40 max-w-full rounded-xl bg-white p-2 object-contain" src={qr.qr} />
-            ) : (
+              ) : (
                 <div className="flex h-40 w-40 max-w-full items-center justify-center rounded-xl bg-white px-3 text-center text-[11px] leading-4 text-whatsapp-muted">
                   QR not ready
                 </div>
-            )}
+              )}
             </div>
           </div>
         ) : null}
 
         {profilePanel}
 
-        <div className="mt-3 border-t border-whatsapp-line pt-2.5">
-          <button
-            className="text-[10px] font-semibold uppercase tracking-wider text-whatsapp-muted transition-colors hover:text-whatsapp-deep"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            type="button"
-          >
-            {showAdvanced ? "Hide settings" : "Show settings"}
-          </button>
-
-          {showAdvanced && (
-            <div className="mt-2.5 space-y-3">
+        {showAdvanced && (
+          <div className="mt-2 border-t border-whatsapp-line pt-2 lg:mt-1.5 lg:border-t-0 lg:pt-1.5">
+            <div className="space-y-3">
               <div className="border-t border-whatsapp-line pt-2.5">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-medium text-whatsapp-deep" htmlFor="sync-days-compact">Sync window</label>
@@ -389,8 +441,8 @@ export function WhatsAppConnectCard({
                 </button>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
       </div>
     );
@@ -411,8 +463,8 @@ export function WhatsAppConnectCard({
 
       {profilePanel}
 
-      <div className="mt-3 flex flex-col items-center justify-center rounded-[24px] border border-whatsapp-line bg-whatsapp-canvas p-4 shadow-soft md:flex-row md:items-center md:justify-between">
-        <div className="flex min-h-[220px] w-full max-w-[240px] items-center justify-center rounded-[20px] border border-whatsapp-line bg-white p-4 shadow-soft">
+      <div className="mt-3 flex flex-col items-center justify-center p-2 md:flex-row md:items-center md:justify-between">
+        <div className="flex min-h-[220px] w-full max-w-[240px] items-center justify-center p-2">
           {qr?.qr ? (
             <img alt="WhatsApp QR code" className="h-48 w-48 max-w-full rounded-2xl bg-white p-2 object-contain" src={qr.qr} />
           ) : status?.connected ? (

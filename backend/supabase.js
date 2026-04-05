@@ -497,6 +497,44 @@ async function getMessagesByPhone(phone, ownerUserId) {
   }));
 }
 
+async function deleteMessage({ owner_user_id, message_id }) {
+  const { data: existingMessage, error: lookupError } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("owner_user_id", owner_user_id)
+    .eq("id", message_id)
+    .maybeSingle();
+
+  throwIfTenantSchemaError(lookupError, "messages.owner_user_id");
+
+  if (lookupError) {
+    throw lookupError;
+  }
+
+  if (!existingMessage) {
+    const error = new Error("Message not found.");
+    error.status = 404;
+    throw error;
+  }
+
+  const { error } = await supabase
+    .from("messages")
+    .delete()
+    .eq("owner_user_id", owner_user_id)
+    .eq("id", message_id);
+
+  throwIfTenantSchemaError(error, "messages.owner_user_id");
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    ...existingMessage,
+    phone: (await resolveWhatsAppPhone(existingMessage.phone, existingMessage.chat_jid || null)) || existingMessage.phone
+  };
+}
+
 async function getConversations(ownerUserId) {
   let [{ data: messageRows, error: messageError }, { data: customerRows, error: customerError }] = await Promise.all([
     supabase
@@ -681,6 +719,116 @@ async function clearConversationUnreadCount({ owner_user_id, phone, chat_jid }) 
   }
 
   return normalizeCustomerRecord(data);
+}
+
+async function deleteConversation({ owner_user_id, phone, chat_jid }) {
+  const lookupValues = await getPhoneLookupValues(phone, chat_jid || null);
+  const targetChatJid = String(chat_jid || "").trim() || null;
+
+  const [messageRowsByPhone, messageRowsByChatJid, customerRowsByPhone, customerRowsByChatJid] = await Promise.all([
+    lookupValues.length
+      ? supabase
+          .from("messages")
+          .select("id")
+          .eq("owner_user_id", owner_user_id)
+          .in("phone", lookupValues)
+      : Promise.resolve({ data: [], error: null }),
+    targetChatJid
+      ? supabase
+          .from("messages")
+          .select("id")
+          .eq("owner_user_id", owner_user_id)
+          .eq("chat_jid", targetChatJid)
+      : Promise.resolve({ data: [], error: null }),
+    lookupValues.length
+      ? supabase
+          .from("customers")
+          .select("id")
+          .eq("owner_user_id", owner_user_id)
+          .in("phone", lookupValues)
+      : Promise.resolve({ data: [], error: null }),
+    targetChatJid
+      ? supabase
+          .from("customers")
+          .select("id")
+          .eq("owner_user_id", owner_user_id)
+          .eq("chat_jid", targetChatJid)
+      : Promise.resolve({ data: [], error: null })
+  ]);
+
+  throwIfTenantSchemaError(messageRowsByPhone.error, "messages.owner_user_id");
+  throwIfTenantSchemaError(customerRowsByPhone.error, "customers.owner_user_id");
+
+  if (!isMissingColumnError(messageRowsByChatJid.error, "messages.chat_jid")) {
+    throwIfTenantSchemaError(messageRowsByChatJid.error, "messages.owner_user_id");
+  }
+
+  if (!isMissingColumnError(customerRowsByChatJid.error, "customers.chat_jid")) {
+    throwIfTenantSchemaError(customerRowsByChatJid.error, "customers.owner_user_id");
+  }
+
+  if (messageRowsByPhone.error) {
+    throw messageRowsByPhone.error;
+  }
+
+  if (customerRowsByPhone.error) {
+    throw customerRowsByPhone.error;
+  }
+
+  if (messageRowsByChatJid.error && !isMissingColumnError(messageRowsByChatJid.error, "messages.chat_jid")) {
+    throw messageRowsByChatJid.error;
+  }
+
+  if (customerRowsByChatJid.error && !isMissingColumnError(customerRowsByChatJid.error, "customers.chat_jid")) {
+    throw customerRowsByChatJid.error;
+  }
+
+  const messageIds = Array.from(
+    new Set([
+      ...(messageRowsByPhone.data || []).map((row) => row.id),
+      ...(messageRowsByChatJid.data || []).map((row) => row.id)
+    ].filter(Boolean))
+  );
+
+  const customerIds = Array.from(
+    new Set([
+      ...(customerRowsByPhone.data || []).map((row) => row.id),
+      ...(customerRowsByChatJid.data || []).map((row) => row.id)
+    ].filter(Boolean))
+  );
+
+  if (messageIds.length) {
+    const { error } = await supabase
+      .from("messages")
+      .delete()
+      .eq("owner_user_id", owner_user_id)
+      .in("id", messageIds);
+
+    throwIfTenantSchemaError(error, "messages.owner_user_id");
+
+    if (error) {
+      throw error;
+    }
+  }
+
+  if (customerIds.length) {
+    const { error } = await supabase
+      .from("customers")
+      .delete()
+      .eq("owner_user_id", owner_user_id)
+      .in("id", customerIds);
+
+    throwIfTenantSchemaError(error, "customers.owner_user_id");
+
+    if (error) {
+      throw error;
+    }
+  }
+
+  return {
+    deletedMessages: messageIds.length,
+    deletedCustomers: customerIds.length
+  };
 }
 
 async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, status, notes, profile_picture_url, about, unread_count }) {
@@ -1000,11 +1148,13 @@ module.exports = {
   supabase,
   saveMessage,
   updateOutgoingMessageStatus,
+  deleteMessage,
   getMessagesByPhone,
   getConversations,
   getCustomerByPhone,
   getCustomerInsights,
   clearConversationUnreadCount,
+  deleteConversation,
   upsertCustomer,
   getCustomerOwnerIdsByPhone,
   getWhatsAppSettings,
