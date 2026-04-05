@@ -169,8 +169,11 @@ export function ChatList({
                       <div className="flex items-center gap-2">
                         {conversation.status && (
                           <div
-                            className="force-rounded h-3 w-3 shrink-0 shadow-sm ring-2 ring-white/50 transition-transform hover:scale-110 active:scale-95"
+                            className="h-3 w-3 shrink-0 shadow-sm transition-transform hover:scale-110 active:scale-95"
                             style={{
+                              borderRadius: "9999px",
+                              outline: "2px solid rgba(255,255,255,0.5)",
+                              outlineOffset: "1px",
                               backgroundColor:
                                 conversation.status === "new_lead"
                                   ? "#fbbf24"
@@ -184,13 +187,14 @@ export function ChatList({
                             }}
                             title={`Status: ${
                               conversation.status.charAt(0).toUpperCase() +
-                              conversation.status.slice(1).replace("_", " ")
+                              conversation.status.slice(1).replace(/_/g, " ")
                             }`}
                           />
                         )}
                         {conversation.unreadCount && conversation.unreadCount > 0 ? (
                           <span
-                            className="force-rounded flex h-5 min-w-[20px] items-center justify-center bg-blue-500 px-1 text-[10px] font-bold text-white shadow-sm ring-2 ring-white/50"
+                            className="flex h-5 min-w-[20px] items-center justify-center bg-blue-500 px-1 text-[10px] font-bold text-white shadow-sm"
+                            style={{ borderRadius: "9999px", outline: "2px solid rgba(255,255,255,0.5)", outlineOffset: "1px" }}
                             title={`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
                           >
                             {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
