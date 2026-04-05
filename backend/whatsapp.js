@@ -255,6 +255,40 @@ async function initializeWhatsApp() {
 		}
 	});
 
+	sock.ev.on('chats.set', async ({ chats }) => {
+		if (!activeOwnerUserId) return;
+		for (const chat of chats) {
+			if (chat.id && chat.unreadCount !== undefined && !chat.id.endsWith('@g.us') && chat.id !== 'status@broadcast') {
+				const phone = await resolveWhatsAppPhone(chat.id, chat.id);
+				if (phone) {
+					await require('./supabase').upsertCustomer({
+						owner_user_id: activeOwnerUserId,
+						phone,
+						chat_jid: chat.id,
+						unread_count: chat.unreadCount
+					}).catch(() => {});
+				}
+			}
+		}
+	});
+
+	sock.ev.on('chats.update', async (updates) => {
+		if (!activeOwnerUserId) return;
+		for (const update of updates) {
+			if (update.id && update.unreadCount !== undefined && !update.id.endsWith('@g.us') && update.id !== 'status@broadcast') {
+				const phone = await resolveWhatsAppPhone(update.id, update.id);
+				if (phone) {
+					await require('./supabase').upsertCustomer({
+						owner_user_id: activeOwnerUserId,
+						phone,
+						chat_jid: update.id,
+						unread_count: update.unreadCount
+					}).catch(() => {});
+				}
+			}
+		}
+	});
+
 	sock.ev.on('messages.upsert', async ({ messages, type }) => {
 		if (!['notify', 'append'].includes(type) || !Array.isArray(messages) || messages.length === 0) return;
 

@@ -282,7 +282,7 @@ async function getConversations(ownerUserId) {
       .select("phone, chat_jid, message, created_at, direction")
       .eq("owner_user_id", ownerUserId)
       .order("created_at", { ascending: false }),
-    supabase.from("customers").select("phone, chat_jid, status, contact_name, notes").eq("owner_user_id", ownerUserId)
+    supabase.from("customers").select("phone, chat_jid, status, contact_name, notes, unread_count").eq("owner_user_id", ownerUserId)
   ]);
 
   throwIfTenantSchemaError(messageError, "messages.owner_user_id");
@@ -354,7 +354,8 @@ async function getConversations(ownerUserId) {
       lastMessage: row.message,
       timestamp: row.created_at,
       lastDirection: row.direction,
-      status: matchedCustomer?.status || "new_lead"
+      status: matchedCustomer?.status || "new_lead",
+      unreadCount: matchedCustomer?.unread_count || 0
     });
   }
 
@@ -425,7 +426,7 @@ async function getCustomerInsights(phone, ownerUserId) {
   };
 }
 
-async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, status, notes, profile_picture_url, about }) {
+async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, status, notes, profile_picture_url, about, unread_count }) {
   const canonicalPhone = await resolveWhatsAppPhone(phone, chat_jid || null);
   const payload = {
     owner_user_id,
@@ -436,6 +437,7 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
     ...(notes !== undefined ? { notes } : {}),
     ...(profile_picture_url !== undefined ? { profile_picture_url } : {}),
     ...(about !== undefined ? { about } : {}),
+    ...(unread_count !== undefined ? { unread_count } : {}),
     updated_at: new Date().toISOString()
   };
   let writePayload = payload;
@@ -499,6 +501,28 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
 
   if (isMissingColumnError(error, "customers.profile_picture_url") || isMissingColumnError(error, "customers.about")) {
     const { profile_picture_url: _p, about: _a, ...fallbackPayload } = writePayload;
+    writePayload = fallbackPayload;
+
+    if (existing.data?.id) {
+      ({ data, error } = await supabase
+        .from("customers")
+        .update(writePayload)
+        .eq("id", existing.data.id)
+        .select("*")
+        .single());
+    } else {
+      ({ data, error } = await supabase
+        .from("customers")
+        .insert(writePayload)
+        .select("*")
+        .single());
+    }
+
+    throwIfTenantSchemaError(error, "customers.owner_user_id");
+  }
+
+  if (isMissingColumnError(error, "customers.unread_count")) {
+    const { unread_count: _uc, ...fallbackPayload } = writePayload;
     writePayload = fallbackPayload;
 
     if (existing.data?.id) {

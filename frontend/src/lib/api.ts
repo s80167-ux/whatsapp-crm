@@ -26,6 +26,7 @@ export type Conversation = {
   timestamp: string;
   lastDirection: "incoming" | "outgoing";
   status: CustomerStatus;
+  unreadCount?: number;
 };
 
 export type Message = {

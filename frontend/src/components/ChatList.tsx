@@ -36,29 +36,31 @@ export function ChatList({
   const filteredConversations = useMemo(() => {
     const now = new Date();
 
-    return conversations.filter((conversation) => {
-      const resolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid) || "";
-      const matchesQuery =
-        resolvedPhone.toLowerCase().includes(query.toLowerCase()) ||
-        getDisplayName(conversation.contactName, resolvedPhone).toLowerCase().includes(query.toLowerCase()) ||
-        conversation.lastMessage.toLowerCase().includes(query.toLowerCase());
+    return conversations
+      .filter((conversation) => {
+        const resolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid) || "";
+        const matchesQuery =
+          resolvedPhone.toLowerCase().includes(query.toLowerCase()) ||
+          getDisplayName(conversation.contactName, resolvedPhone).toLowerCase().includes(query.toLowerCase()) ||
+          conversation.lastMessage.toLowerCase().includes(query.toLowerCase());
 
-      if (!matchesQuery) {
-        return false;
-      }
+        if (!matchesQuery) {
+          return false;
+        }
 
-      const timestamp = new Date(conversation.timestamp);
+        const timestamp = new Date(conversation.timestamp);
 
-      if (filter === "today") {
-        return timestamp.toDateString() === now.toDateString();
-      }
+        if (filter === "today") {
+          return timestamp.toDateString() === now.toDateString();
+        }
 
-      if (filter === "recent") {
-        return now.getTime() - timestamp.getTime() <= 24 * 60 * 60 * 1000;
-      }
+        if (filter === "recent") {
+          return now.getTime() - timestamp.getTime() <= 24 * 60 * 60 * 1000;
+        }
 
-      return true;
-    });
+        return true;
+      })
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [conversations, filter, query]);
 
   return (
@@ -145,7 +147,7 @@ export function ChatList({
             return (
               <button
                 key={conversation.chatJid || resolvedPhone || conversation.timestamp}
-                className={`group w-full max-w-full min-w-0 overflow-hidden rounded-[20px] border px-3 py-3 text-left transition-all duration-300 sm:rounded-[24px] sm:px-4 sm:py-3 ${
+                className={`group relative w-full max-w-full min-w-0 overflow-hidden rounded-[20px] border px-3 py-3 text-left transition-all duration-300 sm:rounded-[24px] sm:px-4 sm:py-3 ${
                   active
                     ? "border-emerald-400/50 bg-white shadow-glass translate-y-[-1px]"
                     : "border-white/70 bg-white/45 hover:bg-white/95 shadow-sm hover:shadow-soft"
@@ -164,7 +166,14 @@ export function ChatList({
                        <p className={`truncate text-sm font-bold leading-5 transition-colors sm:text-sm ${active ? "text-emerald-950" : "text-ink group-hover:text-emerald-950"}`} title={getDisplayName(conversation.contactName, displayPhone)}>
                         {getDisplayName(conversation.contactName, displayPhone)}
                       </p>
-                      <span className={`shrink-0 text-[10px] font-medium transition-colors sm:text-[10px] ${active ? "text-emerald-600" : "text-emerald-900/40"}`}>{formatTimestamp(conversation.timestamp)}</span>
+                      <div className="flex items-center gap-2">
+                        {conversation.unreadCount && conversation.unreadCount > 0 ? (
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white/50">
+                            {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+                          </span>
+                        ) : null}
+                        <span className={`shrink-0 text-[10px] font-medium transition-colors sm:text-[10px] ${active ? "text-emerald-600" : "text-emerald-900/40"}`}>{formatTimestamp(conversation.timestamp)}</span>
+                      </div>
                     </div>
                     <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors sm:text-[11px] ${active ? "text-emerald-700/60" : "text-emerald-900/45"}`} title={formatPhoneDisplay(conversation.phone, conversation.chatJid)}>
                       {formatPhoneDisplay(conversation.phone, conversation.chatJid)}
