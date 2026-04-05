@@ -11,6 +11,9 @@ const {
   saveMessage,
   getCustomerByPhone,
   getCustomerInsights,
+  getCustomerSalesItems,
+  createCustomerSalesItem,
+  clearConversationUnreadCount,
   upsertCustomer,
   getWhatsAppSettings,
   upsertWhatsAppProfile
@@ -249,6 +252,28 @@ app.get("/conversations", requireAuth, bindAuthenticatedWhatsAppOwner, async (re
   }
 });
 
+app.post("/conversations/:phone/read", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const phone = normalizePhone(req.params.phone);
+    const chatJid = typeof req.body?.chatJid === "string" ? req.body.chatJid.trim() || null : null;
+
+    if (!phone) {
+      return res.status(400).json({ error: "Phone is required." });
+    }
+
+    await clearConversationUnreadCount({
+      owner_user_id: req.user.sub,
+      phone,
+      chat_jid: chatJid
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Failed to clear unread count:", error);
+    return res.status(500).json({ error: "Failed to clear unread count." });
+  }
+});
+
 
 app.get("/messages/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
@@ -321,6 +346,80 @@ app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
   } catch (error) {
     console.error("Failed to save customer:", error);
     return res.status(500).json({ error: "Failed to save customer." });
+  }
+});
+
+app.get("/customers/:phone/sales-items", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const phone = normalizePhone(req.params.phone);
+    const chatJid = typeof req.query?.chatJid === "string" ? req.query.chatJid.trim() || null : null;
+
+    if (!phone) {
+      return res.status(400).json({ error: "Phone is required." });
+    }
+
+    const items = await getCustomerSalesItems(phone, req.user.sub, chatJid);
+    return res.json(items);
+  } catch (error) {
+    console.error("Failed to fetch customer sales items:", error);
+    return res.status(error.status || 500).json({ error: error.message || "Failed to fetch customer sales items." });
+  }
+});
+
+app.post("/customers/:phone/sales-items", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const phone = normalizePhone(req.params.phone);
+    const messageId = String(req.body?.messageId || "").trim();
+    const chatJid = typeof req.body?.chatJid === "string" ? req.body.chatJid.trim() || null : null;
+    const productType = String(req.body?.productType || "").trim();
+    const packageName = String(req.body?.packageName || "").trim();
+    const price = Number(req.body?.price);
+    const quantity = Number(req.body?.quantity);
+
+    if (!phone) {
+      return res.status(400).json({ error: "Phone is required." });
+    }
+
+    if (!messageId) {
+      return res.status(400).json({ error: "Message ID is required." });
+    }
+
+    if (!productType || !packageName) {
+      return res.status(400).json({ error: "Product type and package are required." });
+    }
+
+    if (!Number.isFinite(price) || price < 0) {
+      return res.status(400).json({ error: "Price must be a valid non-negative number." });
+    }
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      return res.status(400).json({ error: "Quantity must be a whole number greater than 0." });
+    }
+
+    const customer = await getCustomerByPhone(phone, req.user.sub);
+    const resolvedChatJid = chatJid || customer.chat_jid || null;
+
+    await upsertCustomer({
+      owner_user_id: req.user.sub,
+      phone,
+      chat_jid: resolvedChatJid
+    });
+
+    const item = await createCustomerSalesItem({
+      owner_user_id: req.user.sub,
+      message_id: messageId,
+      phone,
+      chat_jid: resolvedChatJid,
+      product_type: productType,
+      package_name: packageName,
+      price,
+      quantity
+    });
+
+    return res.status(201).json(item);
+  } catch (error) {
+    console.error("Failed to create customer sales item:", error);
+    return res.status(error.status || 500).json({ error: error.message || "Failed to create customer sales item." });
   }
 });
 
@@ -482,6 +581,35 @@ console.log(
     .join(" | ")
 );
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Backend listening on http://localhost:${port}`);
 });
+
+let shuttingDown = false;
+
+function shutdown(signal) {
+  if (shuttingDown) {
+    return;
+  }
+
+  shuttingDown = true;
+  console.log(`Received ${signal}. Shutting down backend server...`);
+
+  server.close((error) => {
+    if (error) {
+      console.error("Failed to close backend server cleanly:", error);
+      process.exit(1);
+      return;
+    }
+
+    process.exit(0);
+  });
+
+  setTimeout(() => {
+    console.warn("Forcing backend shutdown after timeout.");
+    process.exit(1);
+  }, 5000).unref();
+}
+
+process.once("SIGINT", () => shutdown("SIGINT"));
+process.once("SIGTERM", () => shutdown("SIGTERM"));

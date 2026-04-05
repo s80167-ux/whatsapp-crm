@@ -1,5 +1,5 @@
 import { useState } from "react";
-import logoGlass from "../../asset/rezeki_dashboard_logo_glass.png";
+import logo from "../../asset/rezeki_dashboard_logo_glass.png";
 import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type CustomerStatus, type WhatsAppQr, type WhatsAppStatus } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import { WhatsAppConnectCard } from "./WhatsAppConnectCard";
@@ -133,47 +133,47 @@ export function Sidebar({
   }
 
   return (
-    <aside className="glass-panel flex flex-col justify-between self-start border border-white/70 bg-white/58 p-3 xl:sticky xl:top-6 max-h-[calc(100vh-3rem)] overflow-y-auto custom-scrollbar">
-      <div>
+    <aside className="glass-panel flex min-w-0 flex-col gap-4 self-start p-3 xl:sticky xl:top-6">
+      <div className="space-y-4">
         <div className="flex items-center gap-3">
           <img
             alt="Rezeki Dashboard logo"
-            className="h-16 w-auto object-contain"
-            src={logoGlass}
+            className="h-24 w-auto object-contain"
+            src={logo}
           />
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-emerald-800/65">Workspace</p>
+            <p className="text-xs uppercase tracking-[0.3em] text-whatsapp-muted">Workspace</p>
           </div>
         </div>
 
-        <div className="mt-5 rounded-[26px] border border-white/60 bg-white/52 p-3 shadow-soft">
+        <div className="rounded-xl border border-whatsapp-line bg-[#f8f5f2] p-2.5">
           <button
-            className="flex w-full items-center justify-between gap-3 text-left xl:hidden"
+            className="flex w-full items-center justify-between gap-3 text-left"
             onClick={() => setIsWorkspaceCollapsed((current) => !current)}
             type="button"
           >
             <div className="min-w-0">
-              <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Workspace</p>
-              <p className="mt-1 truncate text-sm font-medium text-ink">
+              <p className="text-[10px] uppercase tracking-[0.22em] text-whatsapp-muted">Workspace</p>
+              <p className="mt-1 truncate text-xs font-medium text-ink sm:text-sm">
                 {activeStatusFilter ? CUSTOMER_STATUS_LABELS[activeStatusFilter] : menu.find((item) => item.key === activeView)?.label || "Inbox"}
               </p>
             </div>
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/70 text-emerald-900/65 shadow-soft">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-whatsapp-muted shadow-soft">
               <svg className={`h-4 w-4 transition ${isWorkspaceCollapsed ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24">
                 <path d="m6 9 6 6 6-6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
               </svg>
             </span>
           </button>
 
-          <div className={`${isWorkspaceCollapsed ? "hidden" : "mt-3 block"} xl:mt-0 xl:block`}>
-            <div className="grid grid-cols-2 gap-1.5">
+          <div className={isWorkspaceCollapsed ? "hidden" : "mt-2 block"}>
+            <div className="grid grid-cols-2 gap-1">
               {menu.map((item) => (
                 <button
                   key={item.key}
-                  className={`relative col-span-2 min-w-0 rounded-[20px] border px-3 py-2.5 pr-10 text-left text-xs font-semibold transition-all duration-300 ${
+                  className={`relative col-span-2 min-w-0 rounded-lg border px-2.5 py-2 pr-9 text-left text-[11px] font-semibold transition-all duration-300 ${
                     activeView === item.key && !activeStatusFilter
-                      ? "border-emerald-200 bg-emerald-100/90 text-emerald-950 shadow-glass translate-y-[-1px]"
-                      : "border-white/45 bg-white/35 text-emerald-950/70 hover:bg-white/60"
+                      ? "border-transparent bg-[#e9edef] text-whatsapp-deep"
+                      : "border-transparent bg-white text-whatsapp-muted hover:bg-[#f5f6f6]"
                   }`}
                   onClick={() => {
                     onChangeView(item.key as "inbox" | "pipeline" | "broadcast");
@@ -181,8 +181,8 @@ export function Sidebar({
                   }}
                   type="button"
                 >
-                  <div className="flex items-center gap-2.5">
-                    <div className={`flex h-7 w-7 items-center justify-center rounded-xl ${activeView === item.key && !activeStatusFilter ? "bg-white text-emerald-600" : "bg-emerald-950/10 text-emerald-900/40"}`}>
+                  <div className="flex items-center gap-2">
+                    <div className={`flex h-6 w-6 items-center justify-center rounded-lg ${activeView === item.key && !activeStatusFilter ? "bg-white text-whatsapp-dark" : "bg-whatsapp-soft text-whatsapp-muted"}`}>
                       <svg fill="none" height="15" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="15">
                         <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
                         <polyline points="22,6 12,13 2,6" />
@@ -190,7 +190,7 @@ export function Sidebar({
                     </div>
                     <span className="block truncate leading-4 font-bold tracking-tight">{item.label}</span>
                   </div>
-                  <span className={`absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-soft transition-all duration-300 ${activeView === item.key && !activeStatusFilter ? "bg-emerald-600 text-white" : "bg-emerald-950/10 text-emerald-900/60"}`}>
+                  <span className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-1.5 py-0.5 text-[9px] font-bold shadow-soft transition-all duration-300 ${activeView === item.key && !activeStatusFilter ? "bg-whatsapp-dark text-white" : "bg-whatsapp-soft text-whatsapp-muted"}`}>
                     {counts.inbox}
                   </span>
                 </button>
@@ -199,56 +199,56 @@ export function Sidebar({
               {CUSTOMER_STATUSES.map((status) => (
                 <button
                   key={status}
-                  className={`group relative flex flex-col items-start rounded-[20px] border p-2.5 transition-all duration-300 ${
+                  className={`group relative flex flex-col items-start rounded-lg border p-2 transition-all duration-300 ${
                     activeStatusFilter === status
-                      ? "border-emerald-200 bg-emerald-100/90 text-emerald-950 shadow-glass translate-y-[-1px]"
-                      : "border-white/55 bg-white/72 hover:bg-white/95 shadow-sm hover:shadow-soft"
+                      ? "border-transparent bg-[#e9edef] text-whatsapp-deep"
+                      : "border-transparent bg-white hover:bg-[#f5f6f6] shadow-sm"
                   }`}
                   onClick={() => onStatusFilterChange(activeStatusFilter === status ? null : status)}
                   type="button"
                 >
                   <div className="flex w-full items-center justify-between gap-2">
-                    <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg transition-colors ${activeStatusFilter === status ? "bg-white text-emerald-600" : "bg-emerald-50 text-emerald-900/40 group-hover:bg-white group-hover:text-emerald-600"}`}>
+                    <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors ${activeStatusFilter === status ? "bg-white text-whatsapp-dark" : "bg-whatsapp-soft text-whatsapp-muted group-hover:bg-white group-hover:text-whatsapp-dark"}`}>
                       {getStatusIcon(status)}
                     </div>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold shadow-sm transition-all duration-300 ${activeStatusFilter === status ? "bg-emerald-600 text-white" : "bg-emerald-50 text-emerald-900/60 group-hover:bg-emerald-100"}`}>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold shadow-sm transition-all duration-300 ${activeStatusFilter === status ? "bg-whatsapp-dark text-white" : "bg-whatsapp-soft text-whatsapp-muted group-hover:bg-white"}`}>
                       {stats.statusCounts[status]}
                     </span>
                   </div>
-                  <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.14em] text-emerald-900/40 group-hover:text-emerald-900/60">{CUSTOMER_STATUS_LABELS[status]}</p>
+                  <p className="mt-1.5 text-[8px] font-bold uppercase tracking-[0.12em] text-whatsapp-muted group-hover:text-whatsapp-deep">{CUSTOMER_STATUS_LABELS[status]}</p>
                 </button>
               ))}
 
-              <div className="rounded-[20px] border border-white/55 bg-white/72 p-2.5 shadow-sm">
+              <div className="rounded-lg border border-whatsapp-line bg-white p-2 shadow-sm">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-50 text-emerald-900/40">
+                  <div className="flex h-5 w-5 items-center justify-center rounded-md bg-whatsapp-soft text-whatsapp-muted">
                     <svg fill="none" height="14" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="14">
                       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                     </svg>
                   </div>
-                  <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-emerald-900/40">Thread</p>
+                  <p className="text-[8px] font-bold uppercase tracking-[0.12em] text-whatsapp-muted">Thread</p>
                 </div>
-                <p className="mt-1.5 text-lg font-bold text-ink leading-none">{stats.currentThreadMessages}</p>
+                <p className="mt-1 text-base font-bold text-ink leading-none">{stats.currentThreadMessages}</p>
               </div>
 
-              <div className="rounded-[20px] border border-white/55 bg-white/72 p-2.5 shadow-sm">
+              <div className="rounded-lg border border-whatsapp-line bg-white p-2 shadow-sm">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-50 text-emerald-900/40">
+                  <div className="flex h-5 w-5 items-center justify-center rounded-md bg-whatsapp-soft text-whatsapp-muted">
                     <svg fill="none" height="14" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="14">
                       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                       <circle cx="12" cy="7" r="4" />
                     </svg>
                   </div>
-                  <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-emerald-900/40">Active</p>
+                  <p className="text-[8px] font-bold uppercase tracking-[0.12em] text-whatsapp-muted">Active</p>
                 </div>
-                <p className="mt-1.5 truncate text-xs font-bold text-ink leading-none">{stats.activeContact}</p>
+                <p className="mt-1 truncate text-[11px] font-bold text-ink leading-none">{stats.activeContact}</p>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid gap-3 pt-3 md:grid-cols-2 xl:grid-cols-1">
+      <div className="space-y-4 xl:mt-auto xl:border-t xl:border-whatsapp-line/80 xl:pt-4">
         <WhatsAppConnectCard
           compact
           disconnecting={disconnectingWhatsApp}
@@ -259,13 +259,13 @@ export function Sidebar({
           token={token}
         />
 
-        <div className="flex flex-col rounded-[28px] border border-white/60 bg-white/62 p-4 shadow-soft">
-          <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Signed in</p>
+        <div className="flex flex-col rounded-xl border border-whatsapp-line bg-white p-4 shadow-soft">
+          <p className="text-xs uppercase tracking-[0.25em] text-whatsapp-muted">Signed in</p>
           <p className="mt-2 break-all text-sm font-medium text-ink">{userEmail}</p>
           <div className="mt-3 flex items-center gap-3">
             <button
               aria-label={showPasswordForm ? "Hide change password form" : "Show change password form"}
-              className="icon-hover-trigger flex w-fit appearance-none items-center justify-center gap-0 overflow-visible border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-emerald-900/72 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent"
+              className="icon-hover-trigger flex w-fit appearance-none items-center justify-center gap-0 overflow-visible border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-whatsapp-muted transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent"
               onClick={() => {
                 setShowPasswordForm((current) => !current);
                 setPasswordError("");
@@ -289,7 +289,7 @@ export function Sidebar({
 
             <button
               aria-label="Logout"
-              className="icon-hover-trigger flex w-fit appearance-none items-center justify-center gap-0 overflow-visible border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-emerald-900/72 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent"
+              className="icon-hover-trigger flex w-fit appearance-none items-center justify-center gap-0 overflow-visible border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-whatsapp-muted transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent"
               onClick={onLogout}
               type="button"
             >
@@ -309,7 +309,7 @@ export function Sidebar({
           </div>
 
           {showPasswordForm ? (
-            <div className="mt-4 space-y-3 border-t border-emerald-900/10 pt-4">
+            <div className="mt-4 space-y-3 border-t border-whatsapp-line pt-4">
               <input
                 className="input-glass"
                 onChange={(event) => setNextPassword(event.target.value)}
@@ -325,7 +325,7 @@ export function Sidebar({
                 value={confirmPassword}
               />
               {passwordError ? <p className="text-xs text-rose-500">{passwordError}</p> : null}
-              {passwordSuccess ? <p className="text-xs text-emerald-700">{passwordSuccess}</p> : null}
+              {passwordSuccess ? <p className="text-xs text-whatsapp-dark">{passwordSuccess}</p> : null}
               <div className="flex gap-2">
                 <button className="primary-button px-4 py-2" disabled={passwordSaving} onClick={handleChangePassword} type="button">
                   {passwordSaving ? "Saving..." : "Update password"}
@@ -346,7 +346,7 @@ export function Sidebar({
               </div>
             </div>
           ) : passwordSuccess ? (
-            <p className="mt-3 text-xs text-emerald-700">{passwordSuccess}</p>
+            <p className="mt-3 text-xs text-whatsapp-dark">{passwordSuccess}</p>
           ) : null}
         </div>
       </div>

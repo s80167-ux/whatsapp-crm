@@ -161,6 +161,23 @@ function throwIfTenantSchemaError(error, columnName) {
   }
 }
 
+function salesItemsSchemaError(error) {
+  const wrappedError = new Error(
+    "Sales lead items are not configured. Run backend/sql/2026-04-05_add_customer_sales_items.sql in Supabase before using lead registration."
+  );
+  wrappedError.status = 500;
+  wrappedError.cause = error;
+  return wrappedError;
+}
+
+function throwIfSalesItemsSchemaError(error) {
+  const errorMessage = String(error?.message || "");
+
+  if (error?.code === "42P01" || errorMessage.includes("customer_sales_items")) {
+    throw salesItemsSchemaError(error);
+  }
+}
+
 function hasCustomerChanges(existingCustomer, nextCustomer) {
   return Object.entries(nextCustomer).some(([key, value]) => {
     if (key === "updated_at") {
@@ -487,7 +504,7 @@ async function getConversations(ownerUserId) {
       .select("phone, chat_jid, message, created_at, direction")
       .eq("owner_user_id", ownerUserId)
       .order("created_at", { ascending: false }),
-    supabase.from("customers").select("phone, chat_jid, status, contact_name, notes, unread_count").eq("owner_user_id", ownerUserId)
+    supabase.from("customers").select("phone, chat_jid, status, contact_name, notes, unread_count, profile_picture_url").eq("owner_user_id", ownerUserId)
   ]);
 
   throwIfTenantSchemaError(messageError, "messages.owner_user_id");
@@ -503,10 +520,10 @@ async function getConversations(ownerUserId) {
     throwIfTenantSchemaError(messageError, "messages.owner_user_id");
   }
 
-  if (isMissingColumnError(customerError, "customers.chat_jid")) {
+  if (isMissingColumnError(customerError, "customers.chat_jid") || isMissingColumnError(customerError, "customers.profile_picture_url")) {
     ({ data: customerRows, error: customerError } = await supabase
       .from("customers")
-      .select("phone, status, contact_name, notes")
+      .select("phone, status, contact_name, notes, unread_count")
       .eq("owner_user_id", ownerUserId));
 
     throwIfTenantSchemaError(customerError, "customers.owner_user_id");
@@ -556,6 +573,7 @@ async function getConversations(ownerUserId) {
       phone: resolvedPhone,
       chatJid: matchedCustomer?.chat_jid || row.chat_jid || null,
       contactName: matchedCustomer?.contact_name || null,
+      profilePictureUrl: matchedCustomer?.profile_picture_url || null,
       lastMessage: row.message,
       timestamp: row.created_at,
       lastDirection: row.direction,
@@ -629,6 +647,40 @@ async function getCustomerInsights(phone, ownerUserId) {
     last_message_preview: latestMessage?.message || null,
     last_direction: latestMessage?.direction || null
   };
+}
+
+async function clearConversationUnreadCount({ owner_user_id, phone, chat_jid }) {
+  const existingCustomer = await findExistingCustomer({
+    owner_user_id,
+    phone,
+    chat_jid
+  });
+
+  if (!existingCustomer) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("customers")
+    .update({
+      unread_count: 0,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", existingCustomer.id)
+    .select("*")
+    .single();
+
+  throwIfTenantSchemaError(error, "customers.owner_user_id");
+
+  if (isMissingColumnError(error, "customers.unread_count")) {
+    return normalizeCustomerRecord(existingCustomer);
+  }
+
+  if (error) {
+    throw error;
+  }
+
+  return normalizeCustomerRecord(data);
 }
 
 async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, status, notes, profile_picture_url, about, unread_count }) {
@@ -856,6 +908,94 @@ async function upsertWhatsAppProfile({ owner_user_id, phone, username, profile_p
   return data;
 }
 
+async function getCustomerSalesItems(phone, ownerUserId, chatJid) {
+  const lookupValues = await getPhoneLookupValues(phone, chatJid || null);
+  const { data, error } = await supabase
+    .from("customer_sales_items")
+    .select("id, message_id, phone, chat_jid, product_type, package_name, price, quantity, created_at, updated_at")
+    .eq("owner_user_id", ownerUserId)
+    .in("phone", lookupValues)
+    .order("created_at", { ascending: false });
+
+  throwIfSalesItemsSchemaError(error);
+
+  if (error) {
+    throw error;
+  }
+
+  return Promise.all(
+    (data || []).map(async (item) => ({
+      ...item,
+      phone: (await resolveWhatsAppPhone(item.phone, item.chat_jid || null)) || item.phone
+    }))
+  );
+}
+
+async function getOwnedMessageRecord(messageId, ownerUserId) {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("id, phone, chat_jid")
+    .eq("owner_user_id", ownerUserId)
+    .eq("id", messageId)
+    .maybeSingle();
+
+  throwIfTenantSchemaError(error, "messages.owner_user_id");
+
+  if (error) {
+    throw error;
+  }
+
+  return data || null;
+}
+
+async function createCustomerSalesItem({ owner_user_id, message_id, phone, chat_jid, product_type, package_name, price, quantity }) {
+  const messageRecord = await getOwnedMessageRecord(message_id, owner_user_id);
+
+  if (!messageRecord) {
+    const error = new Error("Linked message was not found for this customer conversation.");
+    error.status = 404;
+    throw error;
+  }
+
+  const canonicalPhone = await resolveWhatsAppPhone(phone, chat_jid || null);
+  const messagePhone = (await resolveWhatsAppPhone(messageRecord.phone, messageRecord.chat_jid || null)) || messageRecord.phone;
+
+  if ((canonicalPhone || phone) !== messagePhone) {
+    const error = new Error("The selected message does not belong to this customer conversation.");
+    error.status = 400;
+    throw error;
+  }
+
+  const payload = {
+    owner_user_id,
+    message_id,
+    phone: canonicalPhone || phone,
+    ...(chat_jid ? { chat_jid } : {}),
+    product_type: String(product_type || "").trim(),
+    package_name: String(package_name || "").trim(),
+    price: Number(price),
+    quantity: Number(quantity),
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabase
+    .from("customer_sales_items")
+    .insert(payload)
+    .select("id, message_id, phone, chat_jid, product_type, package_name, price, quantity, created_at, updated_at")
+    .single();
+
+  throwIfSalesItemsSchemaError(error);
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    ...data,
+    phone: (await resolveWhatsAppPhone(data.phone, data.chat_jid || null)) || data.phone
+  };
+}
+
 module.exports = {
   supabase,
   saveMessage,
@@ -864,9 +1004,12 @@ module.exports = {
   getConversations,
   getCustomerByPhone,
   getCustomerInsights,
+  clearConversationUnreadCount,
   upsertCustomer,
   getCustomerOwnerIdsByPhone,
   getWhatsAppSettings,
   upsertWhatsAppProfile,
+  getCustomerSalesItems,
+  createCustomerSalesItem,
   supabase
 };

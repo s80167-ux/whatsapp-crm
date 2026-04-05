@@ -64,28 +64,28 @@ export function ChatList({
   }, [conversations, filter, query]);
 
   return (
-    <section className="glass-panel flex min-h-[220px] flex-col border border-white/70 bg-white/58 p-3 sm:min-h-[420px] sm:p-4">
+    <section className="glass-panel flex min-h-[220px] flex-col p-3 sm:min-h-[420px] sm:p-4">
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className="hidden text-xs uppercase tracking-[0.25em] text-emerald-800/65 md:block">Conversations</p>
+          <p className="hidden text-xs uppercase tracking-[0.25em] text-whatsapp-muted md:block">Conversations</p>
           <h3 className="text-sm font-semibold leading-5 text-ink sm:text-xl">Recent chats</h3>
         </div>
         <div className="flex items-center justify-between gap-1 sm:justify-end sm:gap-2">
           <button
-            className="hidden rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-900 shadow-soft transition hover:bg-white sm:inline-flex"
+            className="hidden rounded-full border border-whatsapp-line bg-whatsapp-soft px-3 py-1 text-xs font-medium text-whatsapp-deep shadow-soft transition hover:bg-white sm:inline-flex"
             onClick={onRefresh}
             type="button"
           >
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
           <button
-            className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-medium text-emerald-900 shadow-soft transition hover:bg-white sm:hidden"
+            className="inline-flex rounded-full border border-whatsapp-line bg-whatsapp-soft px-2 py-1 text-[10px] font-medium text-whatsapp-deep shadow-soft transition hover:bg-white sm:hidden"
             onClick={onRefresh}
             type="button"
           >
             Sync
           </button>
-          <div className="shrink-0 rounded-full bg-emerald-950/6 px-2 py-1 text-[10px] font-medium text-emerald-900/65 shadow-soft sm:px-3 sm:text-xs">
+          <div className="shrink-0 rounded-full border border-whatsapp-line bg-white px-2 py-1 text-[10px] font-medium text-whatsapp-muted shadow-soft sm:px-3 sm:text-xs">
             {conversations.length}
           </div>
         </div>
@@ -93,7 +93,7 @@ export function ChatList({
 
       <div className="mb-3 hidden space-y-3 md:block">
         <input
-          className="input-glass border-emerald-950/20 bg-white/70 focus:bg-white focus:ring-emerald-500/20"
+          className="input-glass"
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search phone or message..."
           value={query}
@@ -103,7 +103,7 @@ export function ChatList({
             <button
               key={item}
               className={`rounded-full px-3 py-1.5 text-xs font-semibold capitalize transition-all duration-200 ${
-                filter === item ? "bg-emerald-600 text-white shadow-soft" : "bg-emerald-950/10 text-emerald-950/60 hover:bg-emerald-950/20"
+                filter === item ? "bg-whatsapp-dark text-white shadow-soft" : "border border-whatsapp-line bg-white text-whatsapp-muted hover:bg-whatsapp-soft"
               }`}
               onClick={() => setFilter(item)}
               type="button"
@@ -115,12 +115,12 @@ export function ChatList({
       </div>
 
       {loading ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-slate-500">Loading chats...</div>
+        <div className="flex flex-1 items-center justify-center text-sm text-whatsapp-muted">Loading chats...</div>
       ) : filteredConversations.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center rounded-3xl border border-dashed border-emerald-200 bg-white/35 px-6 text-center text-sm text-emerald-950/60">
+        <div className="flex flex-1 flex-col items-center justify-center rounded-3xl border border-dashed border-whatsapp-line bg-whatsapp-canvas px-6 text-center text-sm text-whatsapp-muted">
           {conversations.length === 0 ? (
             <>
-              <p className="font-medium text-emerald-950/78">
+              <p className="font-medium text-ink">
                 {whatsAppConnected
                   ? activeView === "inbox"
                     ? "WhatsApp is connected, but no chats have been synced yet."
@@ -147,10 +147,10 @@ export function ChatList({
             return (
               <button
                 key={conversation.chatJid || resolvedPhone || conversation.timestamp}
-                className={`group relative w-full max-w-full min-w-0 overflow-hidden rounded-[20px] border px-3 py-3 text-left transition-all duration-300 sm:rounded-[24px] sm:px-4 sm:py-3 ${
+                className={`group relative w-full max-w-full min-w-0 overflow-hidden rounded-lg border px-3 py-3 text-left transition-all duration-300 sm:px-4 sm:py-3 ${
                   active
-                    ? "border-emerald-400/50 bg-white shadow-glass translate-y-[-1px]"
-                    : "border-white/70 bg-white/45 hover:bg-white/95 shadow-sm hover:shadow-soft"
+                    ? "border-transparent bg-[#e9edef] shadow-none"
+                    : "border-transparent bg-white hover:bg-[#f5f6f6] shadow-none"
                 }`}
                 disabled={!resolvedPhone}
                 onClick={() => {
@@ -163,7 +163,7 @@ export function ChatList({
                 <div className="min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                       <p className={`truncate text-sm font-bold leading-5 transition-colors sm:text-sm ${active ? "text-emerald-950" : "text-ink group-hover:text-emerald-950"}`}>
+                       <p className={`truncate text-sm font-bold leading-5 transition-colors sm:text-sm ${active ? "text-whatsapp-deep" : "text-ink group-hover:text-whatsapp-deep"}`}>
                         {getDisplayName(conversation.contactName, displayPhone)}
                       </p>
                       <div className="flex items-center gap-2">
@@ -199,13 +199,13 @@ export function ChatList({
                             </span>
                           </span>
                         ) : null}
-                        <span className={`shrink-0 text-[10px] font-medium transition-colors sm:text-[10px] ${active ? "text-emerald-600" : "text-emerald-900/40"}`}>{formatTimestamp(conversation.timestamp)}</span>
+                        <span className={`shrink-0 text-[10px] font-medium transition-colors sm:text-[10px] ${active ? "text-whatsapp-dark" : "text-whatsapp-muted"}`}>{formatTimestamp(conversation.timestamp)}</span>
                       </div>
                     </div>
-                    <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors sm:text-[11px] ${active ? "text-emerald-700/60" : "text-emerald-900/45"}`}>
+                    <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors sm:text-[11px] ${active ? "text-whatsapp-dark/80" : "text-whatsapp-muted"}`}>
                       {formatPhoneDisplay(conversation.phone, conversation.chatJid)}
                     </p>
-                    <p className={`mt-1.5 hidden truncate text-xs leading-4 transition-colors md:block ${active ? "text-emerald-950/70" : "text-emerald-950/50 group-hover:text-emerald-950/70"}`}>
+                    <p className={`mt-1.5 hidden truncate text-xs leading-4 transition-colors md:block ${active ? "text-ink/80" : "text-whatsapp-muted group-hover:text-ink/80"}`}>
                       {conversation.lastMessage}
                     </p>
                   </div>

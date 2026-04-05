@@ -220,6 +220,7 @@ async function persistIncomingMessage(msg) {
 	const media = await extractIncomingMedia(msg.message);
 	const contactName = extractContactName(msg);
 	if (!phone || !text) return;
+	if (isConnectedWhatsAppPhone(phone)) return;
 
 	const ownerUserIds = await resolveOwnerUserIds(phone);
 	if (!ownerUserIds.length) return;
@@ -398,7 +399,7 @@ async function initializeWhatsApp() {
 		for (const chat of chats) {
 			if (chat.id && chat.unreadCount !== undefined && !chat.id.endsWith('@g.us') && chat.id !== 'status@broadcast') {
 				const phone = await resolveWhatsAppPhone(chat.id, chat.id);
-				if (phone) {
+				if (phone && !isConnectedWhatsAppPhone(phone)) {
 					await require('./supabase').upsertCustomer({
 						owner_user_id: activeOwnerUserId,
 						phone,
@@ -415,7 +416,7 @@ async function initializeWhatsApp() {
 		for (const update of updates) {
 			if (update.id && update.unreadCount !== undefined && !update.id.endsWith('@g.us') && update.id !== 'status@broadcast') {
 				const phone = await resolveWhatsAppPhone(update.id, update.id);
-				if (phone) {
+				if (phone && !isConnectedWhatsAppPhone(phone)) {
 					await require('./supabase').upsertCustomer({
 						owner_user_id: activeOwnerUserId,
 						phone,
@@ -480,6 +481,10 @@ async function initializeWhatsApp() {
 						}
 
 						if (phone) {
+							if (isConnectedWhatsAppPhone(phone)) {
+								continue;
+							}
+
 							const contactName = String(contact.name || contact.notify || contact.verifiedName || '').trim();
 							
 							// Fetch profile info during history sync
@@ -575,6 +580,16 @@ function extractPhoneFromJid(jid) {
 	const rawValue = String(jid || '').split('@')[0].split(':')[0].trim();
 	const digits = rawValue.replace(/\D+/g, '');
 	return digits ? normalizePhone(digits) : null;
+}
+
+function getSelfPhone() {
+	return extractPhoneFromJid(getSelfJid());
+}
+
+function isConnectedWhatsAppPhone(phone) {
+	const selfPhone = getSelfPhone();
+	const normalizedPhone = normalizePhone(phone);
+	return Boolean(selfPhone && normalizedPhone && normalizedPhone === selfPhone);
 }
 
 async function getWhatsAppProfile() {
@@ -687,6 +702,7 @@ module.exports = {
 	getWhatsAppStatus,
 	getWhatsAppQr,
 	getWhatsAppProfile,
+	getSelfPhone,
 	disconnectWhatsApp,
 	getContactProfile,
 	bindWhatsAppOwner,

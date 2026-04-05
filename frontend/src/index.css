@@ -3,14 +3,11 @@
 @tailwind utilities;
 
 :root {
-  color: #102a21;
-  background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.82), transparent 26%),
-    radial-gradient(circle at top right, rgba(55, 210, 126, 0.16), transparent 24%),
-    radial-gradient(circle at bottom left, rgba(15, 195, 121, 0.12), transparent 22%),
-    linear-gradient(145deg, #dff6e8 0%, #edf8f1 48%, #d8efe2 100%);
+  color: #075e54;
+  background: #ece5dd;
   font-family:
-    "SF Pro Display",
+    "Trebuchet MS",
+    "Avenir Next",
     "Segoe UI",
     sans-serif;
 }
@@ -28,6 +25,9 @@ body,
 
 body {
   min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.38), transparent 28%),
+    linear-gradient(180deg, #ece5dd 0%, #f1ebe5 100%);
 }
 
 button,
@@ -36,24 +36,20 @@ textarea {
   font: inherit;
 }
 
-#root :where([class*="rounded"]) {
-  border-radius: 0 !important;
-}
-
 .force-rounded {
   border-radius: 9999px !important;
 }
 
 .chat-bubble-incoming {
-  border-radius: 24px 24px 24px 10px !important;
+  border-radius: 8px 8px 8px 2px !important;
 }
 
 .chat-bubble-outgoing {
-  border-radius: 24px 24px 10px 24px !important;
+  border-radius: 8px 8px 2px 8px !important;
 }
 
 .quick-reply-chip {
-  border-radius: 18px !important;
+  border-radius: 9999px !important;
 }
 
 .chat-status-dot {
@@ -104,9 +100,9 @@ textarea {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.03em;
-  color: rgba(16, 42, 33, 0.88);
+  color: rgba(21, 34, 29, 0.88);
   opacity: 0;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.92), 0 4px 10px rgba(16, 42, 33, 0.26);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.92), 0 4px 10px rgba(7, 94, 84, 0.18);
   transition: opacity 0.18s ease;
 }
 
@@ -115,36 +111,69 @@ textarea {
   opacity: 1;
 }
 
+.custom-scrollbar,
+.custom-scrollbar-x,
+.custom-scrollbar-y {
+  scroll-behavior: smooth;
+}
+
+.custom-scrollbar::-webkit-scrollbar,
+.custom-scrollbar-x::-webkit-scrollbar,
+.custom-scrollbar-y::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track,
+.custom-scrollbar-x::-webkit-scrollbar-track,
+.custom-scrollbar-y::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb,
+.custom-scrollbar-x::-webkit-scrollbar-thumb,
+.custom-scrollbar-y::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+  background-color: rgba(18, 140, 126, 0.32);
+}
+
+.custom-scrollbar:hover::-webkit-scrollbar-thumb,
+.custom-scrollbar-x:hover::-webkit-scrollbar-thumb,
+.custom-scrollbar-y:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(18, 140, 126, 0.48);
+}
+
+.custom-scrollbar::-webkit-scrollbar-corner,
+.custom-scrollbar-x::-webkit-scrollbar-corner,
+.custom-scrollbar-y::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 
 @layer components {
   .glass-panel {
-    @apply rounded-none border border-white/60 bg-white/50 shadow-glass backdrop-blur-glass;
+    @apply rounded-2xl border border-whatsapp-line bg-white shadow-soft;
   }
 
   .input-glass {
-    @apply w-full rounded-none border border-emerald-100 bg-white/85 px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-emerald-700/45 focus:border-emerald-300 focus:bg-white;
+    @apply w-full rounded-lg border border-whatsapp-line bg-white px-4 py-2.5 text-sm text-ink outline-none transition placeholder:text-whatsapp-muted focus:border-whatsapp-dark focus:bg-white focus:ring-2 focus:ring-whatsapp-green/15;
   }
 
   .primary-button {
-    @apply rounded-none bg-gradient-to-r from-emerald-500 to-green-400 px-5 py-3 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 hover:shadow-glass disabled:cursor-not-allowed disabled:opacity-70;
+    @apply rounded-lg bg-whatsapp-dark px-4 py-2.5 text-sm font-semibold text-white shadow-soft transition hover:bg-whatsapp-deep disabled:cursor-not-allowed disabled:opacity-70;
   }
 
   .secondary-button {
-    @apply rounded-none border border-emerald-100 bg-white/80 px-5 py-3 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-50;
+    @apply rounded-lg border border-whatsapp-line bg-white px-4 py-2.5 text-sm font-semibold text-whatsapp-deep transition hover:bg-whatsapp-soft;
   }
 }
 
 .bg-app {
   background:
-    radial-gradient(circle at 14% 18%, rgba(255, 255, 255, 0.72), transparent 18%),
-    radial-gradient(circle at 86% 12%, rgba(63, 211, 132, 0.14), transparent 20%),
-    radial-gradient(circle at 18% 82%, rgba(17, 163, 104, 0.12), transparent 22%),
-    radial-gradient(circle at 1px 1px, rgba(7, 94, 84, 0.08) 1px, transparent 0),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.16) 25%, transparent 25%),
-    linear-gradient(225deg, rgba(255, 255, 255, 0.1) 25%, transparent 25%),
-    linear-gradient(315deg, rgba(255, 255, 255, 0.12) 25%, transparent 25%),
-    linear-gradient(45deg, rgba(255, 255, 255, 0.08) 25%, transparent 25%),
-    linear-gradient(135deg, #d8f0e1 0%, #e7f7ed 45%, #d2eadb 100%);
-  background-size: auto, auto, auto, 26px 26px, 42px 42px, 42px 42px, 42px 42px, 42px 42px, auto;
-  background-position: center, center, center, 0 0, 0 0, 21px 0, 21px -21px, 0px 21px, center;
+    radial-gradient(circle at 1px 1px, rgba(193, 182, 172, 0.22) 1px, transparent 0),
+    linear-gradient(180deg, #ece5dd 0%, #f1ebe5 100%);
+  background-size: 18px 18px, auto;
+  background-position: 0 0, center;
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import logoGlass from "../../asset/rezeki_dashboard_logo_glass.png";
+import logo from "../../asset/rezeki_dashboard_logo_glass.png";
 
 type LoginFormProps = {
   email: string;
@@ -31,22 +31,22 @@ export function LoginForm(props: LoginFormProps) {
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <div className="glass-panel w-full max-w-md border border-white/70 bg-white/62 p-8">
+    <div className="glass-panel w-full max-w-md p-8">
       <div className="mb-6">
         <img
           alt="Rezeki Dashboard logo"
-          className="mb-4 h-20 w-auto object-contain"
-          src={logoGlass}
+          className="mb-5 h-28 w-auto object-contain"
+          src={logo}
         />
-        <p className="text-sm text-emerald-950/65">
+        <p className="text-sm text-whatsapp-muted">
           Log in to sync conversations, reply from one place, and keep your team focused.
         </p>
       </div>
 
-      <div className="mb-6 flex rounded-2xl bg-emerald-900/6 p-1 shadow-soft ring-1 ring-emerald-900/5">
+      <div className="mb-6 flex rounded-2xl border border-whatsapp-line bg-whatsapp-canvas p-1">
         <button
           className={`flex-1 rounded-xl px-4 py-2 text-sm font-medium transition ${
-            mode === "login" ? "bg-white text-emerald-950 shadow-soft" : "text-emerald-900/55"
+            mode === "login" ? "bg-whatsapp-deep text-white shadow-soft" : "text-whatsapp-muted"
           }`}
           onClick={() => onModeChange("login")}
           type="button"
@@ -55,7 +55,7 @@ export function LoginForm(props: LoginFormProps) {
         </button>
         <button
           className={`flex-1 rounded-xl px-4 py-2 text-sm font-medium transition ${
-            mode === "register" ? "bg-white text-emerald-950 shadow-soft" : "text-emerald-900/55"
+            mode === "register" ? "bg-whatsapp-deep text-white shadow-soft" : "text-whatsapp-muted"
           }`}
           onClick={() => onModeChange("register")}
           type="button"
@@ -66,7 +66,7 @@ export function LoginForm(props: LoginFormProps) {
 
       <div className="space-y-4">
         <label className="block">
-          <span className="mb-2 block text-sm font-medium text-emerald-950/70">Email</span>
+          <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Email</span>
           <input
             className="input-glass"
             onChange={(event) => onEmailChange(event.target.value)}
@@ -77,7 +77,7 @@ export function LoginForm(props: LoginFormProps) {
         </label>
 
         <label className="block">
-          <span className="mb-2 block text-sm font-medium text-emerald-950/70">Password</span>
+          <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Password</span>
           <div className="relative">
             <input
               className="input-glass pr-12"
@@ -88,7 +88,7 @@ export function LoginForm(props: LoginFormProps) {
             />
             <button
               type="button"
-              className="icon-hover-trigger absolute right-3 top-1/2 flex -translate-y-1/2 items-center justify-center text-emerald-900/40 transition-colors hover:text-emerald-900/70"
+              className="icon-hover-trigger absolute right-3 top-1/2 flex -translate-y-1/2 items-center justify-center text-whatsapp-muted transition-colors hover:text-whatsapp-deep"
               onClick={() => setShowPassword(!showPassword)}
               aria-label={showPassword ? "Hide password" : "Show password"}
             >
@@ -117,7 +117,7 @@ export function LoginForm(props: LoginFormProps) {
         </button>
 
         {mode === "register" ? (
-          <p className="text-xs text-emerald-900/45">
+          <p className="text-xs text-whatsapp-muted">
             Registration uses Supabase Auth. If email confirmation is enabled in your project, confirm your
             email before signing in.
           </p>

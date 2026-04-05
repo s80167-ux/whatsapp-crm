@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ComponentProps, type ReactNode } from "react";
-import type { Message } from "../lib/api";
+import { CUSTOMER_STATUS_LABELS, type CustomerStatus, type Message, type SalesLeadItem } from "../lib/api";
 import { CustomerPanel } from "./CustomerPanel";
 import { getDisplayName, getDisplayPhone, formatPhoneDisplay } from "../lib/display";
 
@@ -9,11 +9,22 @@ type ChatWindowProps = {
   chatJid?: string | null;
   profilePictureUrl?: string | null;
   messages: Message[];
+  salesLeadItems?: SalesLeadItem[];
+  salesLeadStatus?: CustomerStatus;
+  loadingSalesLeadItems?: boolean;
+  savingSalesLeadItem?: boolean;
   messageText: string;
   loading: boolean;
   sending: boolean;
   customerPanelProps?: ComponentProps<typeof CustomerPanel> | null;
   onChangeMessage: (value: string) => void;
+  onCreateSalesLeadItem?: (payload: {
+    messageId: string;
+    productType: string;
+    packageName: string;
+    price: number;
+    quantity: number;
+  }) => Promise<void> | void;
   onSend: () => void;
   onSendQuickReply: (value: string) => Promise<void> | void;
   onSendAttachment: (file: File, caption: string) => Promise<void> | void;
@@ -57,6 +68,22 @@ function formatTime(value: string) {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function formatSalesLeadTimestamp(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(value));
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "MYR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
 }
 
 function formatStatus(message: Message) {
@@ -212,13 +239,13 @@ function IncomingDocumentCard(props: { message: Message }) {
 
   return (
     <a
-      className="mb-2 flex items-center gap-3 rounded-[18px] border border-emerald-200/80 bg-emerald-50/70 p-3 text-left transition hover:bg-emerald-50"
+      className="mb-2 flex items-center gap-3 rounded-[18px] border border-whatsapp-line bg-whatsapp-canvas p-3 text-left transition hover:bg-white"
       download={fileName}
       href={props.message.media_data_url || undefined}
       rel="noreferrer"
       target="_blank"
     >
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-white text-emerald-700 shadow-soft">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-white text-whatsapp-dark shadow-soft">
         <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
           <path d="M14 3H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7l-4-4Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
           <path d="M14 3v4h4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
@@ -226,8 +253,8 @@ function IncomingDocumentCard(props: { message: Message }) {
         </svg>
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-emerald-950">{fileName}</p>
-        <p className="truncate text-xs text-emerald-900/55">{mimeType}</p>
+        <p className="truncate text-sm font-medium text-ink">{fileName}</p>
+        <p className="truncate text-xs text-whatsapp-muted">{mimeType}</p>
       </div>
     </a>
   );
@@ -237,7 +264,7 @@ function IncomingVideoCard(props: { message: Message }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   return (
-    <div className="mb-2 overflow-hidden rounded-[18px] border border-black/5 bg-emerald-50/50">
+    <div className="mb-2 overflow-hidden rounded-[18px] border border-whatsapp-line bg-whatsapp-canvas">
       <video
         ref={videoRef}
         className="block max-h-[320px] w-full bg-black object-contain"
@@ -245,16 +272,16 @@ function IncomingVideoCard(props: { message: Message }) {
         preload="metadata"
         src={props.message.media_data_url || undefined}
       />
-      <div className="flex items-center justify-end gap-2 border-t border-emerald-200/70 bg-white/80 px-3 py-2">
+      <div className="flex items-center justify-end gap-2 border-t border-whatsapp-line bg-white px-3 py-2">
         <button
-          className="text-xs font-medium text-emerald-900/60 transition hover:text-emerald-950"
+          className="text-xs font-medium text-whatsapp-muted transition hover:text-whatsapp-deep"
           onClick={() => void requestElementFullscreen(videoRef.current)}
           type="button"
         >
           Full screen
         </button>
         <button
-          className="text-xs font-medium text-emerald-900/60 transition hover:text-emerald-950"
+          className="text-xs font-medium text-whatsapp-muted transition hover:text-whatsapp-deep"
           onClick={() => openMediaInNewTab(props.message.media_data_url)}
           type="button"
         >
@@ -362,11 +389,16 @@ export function ChatWindow(props: ChatWindowProps) {
     chatJid,
     profilePictureUrl,
     messages,
+    salesLeadItems = [],
+    salesLeadStatus,
+    loadingSalesLeadItems = false,
+    savingSalesLeadItem = false,
     messageText,
     loading,
     sending,
     customerPanelProps,
     onChangeMessage,
+    onCreateSalesLeadItem,
     onSend,
     onSendQuickReply,
     onSendAttachment,
@@ -397,6 +429,12 @@ export function ChatWindow(props: ChatWindowProps) {
   const [resolvingLocation, setResolvingLocation] = useState(false);
   const [composerError, setComposerError] = useState("");
   const [showCustomerProfile, setShowCustomerProfile] = useState(false);
+  const [expandedLeadRegistrationMessageId, setExpandedLeadRegistrationMessageId] = useState<string | null>(null);
+  const [leadProductType, setLeadProductType] = useState("");
+  const [leadPackageName, setLeadPackageName] = useState("");
+  const [leadPrice, setLeadPrice] = useState("");
+  const [leadQuantity, setLeadQuantity] = useState("1");
+  const [leadFormError, setLeadFormError] = useState("");
   const [showAllMessages, setShowAllMessages] = useState(false);
   const [expandedQuickReplyMessageId, setExpandedQuickReplyMessageId] = useState<string | null>(null);
   const [expandedEmojiMessageId, setExpandedEmojiMessageId] = useState<string | null>(null);
@@ -409,6 +447,52 @@ export function ChatWindow(props: ChatWindowProps) {
   const avatarLabel = title.slice(0, 2).toUpperCase();
   const visibleMessages = showAllMessages ? messages : messages.slice(-6);
   const hiddenMessageCount = Math.max(messages.length - 6, 0);
+  const canRegisterLead = Boolean(phone && onCreateSalesLeadItem);
+
+  async function handleCreateSalesLead() {
+    if (!onCreateSalesLeadItem || !expandedLeadRegistrationMessageId) {
+      return;
+    }
+
+    const productType = leadProductType.trim();
+    const packageName = leadPackageName.trim();
+    const price = Number(leadPrice);
+    const quantity = Number(leadQuantity);
+
+    if (!productType || !packageName) {
+      setLeadFormError("Product type and package are required.");
+      return;
+    }
+
+    if (!Number.isFinite(price) || price < 0) {
+      setLeadFormError("Price must be a valid non-negative number.");
+      return;
+    }
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setLeadFormError("Quantity must be a whole number greater than 0.");
+      return;
+    }
+
+    setLeadFormError("");
+
+    try {
+      await onCreateSalesLeadItem({
+        messageId: expandedLeadRegistrationMessageId,
+        productType,
+        packageName,
+        price,
+        quantity
+      });
+
+      setLeadProductType("");
+      setLeadPackageName("");
+      setLeadPrice("");
+      setLeadQuantity("1");
+    } catch (error) {
+      setLeadFormError(error instanceof Error ? error.message : "Failed to save sales lead details.");
+    }
+  }
 
   function updateStickToBottom() {
     const container = listRef.current;
@@ -502,6 +586,12 @@ export function ChatWindow(props: ChatWindowProps) {
       setAttachmentCaption("");
       setComposerError("");
       setShowCustomerProfile(false);
+      setExpandedLeadRegistrationMessageId(null);
+      setLeadProductType("");
+      setLeadPackageName("");
+      setLeadPrice("");
+      setLeadQuantity("1");
+      setLeadFormError("");
       setShowAllMessages(false);
       setExpandedQuickReplyMessageId(null);
       setExpandedEmojiMessageId(null);
@@ -743,8 +833,8 @@ export function ChatWindow(props: ChatWindowProps) {
             key={item.key}
             className={`rounded-full px-4 py-2 text-sm font-medium transition ${
               attachmentTab === item.key
-                ? "bg-gradient-to-r from-emerald-500 to-green-400 text-white shadow-soft"
-                : "bg-white/82 text-emerald-900/60 hover:bg-white"
+                ? "bg-whatsapp-dark text-white shadow-soft"
+                : "border border-whatsapp-line bg-white text-whatsapp-muted hover:bg-whatsapp-soft"
             }`}
             onClick={() => {
               setAttachmentTab(item.key);
@@ -767,7 +857,7 @@ export function ChatWindow(props: ChatWindowProps) {
             ref={attachmentTab === "image" ? imageInputRef : documentInputRef}
             type="file"
           />
-          <div className="rounded-[22px] bg-emerald-50/75 p-3 text-sm text-emerald-950/62">
+          <div className="rounded-[22px] border border-whatsapp-line bg-whatsapp-canvas p-3 text-sm text-whatsapp-muted">
             {selectedFile ? `Selected: ${selectedFile.name}` : `No ${attachmentTab} selected yet.`}
           </div>
           <div className="flex gap-2">
@@ -848,11 +938,11 @@ export function ChatWindow(props: ChatWindowProps) {
 
   if (!phone) {
     return (
-      <section className="glass-panel flex min-h-[320px] items-center justify-center border border-white/70 bg-white/58 p-6 sm:min-h-[420px]">
+      <section className="glass-panel flex min-h-[320px] items-center justify-center p-6 sm:min-h-[420px]">
         <div className="max-w-sm text-center">
-          <p className="text-sm uppercase tracking-[0.25em] text-emerald-800/65">No active chat</p>
+          <p className="text-sm uppercase tracking-[0.25em] text-whatsapp-muted">No active chat</p>
           <h3 className="mt-3 text-2xl font-semibold text-ink">Pick a conversation</h3>
-          <p className="mt-3 text-sm text-emerald-950/62">
+          <p className="mt-3 text-sm text-whatsapp-muted">
             Select a contact from the left panel to review history and send a reply.
           </p>
         </div>
@@ -861,16 +951,16 @@ export function ChatWindow(props: ChatWindowProps) {
   }
 
   return (
-    <section className="glass-panel flex min-h-[120px] flex-col overflow-visible border border-white/70 bg-white/58 p-3 sm:min-h-[520px] sm:p-4 xl:max-h-[calc(100dvh-210px)]">
-      <div className="mb-3 rounded-[26px] border border-white/60 bg-white/72 px-3 py-2 shadow-soft sm:px-4 sm:py-3">
+    <section className="glass-panel flex min-h-[120px] flex-col overflow-visible p-2 sm:min-h-[520px] sm:p-3 xl:max-h-[calc(100dvh-210px)]">
+      <div className="mb-2 rounded-xl border border-whatsapp-line bg-white px-3 py-2 shadow-soft sm:px-4 sm:py-3">
         <div className="flex items-start justify-between gap-2 sm:gap-4">
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-800/65">Active conversation</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-whatsapp-muted">Active conversation</p>
             <h3 className="mt-0.5 truncate pr-2 text-sm font-semibold text-ink sm:text-lg">{title}</h3>
-            <p className="mt-0.5 truncate pr-2 text-[11px] text-emerald-900/45 sm:text-sm">{formatPhoneDisplay(phone, chatJid)}</p>
+            <p className="mt-0.5 truncate pr-2 text-[11px] text-whatsapp-muted sm:text-sm">{formatPhoneDisplay(phone, chatJid)}</p>
             {showCustomerProfile && customerPanelProps ? (
               <button
-                className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-900/58 transition hover:text-emerald-950 sm:text-xs"
+                className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-whatsapp-muted transition hover:text-whatsapp-deep sm:text-xs"
                 onClick={() => setShowCustomerProfile(false)}
                 type="button"
               >
@@ -888,31 +978,35 @@ export function ChatWindow(props: ChatWindowProps) {
             ) : null}
           </div>
 
-          {customerPanelProps ? (
-            <button
-              aria-label={showCustomerProfile ? "Hide customer profile" : "Show customer profile"}
-              className="group flex shrink-0 items-center gap-2 self-start rounded-[22px] bg-emerald-50/80 px-1.5 py-1.5 shadow-soft transition hover:bg-white sm:px-2 sm:py-1.5"
-              onClick={() => setShowCustomerProfile((current) => !current)}
-              type="button"
-            >
-              {profilePictureUrl ? (
-                <img
-                  alt={title}
-                  className="h-10 w-10 rounded-2xl object-cover shadow-soft sm:h-14 sm:w-14"
-                  src={profilePictureUrl}
-                />
-              ) : (
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-[10px] font-semibold text-white shadow-soft sm:h-14 sm:w-14 sm:text-sm">
-                  {avatarLabel}
-                </div>
-              )}
-              <div className="hidden min-w-0 text-left md:block">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-800/55">Profile</p>
-                <p className="truncate text-xs font-medium text-emerald-950/72 group-hover:text-emerald-950">
-                  {showCustomerProfile ? "Hide customer" : "View customer"}
-                </p>
-              </div>
-            </button>
+          {(customerPanelProps || canRegisterLead) ? (
+            <div className="flex shrink-0 flex-col items-end gap-2 self-start">
+              {customerPanelProps ? (
+                <button
+                  aria-label={showCustomerProfile ? "Hide customer profile" : "Show customer profile"}
+                  className="group flex items-center gap-2 rounded-lg border border-whatsapp-line bg-[#f8f5f2] px-1.5 py-1.5 shadow-soft transition hover:bg-white sm:px-2 sm:py-1.5"
+                  onClick={() => setShowCustomerProfile((current) => !current)}
+                  type="button"
+                >
+                  {profilePictureUrl ? (
+                    <img
+                      alt={title}
+                      className="h-10 w-10 rounded-2xl object-cover shadow-soft sm:h-14 sm:w-14"
+                      src={profilePictureUrl}
+                    />
+                  ) : (
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-whatsapp-dark text-[10px] font-semibold text-white shadow-soft sm:h-14 sm:w-14 sm:text-sm">
+                      {avatarLabel}
+                    </div>
+                  )}
+                  <div className="hidden min-w-0 text-left md:block">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Profile</p>
+                    <p className="truncate text-xs font-medium text-ink/80 group-hover:text-whatsapp-deep">
+                      {showCustomerProfile ? "Hide customer" : "View customer"}
+                    </p>
+                  </div>
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>
@@ -930,13 +1024,13 @@ export function ChatWindow(props: ChatWindowProps) {
 
       <div
         ref={listRef}
-        className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-[28px] border border-emerald-100/80 bg-[rgba(233,246,238,0.92)] p-2 sm:space-y-3 sm:p-4"
+        className="custom-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto rounded-xl border border-whatsapp-line bg-whatsapp-canvas p-2 sm:space-y-3 sm:p-3"
         onScroll={updateStickToBottom}
       >
         {loading ? (
-          <div className="flex h-full items-center justify-center text-sm text-emerald-950/55">Loading messages...</div>
+          <div className="flex h-full items-center justify-center text-sm text-whatsapp-muted">Loading messages...</div>
         ) : messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-emerald-950/55">
+          <div className="flex h-full items-center justify-center text-sm text-whatsapp-muted">
             No messages in this conversation yet.
           </div>
         ) : (
@@ -944,7 +1038,7 @@ export function ChatWindow(props: ChatWindowProps) {
             {hiddenMessageCount > 0 ? (
               <div className="flex justify-center pb-1">
                 <button
-                  className="border border-emerald-200/80 bg-white/92 px-3 py-1 text-[11px] font-medium text-emerald-900/70 transition hover:bg-white hover:text-emerald-950"
+                  className="border border-whatsapp-line bg-white px-3 py-1 text-[11px] font-medium text-whatsapp-muted transition hover:bg-whatsapp-soft hover:text-whatsapp-deep"
                   onClick={() => setShowAllMessages((current) => !current)}
                   type="button"
                 >
@@ -965,12 +1059,12 @@ export function ChatWindow(props: ChatWindowProps) {
                 <div
                   className={`max-w-[92%] overflow-hidden px-3 py-2 shadow-soft sm:max-w-[80%] sm:px-4 sm:py-3 ${
                     item.direction === "outgoing"
-                      ? "chat-bubble-outgoing bg-gradient-to-br from-emerald-700 via-emerald-600 to-green-500 text-white"
-                      : "chat-bubble-incoming border border-emerald-200/90 bg-white text-emerald-950/88"
+                      ? "chat-bubble-outgoing border border-[#cfe7bb] bg-whatsapp-soft text-ink/90"
+                      : "chat-bubble-incoming border border-whatsapp-line bg-white text-ink/90"
                   }`}
                 >
                   {isImageMessage(item) ? (
-                    <div className="mb-2 inline-flex max-w-[220px] flex-col overflow-hidden rounded-[18px] border border-black/5 bg-emerald-50/50">
+                    <div className="mb-2 inline-flex max-w-[220px] flex-col overflow-hidden rounded-lg border border-whatsapp-line bg-[#f7f1ea]">
                       <button
                         aria-label="Open image preview"
                         className="group relative block w-full text-left"
@@ -993,10 +1087,10 @@ export function ChatWindow(props: ChatWindowProps) {
                           Click to enlarge
                         </span>
                       </button>
-                      <div className="flex items-center justify-end border-t border-emerald-200/70 bg-white/80 px-2 py-2">
+                      <div className="flex items-center justify-end border-t border-whatsapp-line bg-white px-2 py-2">
                         <a
                           aria-label="Save picture"
-                          className="icon-hover-trigger flex h-8 w-8 items-center justify-center rounded-full text-emerald-900/60 transition hover:bg-white hover:text-emerald-950"
+                          className="icon-hover-trigger flex h-8 w-8 items-center justify-center rounded-full text-whatsapp-muted transition hover:bg-whatsapp-soft hover:text-whatsapp-deep"
                           download={getMediaDownloadName(item, "picture")}
                           href={item.media_data_url || undefined}
                         >
@@ -1015,7 +1109,7 @@ export function ChatWindow(props: ChatWindowProps) {
                   ) : null}
                   <p
                     className={`mt-1.5 text-right text-[10px] sm:mt-2 sm:text-[11px] ${
-                      item.direction === "outgoing" ? "text-white/78" : "text-emerald-900/46"
+                      item.direction === "outgoing" ? "text-ink/65" : "text-whatsapp-muted"
                     }`}
                   >
                     {item.direction === "outgoing"
@@ -1030,7 +1124,7 @@ export function ChatWindow(props: ChatWindowProps) {
                   <div className="mt-2 flex max-w-[92%] items-center gap-2 overflow-hidden sm:max-w-[80%]">
                     <button
                       aria-label={expandedQuickReplyMessageId === item.id ? "Hide quick replies" : "Show quick replies"}
-                      className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/62 transition hover:text-emerald-950 disabled:cursor-not-allowed disabled:opacity-55"
+                      className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-whatsapp-deep disabled:cursor-not-allowed disabled:opacity-55"
                       disabled={sending}
                       onClick={() => handleToggleInlineQuickReplies(item.id)}
                       type="button"
@@ -1051,7 +1145,7 @@ export function ChatWindow(props: ChatWindowProps) {
 
                     <button
                       aria-label={expandedEmojiMessageId === item.id ? "Hide emoji replies" : "Show emoji replies"}
-                      className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/62 transition hover:text-emerald-950 disabled:cursor-not-allowed disabled:opacity-55"
+                      className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-whatsapp-deep disabled:cursor-not-allowed disabled:opacity-55"
                       disabled={sending}
                       onClick={() => handleToggleInlineEmojis(item.id)}
                       type="button"
@@ -1068,7 +1162,7 @@ export function ChatWindow(props: ChatWindowProps) {
 
                     <button
                       aria-label="Open attachments"
-                      className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/62 transition hover:text-emerald-950 disabled:cursor-not-allowed disabled:opacity-55"
+                      className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-whatsapp-deep disabled:cursor-not-allowed disabled:opacity-55"
                       disabled={sending}
                       onClick={() => handleToggleInlineAttachments(item.id)}
                       type="button"
@@ -1087,12 +1181,32 @@ export function ChatWindow(props: ChatWindowProps) {
                       </span>
                     </button>
 
+                    {canRegisterLead ? (
+                      <button
+                        aria-label={expandedLeadRegistrationMessageId === item.id ? "Hide sales lead registration" : "Show sales lead registration"}
+                        className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-whatsapp-deep disabled:cursor-not-allowed disabled:opacity-55"
+                        disabled={sending}
+                        onClick={() => {
+                          setExpandedLeadRegistrationMessageId((current) => (current === item.id ? null : item.id));
+                          setComposerError("");
+                        }}
+                        type="button"
+                      >
+                        <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                          <path d="M9 12h6M12 9v6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                          <path d="M7 4h7l3 3v13a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                          <path d="M14 4v4h4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                        </svg>
+                        <span className="icon-hover-label">Lead Registering</span>
+                      </button>
+                    ) : null}
+
                     {expandedQuickReplyMessageId === item.id ? (
-                      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-1">
+                      <div className="custom-scrollbar-x flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-1">
                         {quickReplies.map((reply) => (
                           <button
                             key={`${item.id}-${reply.id}`}
-                            className="quick-reply-chip shrink-0 border border-emerald-200/90 bg-white/92 px-3 py-1.5 text-[11px] font-medium text-emerald-900/78 transition hover:bg-white hover:text-emerald-950 disabled:cursor-not-allowed disabled:opacity-55 sm:text-xs"
+                            className="quick-reply-chip shrink-0 border border-whatsapp-line bg-white px-3 py-1.5 text-[11px] font-medium text-whatsapp-muted transition hover:bg-whatsapp-soft hover:text-whatsapp-deep disabled:cursor-not-allowed disabled:opacity-55 sm:text-xs"
                             disabled={sending}
                             onClick={() => void handleSendQuickReplyClick(reply)}
                             type="button"
@@ -1104,11 +1218,11 @@ export function ChatWindow(props: ChatWindowProps) {
                     ) : null}
 
                     {expandedEmojiMessageId === item.id ? (
-                      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-1">
+                      <div className="custom-scrollbar-x flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-1">
                         {commonEmojis.map((emoji) => (
                           <button
                             key={`${item.id}-${emoji}`}
-                            className="icon-hover-trigger quick-reply-chip shrink-0 border border-emerald-200/90 bg-white/92 px-3 py-1.5 text-base leading-none text-emerald-900/88 transition hover:bg-white hover:text-emerald-950 disabled:cursor-not-allowed disabled:opacity-55"
+                            className="icon-hover-trigger quick-reply-chip shrink-0 border border-whatsapp-line bg-white px-3 py-1.5 text-base leading-none text-whatsapp-deep transition hover:bg-whatsapp-soft disabled:cursor-not-allowed disabled:opacity-55"
                             disabled={sending}
                             onClick={() => handleSendInlineEmoji(emoji)}
                             type="button"
@@ -1123,11 +1237,11 @@ export function ChatWindow(props: ChatWindowProps) {
                 ) : null}
 
                 {item.direction === "incoming" && expandedAttachmentMessageId === item.id ? (
-                  <div className="mt-2 w-full max-w-[92%] rounded-[22px] border border-white/60 bg-white/72 p-3 shadow-soft sm:max-w-[80%]">
+                  <div className="mt-2 w-full max-w-[92%] rounded-lg border border-whatsapp-line bg-white p-3 shadow-soft sm:max-w-[80%]">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-sm font-semibold text-ink">Attachments</p>
                       <button
-                        className="text-xs font-medium text-emerald-900/45 transition hover:text-emerald-900/75"
+                        className="text-xs font-medium text-whatsapp-muted transition hover:text-whatsapp-deep"
                         onClick={() => setExpandedAttachmentMessageId(null)}
                         type="button"
                       >
@@ -1135,6 +1249,136 @@ export function ChatWindow(props: ChatWindowProps) {
                       </button>
                     </div>
                     <div className="mt-3">{attachmentPanelContent}</div>
+                  </div>
+                ) : null}
+
+                {item.direction === "incoming" && expandedLeadRegistrationMessageId === item.id && canRegisterLead ? (
+                  <div className="mt-2 w-full max-w-[92%] rounded-lg border border-whatsapp-line bg-white p-3 shadow-soft sm:max-w-[80%] sm:p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-[0.22em] text-whatsapp-muted">Lead Registering</p>
+                        <h4 className="mt-1 text-sm font-semibold text-ink sm:text-base">Register sales products for this customer</h4>
+                      </div>
+                      {salesLeadStatus ? (
+                        <span className="rounded-full border border-whatsapp-line bg-whatsapp-soft px-3 py-1 text-[11px] font-semibold text-whatsapp-deep">
+                          {CUSTOMER_STATUS_LABELS[salesLeadStatus]}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">Product type</span>
+                        <input
+                          className="input-glass mt-1"
+                          onChange={(event) => setLeadProductType(event.target.value)}
+                          placeholder="Water filter, solar, plan..."
+                          value={leadProductType}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">Package</span>
+                        <input
+                          className="input-glass mt-1"
+                          onChange={(event) => setLeadPackageName(event.target.value)}
+                          placeholder="Starter, Premium, Family..."
+                          value={leadPackageName}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">Price</span>
+                        <input
+                          className="input-glass mt-1"
+                          min="0"
+                          onChange={(event) => setLeadPrice(event.target.value)}
+                          placeholder="0.00"
+                          step="0.01"
+                          type="number"
+                          value={leadPrice}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">Quantity</span>
+                        <input
+                          className="input-glass mt-1"
+                          min="1"
+                          onChange={(event) => setLeadQuantity(event.target.value)}
+                          step="1"
+                          type="number"
+                          value={leadQuantity}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <button
+                        className="primary-button"
+                        disabled={savingSalesLeadItem}
+                        onClick={() => void handleCreateSalesLead()}
+                        type="button"
+                      >
+                        {savingSalesLeadItem ? "Saving..." : "Save sales lead"}
+                      </button>
+                      <button
+                        className="secondary-button"
+                        onClick={() => setExpandedLeadRegistrationMessageId(null)}
+                        type="button"
+                      >
+                        Close
+                      </button>
+                    </div>
+
+                    {leadFormError ? <p className="mt-3 text-sm text-rose-500">{leadFormError}</p> : null}
+
+                    <div className="mt-4 border-t border-whatsapp-line pt-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-whatsapp-deep">Registered products</p>
+                        <span className="text-xs text-whatsapp-muted">{salesLeadItems.length} item(s)</span>
+                      </div>
+
+                      {loadingSalesLeadItems ? (
+                        <p className="mt-3 text-sm text-whatsapp-muted">Loading registered products...</p>
+                      ) : salesLeadItems.length === 0 ? (
+                        <p className="mt-3 text-sm text-whatsapp-muted">No products registered for this customer yet.</p>
+                      ) : (
+                        <div className="mt-3 space-y-2">
+                          {salesLeadItems.map((salesItem) => {
+                            const total = salesItem.price * salesItem.quantity;
+
+                            return (
+                              <div key={salesItem.id} className="rounded-xl border border-whatsapp-line bg-whatsapp-canvas p-3">
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <div>
+                                    <p className="text-sm font-semibold text-ink">{salesItem.product_type}</p>
+                                    <p className="mt-1 text-xs text-whatsapp-muted">{salesItem.package_name}</p>
+                                  </div>
+                                  {salesLeadStatus ? (
+                                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-whatsapp-deep shadow-soft">
+                                      {CUSTOMER_STATUS_LABELS[salesLeadStatus]}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <div className="mt-3 grid gap-2 text-xs text-whatsapp-muted sm:grid-cols-3">
+                                  <div className="rounded-lg border border-whatsapp-line bg-white px-3 py-2">
+                                    <p className="uppercase tracking-[0.14em]">Unit price</p>
+                                    <p className="mt-1 text-sm font-semibold text-ink">{formatCurrency(salesItem.price)}</p>
+                                  </div>
+                                  <div className="rounded-lg border border-whatsapp-line bg-white px-3 py-2">
+                                    <p className="uppercase tracking-[0.14em]">Quantity</p>
+                                    <p className="mt-1 text-sm font-semibold text-ink">{salesItem.quantity}</p>
+                                  </div>
+                                  <div className="rounded-lg border border-whatsapp-line bg-white px-3 py-2">
+                                    <p className="uppercase tracking-[0.14em]">Total</p>
+                                    <p className="mt-1 text-sm font-semibold text-ink">{formatCurrency(total)}</p>
+                                  </div>
+                                </div>
+                                <p className="mt-2 text-[11px] text-whatsapp-muted">Saved {formatSalesLeadTimestamp(salesItem.created_at)}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -1146,23 +1390,23 @@ export function ChatWindow(props: ChatWindowProps) {
 
       <div className="relative z-10 mt-3 space-y-2">
         {showQuickReplies ? (
-          <div className="rounded-[26px] border border-white/60 bg-white/72 p-3 shadow-soft">
+          <div className="rounded-xl border border-whatsapp-line bg-white p-3 shadow-soft">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-semibold text-ink">Quick replies</p>
               <button
-                className="text-xs font-medium text-emerald-900/45 transition hover:text-emerald-900/75"
+                className="text-xs font-medium text-whatsapp-muted transition hover:text-whatsapp-deep"
                 onClick={() => setShowQuickReplies(false)}
                 type="button"
               >
                 Close
               </button>
             </div>
-            <div className="mt-3 max-h-36 overflow-y-auto pr-1">
+            <div className="custom-scrollbar mt-3 max-h-36 overflow-y-auto pr-1">
               <div className="flex flex-wrap gap-2">
               {quickReplies.map((reply) => (
-                <div key={reply.id} className="flex items-center gap-1 rounded-full bg-emerald-50 pr-1 shadow-soft">
+                <div key={reply.id} className="flex items-center gap-1 rounded-full border border-whatsapp-line bg-[#f8f5f2] pr-1 shadow-soft">
                   <button
-                    className="rounded-full px-3 py-2 text-left text-sm text-emerald-950/74 transition hover:bg-white"
+                    className="rounded-full px-3 py-2 text-left text-sm text-ink/80 transition hover:bg-white"
                     onClick={() => void handlePickQuickReply(reply)}
                     type="button"
                   >
@@ -1170,7 +1414,7 @@ export function ChatWindow(props: ChatWindowProps) {
                   </button>
                   <button
                     aria-label={`Delete quick reply: ${getQuickReplyContentLabel(reply)}`}
-                    className="icon-hover-trigger flex h-8 w-8 items-center justify-center rounded-full text-emerald-900/38 transition hover:bg-white hover:text-rose-500"
+                    className="icon-hover-trigger flex h-8 w-8 items-center justify-center rounded-full text-whatsapp-muted transition hover:bg-white hover:text-rose-500"
                     onClick={() => handleDeleteQuickReply(reply.id)}
                     type="button"
                   >
@@ -1199,7 +1443,7 @@ export function ChatWindow(props: ChatWindowProps) {
             />
             <div className="mt-3 flex items-center gap-2">
               <button
-                className="icon-hover-trigger flex h-10 w-10 shrink-0 items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 transition hover:text-emerald-950"
+                className="icon-hover-trigger flex h-10 w-10 shrink-0 items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-whatsapp-deep"
                 onClick={() => setShowQuickReplyEmojiPicker((current) => !current)}
                 type="button"
               >
@@ -1213,7 +1457,7 @@ export function ChatWindow(props: ChatWindowProps) {
                 </span>
               </button>
               <button
-                className="icon-hover-trigger flex h-10 w-10 shrink-0 items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 transition hover:text-emerald-950"
+                className="icon-hover-trigger flex h-10 w-10 shrink-0 items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-whatsapp-deep"
                 onClick={() => quickReplyAttachmentInputRef.current?.click()}
                 type="button"
               >
@@ -1252,7 +1496,7 @@ export function ChatWindow(props: ChatWindowProps) {
                 {commonEmojis.map((emoji) => (
                   <button
                     key={`quick-reply-draft-${emoji}`}
-                    className="quick-reply-chip border border-emerald-200/90 bg-white/92 px-3 py-2 text-xl leading-none transition hover:bg-white"
+                    className="quick-reply-chip border border-whatsapp-line bg-white px-3 py-2 text-xl leading-none transition hover:bg-whatsapp-soft"
                     onClick={() => setNewQuickReply((current) => `${current}${emoji}`)}
                     type="button"
                   >
@@ -1262,10 +1506,10 @@ export function ChatWindow(props: ChatWindowProps) {
               </div>
             ) : null}
             {newQuickReplyAttachment ? (
-              <div className="mt-3 flex items-center justify-between gap-2 rounded-[18px] bg-emerald-50/75 px-3 py-2 text-sm text-emerald-950/72">
+              <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-whatsapp-line bg-[#f8f5f2] px-3 py-2 text-sm text-ink/80">
                 <span className="truncate">Attached: {newQuickReplyAttachment.name}</span>
                 <button
-                  className="text-xs font-medium text-emerald-900/55 transition hover:text-emerald-950"
+                  className="text-xs font-medium text-whatsapp-muted transition hover:text-whatsapp-deep"
                   onClick={() => setNewQuickReplyAttachment(null)}
                   type="button"
                 >
@@ -1278,11 +1522,11 @@ export function ChatWindow(props: ChatWindowProps) {
         ) : null}
 
         {showAttachmentMenu ? (
-          <div className="rounded-[26px] border border-white/60 bg-white/72 p-3 shadow-soft">
+          <div className="rounded-xl border border-whatsapp-line bg-white p-3 shadow-soft">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-semibold text-ink">Attachments</p>
               <button
-                className="text-xs font-medium text-emerald-900/45 transition hover:text-emerald-900/75"
+                className="text-xs font-medium text-whatsapp-muted transition hover:text-whatsapp-deep"
                 onClick={() => setShowAttachmentMenu(false)}
                 type="button"
               >
@@ -1295,11 +1539,11 @@ export function ChatWindow(props: ChatWindowProps) {
         ) : null}
 
         {showEmojiPicker ? (
-          <div className="rounded-[26px] border border-white/60 bg-white/72 p-3 shadow-soft">
+          <div className="rounded-xl border border-whatsapp-line bg-white p-3 shadow-soft">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-semibold text-ink">Emojis</p>
               <button
-                className="text-xs font-medium text-emerald-900/45 transition hover:text-emerald-900/75"
+                className="text-xs font-medium text-whatsapp-muted transition hover:text-whatsapp-deep"
                 onClick={() => setShowEmojiPicker(false)}
                 type="button"
               >
@@ -1310,7 +1554,7 @@ export function ChatWindow(props: ChatWindowProps) {
               {commonEmojis.map((emoji) => (
                 <button
                   key={emoji}
-                  className="icon-hover-trigger quick-reply-chip border border-emerald-200/90 bg-white/92 px-3 py-2 text-xl leading-none transition hover:bg-white"
+                  className="icon-hover-trigger quick-reply-chip border border-whatsapp-line bg-white px-3 py-2 text-xl leading-none transition hover:bg-whatsapp-soft"
                   onClick={() => handlePickComposerEmoji(emoji)}
                   type="button"
                 >
@@ -1322,11 +1566,11 @@ export function ChatWindow(props: ChatWindowProps) {
           </div>
         ) : null}
 
-        <div className="rounded-[26px] border border-white/60 bg-white/72 p-2 shadow-soft">
+        <div className="rounded-xl border border-whatsapp-line bg-white p-2 shadow-soft">
           <div className="flex items-center gap-2">
           <button
-            className={`icon-hover-trigger flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent sm:h-11 sm:w-11 ${
-              showQuickReplies ? "text-emerald-950" : ""
+            className={`icon-hover-trigger flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent sm:h-11 sm:w-11 ${
+              showQuickReplies ? "text-whatsapp-deep" : ""
             }`}
             onClick={() => {
               setShowQuickReplies((current) => !current);
@@ -1351,8 +1595,8 @@ export function ChatWindow(props: ChatWindowProps) {
           </button>
 
           <button
-            className={`icon-hover-trigger flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent sm:h-11 sm:w-11 ${
-              showAttachmentMenu ? "text-emerald-950" : ""
+            className={`icon-hover-trigger flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent sm:h-11 sm:w-11 ${
+              showAttachmentMenu ? "text-whatsapp-deep" : ""
             }`}
             onClick={() => {
               setShowAttachmentMenu((current) => !current);
@@ -1377,8 +1621,8 @@ export function ChatWindow(props: ChatWindowProps) {
           </button>
 
           <button
-            className={`icon-hover-trigger flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent sm:h-11 sm:w-11 ${
-              showEmojiPicker ? "text-emerald-950" : ""
+            className={`icon-hover-trigger flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent sm:h-11 sm:w-11 ${
+              showEmojiPicker ? "text-whatsapp-deep" : ""
             }`}
             onClick={() => {
               setShowEmojiPicker((current) => !current);
@@ -1421,7 +1665,7 @@ export function ChatWindow(props: ChatWindowProps) {
 
       {mediaLightbox ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 px-4 py-6 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#10211d]/78 px-4 py-6 backdrop-blur-sm"
           onClick={() => setMediaLightbox(null)}
           role="dialog"
           aria-modal="true"
@@ -1433,21 +1677,21 @@ export function ChatWindow(props: ChatWindowProps) {
           >
             <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
               <button
-                className="rounded-full bg-white/92 px-3 py-1.5 text-xs font-medium text-emerald-950 shadow-soft transition hover:bg-white"
+                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-whatsapp-deep shadow-soft transition hover:bg-whatsapp-soft"
                 onClick={() => openMediaInNewTab(mediaLightbox.src)}
                 type="button"
               >
                 Open in new tab
               </button>
               <a
-                className="rounded-full bg-white/92 px-3 py-1.5 text-xs font-medium text-emerald-950 shadow-soft transition hover:bg-white"
+                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-whatsapp-deep shadow-soft transition hover:bg-whatsapp-soft"
                 download={mediaLightbox.downloadName}
                 href={mediaLightbox.src}
               >
                 Save picture
               </a>
               <button
-                className="rounded-full bg-white/92 px-3 py-1.5 text-xs font-medium text-emerald-950 shadow-soft transition hover:bg-white"
+                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-whatsapp-deep shadow-soft transition hover:bg-whatsapp-soft"
                 onClick={() => setMediaLightbox(null)}
                 type="button"
               >

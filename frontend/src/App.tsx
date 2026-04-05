@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChatList } from "./components/ChatList";
 import { ChatWindow } from "./components/ChatWindow";
+import { ContactList } from "./components/ContactList";
+import { CustomerPanel } from "./components/CustomerPanel";
 import type { CustomerPanelProps } from "./components/CustomerPanel";
 import { LoginForm } from "./components/LoginForm";
 import { NavigationHeader } from "./components/NavigationHeader";
 import { Sidebar } from "./components/Sidebar";
 import { WhatsAppConnectCard } from "./components/WhatsAppConnectCard";
-import { api, CUSTOMER_STATUSES, type Conversation, type Customer, type CustomerStatus, type Message, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
+import { api, CUSTOMER_STATUSES, type Conversation, type Customer, type CustomerStatus, type Message, type SalesLeadItem, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
 import { getResolvedPhone } from "./lib/display";
 import { supabase } from "./lib/supabase";
 
 type AuthMode = "login" | "register";
+type DashboardTab = "inbox" | "contacts";
 type SidebarView = "inbox" | "pipeline" | "broadcast";
 const conversationPollMs = 8000;
 
@@ -43,6 +46,10 @@ function buildAttachmentPreviewText(file: File, caption: string) {
   return trimmedCaption ? `[${label}] ${file.name} - ${trimmedCaption}` : `[${label}] ${file.name}`;
 }
 
+function normalizePhoneValue(value: string | null | undefined) {
+  return String(value || "").replace(/\D/g, "") || null;
+}
+
 function App() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
@@ -52,6 +59,7 @@ function App() {
   const [authReady, setAuthReady] = useState(false);
   const [token, setToken] = useState("");
   const [userEmail, setUserEmail] = useState("");
+  const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTab>("inbox");
   const [activeView, setActiveView] = useState<SidebarView>("inbox");
   const [activeStatusFilter, setActiveStatusFilter] = useState<CustomerStatus | null>(null);
 
@@ -67,11 +75,20 @@ function App() {
   const [loadingCustomer, setLoadingCustomer] = useState(false);
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [customerDraft, setCustomerDraft] = useState<Customer | null>(null);
+  const [salesLeadItems, setSalesLeadItems] = useState<SalesLeadItem[]>([]);
+  const [loadingSalesLeadItems, setLoadingSalesLeadItems] = useState(false);
+  const [savingSalesLeadItem, setSavingSalesLeadItem] = useState(false);
+  const [customerPanelCollapsed, setCustomerPanelCollapsed] = useState(false);
   const [saveTimer, setSaveTimer] = useState<number | null>(null);
   const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus | null>(null);
   const [whatsAppQr, setWhatsAppQr] = useState<WhatsAppQr | null>(null);
+  const [connectedWhatsAppPhone, setConnectedWhatsAppPhone] = useState<string | null>(null);
   const [loadingWhatsApp, setLoadingWhatsApp] = useState(true);
   const [disconnectingWhatsApp, setDisconnectingWhatsApp] = useState(false);
+
+  useEffect(() => {
+    setCustomerPanelCollapsed(false);
+  }, [selectedPhone, activeDashboardTab]);
 
   function updateConversationStatus(params: {
     phone?: string | null;
@@ -97,6 +114,50 @@ function App() {
         };
       })
     );
+  }
+
+  function clearConversationUnread(params: {
+    phone?: string | null;
+    chatJid?: string | null;
+  }) {
+    const targetResolvedPhone = getResolvedPhone(params.phone, params.chatJid);
+    const targetChatJid = String(params.chatJid || "").trim() || null;
+
+    setConversations((current) =>
+      current.map((conversation) => {
+        const conversationResolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid);
+        const matchesPhone = Boolean(targetResolvedPhone && conversationResolvedPhone === targetResolvedPhone);
+        const matchesChatJid = Boolean(targetChatJid && conversation.chatJid === targetChatJid);
+
+        if (!matchesPhone && !matchesChatJid) {
+          return conversation;
+        }
+
+        if (!conversation.unreadCount) {
+          return conversation;
+        }
+
+        return {
+          ...conversation,
+          unreadCount: 0
+        };
+      })
+    );
+  }
+
+  async function markActiveConversationRead(phone: string, chatJid?: string | null) {
+    if (!token) {
+      return;
+    }
+
+    clearConversationUnread({ phone, chatJid });
+
+    try {
+      await api.markConversationRead(phone, token, chatJid);
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "Failed to clear unread count.");
+      loadConversations(token, true);
+    }
   }
 
   async function loadConversations(activeToken: string, silent = false) {
@@ -171,6 +232,23 @@ function App() {
     }
   }
 
+  async function loadCustomerSalesItems(phone: string, activeToken: string, chatJid?: string | null, silent = false) {
+    if (!silent) {
+      setLoadingSalesLeadItems(true);
+    }
+
+    try {
+      const data = await api.getCustomerSalesItems(phone, activeToken, chatJid);
+      setSalesLeadItems(data);
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "Failed to load customer sales items.");
+    } finally {
+      if (!silent) {
+        setLoadingSalesLeadItems(false);
+      }
+    }
+  }
+
   async function persistCustomer(nextCustomer: Customer) {
     if (!token) {
       return;
@@ -200,6 +278,38 @@ function App() {
     }
   }
 
+  async function handleCreateSalesLeadItem(payload: {
+    messageId: string;
+    productType: string;
+    packageName: string;
+    price: number;
+    quantity: number;
+  }) {
+    if (!token || !selectedPhone) {
+      return;
+    }
+
+    setSavingSalesLeadItem(true);
+
+    try {
+      const item = await api.createCustomerSalesItem(
+        selectedPhone,
+        {
+          ...payload,
+          chatJid: activeCustomerChatJid
+        },
+        token
+      );
+
+      setSalesLeadItems((current) => [item, ...current]);
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "Failed to save sales lead item.");
+      throw error;
+    } finally {
+      setSavingSalesLeadItem(false);
+    }
+  }
+
   async function loadWhatsAppState(silent = false) {
     if (!silent) {
       setLoadingWhatsApp(true);
@@ -223,6 +333,13 @@ function App() {
 
         return qr;
       });
+
+      if (token) {
+        const profile = await api.getWhatsAppProfile(token).catch(() => null);
+        setConnectedWhatsAppPhone(normalizePhoneValue(profile?.phone));
+      } else {
+        setConnectedWhatsAppPhone(null);
+      }
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to load WhatsApp state.");
     } finally {
@@ -292,9 +409,11 @@ function App() {
 
   useEffect(() => {
     if (!token) {
+      setConnectedWhatsAppPhone(null);
       return;
     }
 
+    loadWhatsAppState(true);
     loadConversations(token);
   }, [token]);
 
@@ -302,12 +421,14 @@ function App() {
     if (!token || !selectedPhone) {
       setMessages([]);
       setCustomerDraft(null);
+      setSalesLeadItems([]);
       return;
     }
 
     loadMessages(selectedPhone, token);
     loadCustomer(selectedPhone, token);
-  }, [selectedPhone, token]);
+    loadCustomerSalesItems(selectedPhone, token, customerDraft?.chat_jid || null);
+  }, [customerDraft?.chat_jid, selectedPhone, token]);
 
   useEffect(() => {
     if (whatsAppStatus?.connected) {
@@ -353,6 +474,7 @@ function App() {
       if (selectedPhone) {
         loadMessages(selectedPhone, token, true);
         loadCustomer(selectedPhone, token, true);
+        loadCustomerSalesItems(selectedPhone, token, customerDraft?.chat_jid || null, true);
       }
     }, conversationPollMs);
 
@@ -369,39 +491,55 @@ function App() {
     };
   }, [saveTimer]);
 
+  const leadConversations = useMemo(() => {
+    if (!connectedWhatsAppPhone) {
+      return conversations;
+    }
+
+    return conversations.filter((conversation) => normalizePhoneValue(conversation.phone) !== connectedWhatsAppPhone);
+  }, [connectedWhatsAppPhone, conversations]);
+
   const selectedConversation = useMemo(
-    () => conversations.find((conversation) => getResolvedPhone(conversation.phone, conversation.chatJid) === selectedPhone) || null,
-    [conversations, selectedPhone]
+    () => leadConversations.find((conversation) => getResolvedPhone(conversation.phone, conversation.chatJid) === selectedPhone) || null,
+    [leadConversations, selectedPhone]
   );
   const activeChatJid = selectedConversation?.chatJid || customerDraft?.chat_jid || null;
 
+  useEffect(() => {
+    if (!selectedConversation?.unreadCount || !selectedPhone) {
+      return;
+    }
+
+    markActiveConversationRead(selectedPhone, selectedConversation.chatJid);
+  }, [selectedConversation?.chatJid, selectedConversation?.unreadCount, selectedPhone, token]);
+
   const sidebarCounts = useMemo(() => {
     return {
-      inbox: conversations.length
+      inbox: leadConversations.length
     };
-  }, [conversations]);
+  }, [leadConversations]);
 
   const visibleConversations = useMemo(() => {
     if (activeStatusFilter) {
-      return conversations.filter((conversation) => conversation.status === activeStatusFilter);
+      return leadConversations.filter((conversation) => conversation.status === activeStatusFilter);
     }
 
-    return conversations;
-  }, [activeStatusFilter, conversations]);
+    return leadConversations;
+  }, [activeStatusFilter, leadConversations]);
 
   const sidebarStats = useMemo(
     () => ({
       statusCounts: {
-        new_lead: conversations.filter((conversation) => conversation.status === "new_lead").length,
-        interested: conversations.filter((conversation) => conversation.status === "interested").length,
-        processing: conversations.filter((conversation) => conversation.status === "processing").length,
-        closed_won: conversations.filter((conversation) => conversation.status === "closed_won").length,
-        closed_lost: conversations.filter((conversation) => conversation.status === "closed_lost").length
+        new_lead: leadConversations.filter((conversation) => conversation.status === "new_lead").length,
+        interested: leadConversations.filter((conversation) => conversation.status === "interested").length,
+        processing: leadConversations.filter((conversation) => conversation.status === "processing").length,
+        closed_won: leadConversations.filter((conversation) => conversation.status === "closed_won").length,
+        closed_lost: leadConversations.filter((conversation) => conversation.status === "closed_lost").length
       },
       currentThreadMessages: messages.length,
       activeContact: selectedConversation?.contactName || customerDraft?.contact_name || selectedPhone || "None"
     }),
-    [conversations, customerDraft?.contact_name, messages.length, selectedConversation?.contactName, selectedPhone]
+    [customerDraft?.contact_name, leadConversations, messages.length, selectedConversation?.contactName, selectedPhone]
   );
 
   useEffect(() => {
@@ -634,6 +772,7 @@ function App() {
     setSelectedPhone(null);
     setMessages([]);
     setCustomerDraft(null);
+    setSalesLeadItems([]);
   }
 
   function scheduleCustomerSave(nextCustomer: Customer, immediate = false) {
@@ -751,10 +890,10 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen bg-app px-4 py-6 text-slate-700">
+    <main className="min-h-screen bg-app px-4 py-6 text-ink">
       <div className="mx-auto max-w-[1600px] space-y-4">
-        <NavigationHeader />
-        <div className="xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(280px,1fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
+        <NavigationHeader activeTab={activeDashboardTab} onChangeTab={setActiveDashboardTab} />
+        <div className="space-y-4 xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(280px,1fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
           <Sidebar
             activeView={activeView}
           activeStatusFilter={activeStatusFilter}
@@ -774,52 +913,102 @@ function App() {
 
         <div className="space-y-4 xl:contents">
           {dashboardError ? (
-            <div className="glass-panel px-4 py-3 text-sm text-rose-500 xl:col-start-2 xl:col-end-4">{dashboardError}</div>
+            <div className="glass-panel border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 xl:col-start-2 xl:col-end-4">{dashboardError}</div>
           ) : null}
 
           <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(260px,_0.95fr)_minmax(0,_1.55fr)] xl:contents">
             <div className="space-y-4 lg:col-start-1 lg:col-end-2 xl:col-start-2 xl:col-end-3">
-              <ChatList
-                activeView={activeView}
-                conversations={visibleConversations}
-                loading={loadingChats}
-                onRefresh={() => {
-                  if (!token) {
-                    return;
-                  }
+              {activeDashboardTab === "inbox" ? (
+                <ChatList
+                  activeView={activeView}
+                  conversations={visibleConversations}
+                  loading={loadingChats}
+                  onRefresh={() => {
+                    if (!token) {
+                      return;
+                    }
 
-                  loadWhatsAppState(true);
-                  loadConversations(token, true);
+                    loadWhatsAppState(true);
+                    loadConversations(token, true);
 
-                  if (selectedPhone) {
-                    loadMessages(selectedPhone, token, true);
-                    loadCustomer(selectedPhone, token, true);
-                  }
-                }}
-                onSelect={setSelectedPhone}
-                refreshing={refreshingChats}
-                selectedPhone={selectedPhone}
-                whatsAppConnected={Boolean(whatsAppStatus?.connected)}
-              />
+                    if (selectedPhone) {
+                      loadMessages(selectedPhone, token, true);
+                      loadCustomer(selectedPhone, token, true);
+                      loadCustomerSalesItems(selectedPhone, token, customerDraft?.chat_jid || null, true);
+                    }
+                  }}
+                  onSelect={(phone) => {
+                    setSelectedPhone(phone);
+                  }}
+                  refreshing={refreshingChats}
+                  selectedPhone={selectedPhone}
+                  whatsAppConnected={Boolean(whatsAppStatus?.connected)}
+                />
+              ) : (
+                <ContactList
+                  activeStatusFilter={activeStatusFilter}
+                  contacts={visibleConversations}
+                  loading={loadingChats}
+                  onRefresh={() => {
+                    if (!token) {
+                      return;
+                    }
+
+                    loadWhatsAppState(true);
+                    loadConversations(token, true);
+
+                    if (selectedPhone) {
+                      loadCustomer(selectedPhone, token, true);
+                      loadCustomerSalesItems(selectedPhone, token, customerDraft?.chat_jid || null, true);
+                    }
+                  }}
+                  onSelect={(phone) => {
+                    setSelectedPhone(phone);
+                  }}
+                  refreshing={refreshingChats}
+                  selectedPhone={selectedPhone}
+                />
+              )}
             </div>
 
             <div className="order-2 lg:order-none lg:col-start-2 lg:col-end-3 xl:col-start-3 xl:col-end-4">
-              <ChatWindow
-                contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
-                customerPanelProps={customerPanelProps}
-                chatJid={customerDraft?.chat_jid || selectedConversation?.chatJid || null}
-                loading={loadingMessages}
-                messageText={chatInput}
-                messages={messages}
-                onChangeMessage={setChatInput}
-                onSendAttachment={handleSendAttachment}
-                onSendLocation={handleSendLocation}
-                onSend={handleSend}
-                onSendQuickReply={sendTextMessage}
-                phone={selectedPhone}
-                profilePictureUrl={customerDraft?.profile_picture_url || null}
-                sending={sending}
-              />
+              {activeDashboardTab === "inbox" ? (
+                <ChatWindow
+                  contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
+                  customerPanelProps={customerPanelProps}
+                  chatJid={customerDraft?.chat_jid || selectedConversation?.chatJid || null}
+                  loading={loadingMessages}
+                  loadingSalesLeadItems={loadingSalesLeadItems}
+                  messageText={chatInput}
+                  messages={messages}
+                  onChangeMessage={setChatInput}
+                  onCreateSalesLeadItem={handleCreateSalesLeadItem}
+                  onSendAttachment={handleSendAttachment}
+                  onSendLocation={handleSendLocation}
+                  onSend={handleSend}
+                  onSendQuickReply={sendTextMessage}
+                  phone={selectedPhone}
+                  profilePictureUrl={customerDraft?.profile_picture_url || null}
+                  salesLeadItems={salesLeadItems}
+                  salesLeadStatus={selectedStatus}
+                  savingSalesLeadItem={savingSalesLeadItem}
+                  sending={sending}
+                />
+              ) : customerPanelProps ? (
+                <CustomerPanel
+                  {...customerPanelProps}
+                  mobileCollapsed={customerPanelCollapsed}
+                  onToggleMobileCollapse={() => setCustomerPanelCollapsed((current) => !current)}
+                />
+              ) : (
+                <section className="glass-panel flex min-h-[420px] flex-col items-center justify-center p-6 text-center">
+                  <p className="text-xs uppercase tracking-[0.25em] text-whatsapp-muted">Contact details</p>
+                  <h3 className="mt-3 text-xl font-semibold text-ink">Select a contact</h3>
+                  <p className="mt-2 max-w-sm text-sm leading-6 text-whatsapp-muted">
+                    Pick a contact from the CRM list to review profile details, update lead status, and manage notes without leaving the dashboard.
+                  </p>
+                </section>
+              )}
             </div>
           </div>
         </div>

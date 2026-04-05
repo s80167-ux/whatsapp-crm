@@ -3,13 +3,23 @@ export default {
     theme: {
         extend: {
             colors: {
-                ink: "#102033",
-                accent: "#5dc9ff",
-                mint: "#6fe3c1"
+                ink: "#075e54",
+                accent: "#34b7f1",
+                mint: "#dcf8c6",
+                whatsapp: {
+                    deep: "#075e54",
+                    dark: "#128c7e",
+                    green: "#25d366",
+                    soft: "#dcf8c6",
+                    canvas: "#ece5dd",
+                    sky: "#34b7f1",
+                    line: "#d5cdc4",
+                    muted: "#6b817b"
+                }
             },
             boxShadow: {
-                glass: "0 24px 60px rgba(16, 32, 51, 0.14)",
-                soft: "0 10px 30px rgba(16, 32, 51, 0.10)"
+                glass: "0 8px 24px rgba(0, 0, 0, 0.06)",
+                soft: "0 2px 10px rgba(0, 0, 0, 0.05)"
             },
             backdropBlur: {
                 glass: "24px"

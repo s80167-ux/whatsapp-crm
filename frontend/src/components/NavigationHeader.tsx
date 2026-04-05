@@ -1,32 +1,46 @@
-import React from "react";
+type DashboardTab = "inbox" | "contacts";
 
 type NavigationItem = {
+  key: DashboardTab | "analytics" | "settings";
   label: string;
-  active?: boolean;
+  disabled?: boolean;
 };
 
 const navItems: NavigationItem[] = [
-  { label: "Inbox", active: true },
-  { label: "Contacts" },
-  { label: "Analytics" },
-  { label: "Settings" }
+  { key: "inbox", label: "Inbox" },
+  { key: "contacts", label: "Contacts" },
+  { key: "analytics", label: "Analytics", disabled: true },
+  { key: "settings", label: "Settings", disabled: true }
 ];
 
-export function NavigationHeader() {
+type NavigationHeaderProps = {
+  activeTab: DashboardTab;
+  onChangeTab: (tab: DashboardTab) => void;
+};
+
+export function NavigationHeader({ activeTab, onChangeTab }: NavigationHeaderProps) {
   return (
-    <header className="glass-panel flex flex-col items-start gap-4 p-4 md:flex-row md:items-center md:justify-between lg:px-6">
+    <header className="glass-panel flex flex-col items-start gap-4 p-3 md:flex-row md:items-center md:justify-between lg:px-5">
       <div className="flex items-center gap-6 lg:gap-10">
 
         
         <nav className="flex items-center gap-1 sm:gap-2">
           {navItems.map((item) => (
             <button
-              key={item.label}
-              className={`flex items-center gap-2 rounded-[18px] px-4 py-2 text-sm font-semibold transition-all duration-200 ${
-                item.active
-                  ? "bg-emerald-100 text-emerald-900 shadow-soft ring-1 ring-emerald-900/5"
-                  : "text-emerald-900/50 hover:bg-white/60 hover:text-emerald-950"
+              key={item.key}
+              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all duration-200 ${
+                activeTab === item.key
+                  ? "bg-[#f0f2f5] text-whatsapp-deep"
+                  : item.disabled
+                  ? "cursor-not-allowed text-whatsapp-muted/60"
+                  : "text-whatsapp-muted hover:bg-[#f5f6f6] hover:text-whatsapp-deep"
               }`}
+              disabled={item.disabled}
+              onClick={() => {
+                if (item.key === "inbox" || item.key === "contacts") {
+                  onChangeTab(item.key);
+                }
+              }}
               type="button"
             >
               {getItemIcon(item.label)}
@@ -37,8 +51,8 @@ export function NavigationHeader() {
       </div>
 
       <div className="hidden items-center gap-3 xl:flex">
-        <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-emerald-900/45">System Live</span>
+        <div className="h-2 w-2 rounded-full bg-whatsapp-green animate-pulse" />
+        <span className="text-[11px] font-medium uppercase tracking-wider text-whatsapp-muted">System Live</span>
       </div>
     </header>
   );

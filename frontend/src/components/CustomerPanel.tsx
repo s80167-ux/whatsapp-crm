@@ -83,22 +83,25 @@ export function CustomerPanel(props: CustomerPanelProps) {
   const usernameLabel = contactName || "Unavailable";
   const phoneLabel = formatPhoneDisplay(phone, chatJid);
   const isInline = variant === "inline";
+  const canCollapse = !isInline && Boolean(onToggleMobileCollapse);
   const contentClasses = isInline
-    ? "mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1"
-    : `${mobileCollapsed ? "hidden" : "mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1"} lg:mt-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:space-y-3 lg:overflow-y-auto lg:pr-1`;
+    ? "custom-scrollbar mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1"
+    : mobileCollapsed
+      ? "hidden"
+      : "custom-scrollbar mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1";
 
   return (
-    <aside className={`glass-panel flex flex-col overflow-hidden border border-white/70 bg-white/58 p-4 ${isInline ? "shadow-soft" : ""}`}>
+    <aside className={`glass-panel flex flex-col overflow-hidden p-4 ${isInline ? "shadow-soft" : ""}`}>
       {isInline ? (
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Customer profile</p>
+            <p className="text-xs uppercase tracking-[0.25em] text-whatsapp-muted">Customer profile</p>
             <p className="mt-1 truncate text-sm font-medium text-ink">{title}</p>
           </div>
           {onClose ? (
             <button
               aria-label="Close customer profile"
-              className="icon-hover-trigger flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/82 text-emerald-900/60 shadow-soft transition hover:bg-white hover:text-emerald-950"
+              className="icon-hover-trigger flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-whatsapp-canvas text-whatsapp-muted shadow-soft transition hover:bg-white hover:text-whatsapp-deep"
               onClick={onClose}
               type="button"
             >
@@ -112,27 +115,28 @@ export function CustomerPanel(props: CustomerPanelProps) {
       ) : (
         <>
           <button
-            className="flex w-full items-center justify-between gap-3 text-left lg:hidden"
+            className="flex w-full items-center justify-between gap-3 text-left"
+            disabled={!canCollapse}
             onClick={onToggleMobileCollapse}
             type="button"
           >
             <div className="min-w-0">
-              <p className="text-xs uppercase tracking-[0.25em] text-emerald-800/65">Customer info</p>
+              <p className="text-xs uppercase tracking-[0.25em] text-whatsapp-muted">Customer info</p>
               <p className="mt-1 truncate text-sm font-medium text-ink">{title}</p>
             </div>
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/70 text-emerald-900/65 shadow-soft">
-              <svg className={`h-4 w-4 transition ${mobileCollapsed ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24">
-                <path d="m6 9 6 6 6-6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-              </svg>
-            </span>
+            {canCollapse ? (
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-whatsapp-canvas text-whatsapp-muted shadow-soft transition hover:bg-white hover:text-whatsapp-deep">
+                <svg className={`h-4 w-4 transition ${mobileCollapsed ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24">
+                  <path d="m6 9 6 6 6-6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                </svg>
+              </span>
+            ) : null}
           </button>
-
-          <p className="hidden text-xs uppercase tracking-[0.25em] text-emerald-800/65 lg:block">Customer info</p>
         </>
       )}
 
       <div className={contentClasses}>
-        <div className="rounded-[28px] bg-white/68 p-4 shadow-soft">
+        <div className="rounded-[28px] border border-whatsapp-line bg-white p-4 shadow-soft">
           <div className="flex flex-col gap-4 sm:items-center sm:text-center lg:items-start lg:text-left xl:items-center xl:text-center">
             {profilePictureUrl ? (
               <img
@@ -141,7 +145,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
                 src={profilePictureUrl}
               />
             ) : (
-              <div className="flex h-24 w-24 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-500 to-teal-600 text-2xl font-semibold text-white shadow-soft">
+              <div className="flex h-24 w-24 items-center justify-center rounded-3xl bg-whatsapp-dark text-2xl font-semibold text-white shadow-soft">
                 {initials}
               </div>
             )}
@@ -149,67 +153,67 @@ export function CustomerPanel(props: CustomerPanelProps) {
             <div className="min-w-0 w-full">
               <h3 className="break-words text-lg font-semibold leading-tight text-ink">{title}</h3>
               <div className="mt-3 grid gap-2 text-left sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-1">
-                <div className="rounded-2xl bg-emerald-50/75 px-3 py-2">
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-800/55">Username</p>
-                  <p className="mt-1 break-words text-sm font-medium text-emerald-950/80">{usernameLabel}</p>
+                <div className="rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Username</p>
+                  <p className="mt-1 break-words text-sm font-medium text-ink">{usernameLabel}</p>
                 </div>
-                <div className="rounded-2xl bg-emerald-50/75 px-3 py-2">
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-800/55">Phone</p>
-                  <p className="mt-1 break-all text-sm font-medium text-emerald-950/80">{phoneLabel}</p>
+                <div className="rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Phone</p>
+                  <p className="mt-1 break-all text-sm font-medium text-ink">{phoneLabel}</p>
                 </div>
               </div>
             </div>
           </div>
 
           {about ? (
-            <div className="mt-3 rounded-2xl bg-emerald-50/75 px-3 py-2">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-800/55">WhatsApp bio</p>
-              <p className="mt-1 break-words text-sm leading-5 text-emerald-950/66">{about}</p>
+            <div className="mt-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-2">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">WhatsApp bio</p>
+              <p className="mt-1 break-words text-sm leading-5 text-ink/80">{about}</p>
             </div>
           ) : null}
 
           <div className="mt-3 grid gap-2">
-            <div className="rounded-2xl bg-emerald-50/75 p-3">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-800/55">Last activity</p>
-              <p className="mt-1 text-sm font-medium leading-5 text-emerald-950/78">{formatTime(lastMessageAt)}</p>
-              <p className="mt-1 text-xs text-emerald-900/45">{activityLabel}</p>
+            <div className="rounded-2xl border border-whatsapp-line bg-whatsapp-canvas p-3">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Last activity</p>
+              <p className="mt-1 text-sm font-medium leading-5 text-ink">{formatTime(lastMessageAt)}</p>
+              <p className="mt-1 text-xs text-whatsapp-muted">{activityLabel}</p>
             </div>
 
             <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-2xl bg-emerald-50/75 p-3 text-center">
-                <p className="text-[11px] uppercase tracking-[0.15em] text-emerald-800/55">Total</p>
+              <div className="rounded-2xl border border-whatsapp-line bg-whatsapp-canvas p-3 text-center">
+                <p className="text-[11px] uppercase tracking-[0.15em] text-whatsapp-muted">Total</p>
                 <p className="mt-1 text-lg font-semibold text-ink">{totalMessages ?? 0}</p>
               </div>
-              <div className="rounded-2xl bg-emerald-50/75 p-3 text-center">
-                <p className="text-[11px] uppercase tracking-[0.15em] text-emerald-800/55">In</p>
+              <div className="rounded-2xl border border-whatsapp-line bg-whatsapp-canvas p-3 text-center">
+                <p className="text-[11px] uppercase tracking-[0.15em] text-whatsapp-muted">In</p>
                 <p className="mt-1 text-lg font-semibold text-ink">{incomingCount ?? 0}</p>
               </div>
-              <div className="rounded-2xl bg-emerald-50/75 p-3 text-center">
-                <p className="text-[11px] uppercase tracking-[0.15em] text-emerald-800/55">Out</p>
+              <div className="rounded-2xl border border-whatsapp-line bg-whatsapp-canvas p-3 text-center">
+                <p className="text-[11px] uppercase tracking-[0.15em] text-whatsapp-muted">Out</p>
                 <p className="mt-1 text-lg font-semibold text-ink">{outgoingCount ?? 0}</p>
               </div>
             </div>
           </div>
 
           {lastMessagePreview ? (
-            <div className="mt-2 rounded-2xl bg-emerald-50/75 p-3">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-800/55">Latest synced message</p>
-              <p className="mt-1 break-words text-sm leading-5 text-emerald-950/66">{lastMessagePreview}</p>
+            <div className="mt-2 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas p-3">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Latest synced message</p>
+              <p className="mt-1 break-words text-sm leading-5 text-ink/80">{lastMessagePreview}</p>
             </div>
           ) : null}
         </div>
 
-        <div className="rounded-3xl bg-white/55 p-4 shadow-soft">
-          <p className="text-sm font-medium text-emerald-950/70">Lead status</p>
-          {loading ? <p className="mt-2 text-xs text-emerald-900/45">Loading customer details...</p> : null}
+        <div className="rounded-3xl border border-whatsapp-line bg-white p-4 shadow-soft">
+          <p className="text-sm font-medium text-whatsapp-deep">Lead status</p>
+          {loading ? <p className="mt-2 text-xs text-whatsapp-muted">Loading customer details...</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
             {CUSTOMER_STATUSES.map((item) => (
               <button
                 key={item}
                 className={`rounded-full px-4 py-2 text-sm font-medium transition ${
                   status === item
-                    ? "bg-gradient-to-r from-emerald-500 to-green-400 text-white shadow-soft"
-                    : "bg-white/80 text-emerald-900/60 hover:bg-white"
+                    ? "bg-whatsapp-dark text-white shadow-soft"
+                    : "border border-whatsapp-line bg-whatsapp-canvas text-whatsapp-muted hover:bg-white"
                 }`}
                 onClick={() => onStatusChange(item)}
                 type="button"
@@ -220,13 +224,13 @@ export function CustomerPanel(props: CustomerPanelProps) {
           </div>
         </div>
 
-        <div className="rounded-3xl bg-white/55 p-4 shadow-soft">
+        <div className="rounded-3xl border border-whatsapp-line bg-white p-4 shadow-soft">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-emerald-950/70">Notes</p>
-            <span className="text-xs text-emerald-900/45">{saving ? "Saving..." : "Saved"}</span>
+            <p className="text-sm font-medium text-whatsapp-deep">Notes</p>
+            <span className="text-xs text-whatsapp-muted">{saving ? "Saving..." : "Saved"}</span>
           </div>
           <textarea
-            className="mt-3 min-h-28 w-full rounded-2xl border border-emerald-100 bg-white/85 p-3 text-sm text-slate-700 outline-none transition placeholder:text-emerald-900/35 focus:border-emerald-300"
+            className="mt-3 min-h-28 w-full rounded-2xl border border-whatsapp-line bg-whatsapp-canvas p-3 text-sm text-ink outline-none transition placeholder:text-whatsapp-muted focus:border-whatsapp-dark focus:bg-white"
             disabled={!phone || loading}
             onChange={(event) => onNotesChange(event.target.value)}
             placeholder="Add context, follow-up reminders, or sales notes..."

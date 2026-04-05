@@ -22,6 +22,7 @@ export type Conversation = {
   phone: string;
   chatJid: string | null;
   contactName: string | null;
+  profilePictureUrl?: string | null;
   lastMessage: string;
   timestamp: string;
   lastDirection: "incoming" | "outgoing";
@@ -59,6 +60,19 @@ export type Customer = {
   last_message_at?: string | null;
   last_message_preview?: string | null;
   last_direction?: "incoming" | "outgoing" | null;
+};
+
+export type SalesLeadItem = {
+  id: string;
+  message_id: string;
+  phone: string;
+  chat_jid?: string | null;
+  product_type: string;
+  package_name: string;
+  price: number;
+  quantity: number;
+  created_at: string;
+  updated_at?: string;
 };
 
 export type WhatsAppStatus = {
@@ -229,17 +243,57 @@ export const api = {
   getConversations(token: string) {
     return request<Conversation[]>("/conversations", {}, token);
   },
+  markConversationRead(phone: string, token: string, chatJid?: string | null) {
+    return request<{ success: boolean }>(
+      `/conversations/${phone}/read`,
+      {
+        method: "POST",
+        body: JSON.stringify({ chatJid: chatJid || null })
+      },
+      token
+    );
+  },
   getMessages(phone: string, token: string) {
     return request<Message[]>(`/messages/${phone}`, {}, token);
   },
   getCustomer(phone: string, token: string) {
     return request<Customer>(`/customers/${phone}`, {}, token);
   },
+  getCustomerSalesItems(phone: string, token: string, chatJid?: string | null) {
+    const params = new URLSearchParams();
+
+    if (chatJid) {
+      params.set("chatJid", chatJid);
+    }
+
+    return request<SalesLeadItem[]>(`/customers/${phone}/sales-items${params.size ? `?${params.toString()}` : ""}`, {}, token);
+  },
   saveCustomer(phone: string, payload: Pick<Customer, "status" | "notes">, token: string) {
     return request<Customer>(
       `/customers/${phone}`,
       {
         method: "PUT",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+  createCustomerSalesItem(
+    phone: string,
+    payload: {
+      messageId: string;
+      chatJid?: string | null;
+      productType: string;
+      packageName: string;
+      price: number;
+      quantity: number;
+    },
+    token: string
+  ) {
+    return request<SalesLeadItem>(
+      `/customers/${phone}/sales-items`,
+      {
+        method: "POST",
         body: JSON.stringify(payload)
       },
       token
