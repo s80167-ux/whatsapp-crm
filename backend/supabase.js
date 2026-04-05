@@ -99,7 +99,11 @@ function isCustomerStatusConstraintError(error) {
 }
 
 function isMissingColumnError(error, columnName) {
-  return error?.code === "42703" && String(error?.message || "").includes(columnName);
+  const errorMessage = String(error?.message || "");
+  return (
+    (error?.code === "42703" && errorMessage.includes(columnName)) ||
+    (error?.code === "PGRST204" && errorMessage.includes(columnName))
+  );
 }
 
 function isDuplicateCustomerPrimaryKeyError(error) {
@@ -205,7 +209,7 @@ async function findExistingMessage({ owner_user_id, phone, chat_jid, wa_message_
   return fallback.data || null;
 }
 
-async function saveMessage({ owner_user_id, phone, chat_jid, wa_message_id, message, direction, send_status, created_at }) {
+async function saveMessage({ owner_user_id, phone, chat_jid, wa_message_id, message, direction, send_status, created_at, media_type, media_mime_type, media_file_name, media_data_url }) {
   const existingMessage = await findExistingMessage({
     owner_user_id,
     phone,
@@ -228,6 +232,10 @@ async function saveMessage({ owner_user_id, phone, chat_jid, wa_message_id, mess
       ...(chat_jid ? { chat_jid } : {}),
       ...(wa_message_id ? { wa_message_id } : {}),
       message,
+      ...(media_type ? { media_type } : {}),
+      ...(media_mime_type ? { media_mime_type } : {}),
+      ...(media_file_name ? { media_file_name } : {}),
+      ...(media_data_url ? { media_data_url } : {}),
       direction,
       ...(send_status ? { send_status } : {}),
       ...(created_at ? { created_at } : {})
@@ -242,7 +250,11 @@ async function saveMessage({ owner_user_id, phone, chat_jid, wa_message_id, mess
   if (
     isMissingColumnError(error, "messages.chat_jid") ||
     isMissingColumnError(error, "messages.wa_message_id") ||
-    isMissingColumnError(error, "messages.send_status")
+    isMissingColumnError(error, "messages.send_status") ||
+    isMissingColumnError(error, "messages.media_type") ||
+    isMissingColumnError(error, "messages.media_mime_type") ||
+    isMissingColumnError(error, "messages.media_file_name") ||
+    isMissingColumnError(error, "messages.media_data_url")
   ) {
     ({ data, error } = await supabase
       .from("messages")

@@ -38,6 +38,12 @@ type QuickReply = {
   attachment?: StoredQuickReplyAttachment | null;
 };
 
+type MediaLightbox = {
+  src: string;
+  alt: string;
+  downloadName: string;
+};
+
 const quickRepliesStorageKey = "whatsapp-crm.quick-replies";
 const defaultQuickReplies: QuickReply[] = [
   { id: "default-thanks", text: "Thanks for reaching out. I will get back to you shortly." },
@@ -81,8 +87,182 @@ function formatStatus(message: Message) {
   return "Queued";
 }
 
+function isImageMessage(message: Message) {
+  return message.media_type === "image" && Boolean(message.media_data_url);
+}
+
+function isVideoMessage(message: Message) {
+  return message.media_type === "video" && Boolean(message.media_data_url);
+}
+
+function isDocumentMessage(message: Message) {
+  return message.media_type === "document" && Boolean(message.media_data_url);
+}
+
+function getSyntheticMediaPlaceholder(message: Message) {
+  if (isImageMessage(message)) {
+    return "[Image]";
+  }
+
+  if (isVideoMessage(message)) {
+    return "[Video]";
+  }
+
+  if (isDocumentMessage(message)) {
+    return message.media_file_name ? `[Document] ${message.media_file_name}` : "[Document]";
+  }
+
+  return null;
+}
+
+function stripMediaPreviewPrefix(message: Message) {
+  const rawText = message.message.trim();
+
+  if (isImageMessage(message)) {
+    const fileName = message.media_file_name?.trim();
+    if (rawText === "[Image]") {
+      return "";
+    }
+    if (fileName && rawText === `[Image] ${fileName}`) {
+      return "";
+    }
+    if (fileName && rawText.startsWith(`[Image] ${fileName} - `)) {
+      return rawText.slice(`[Image] ${fileName} - `.length).trim();
+    }
+  }
+
+  if (isVideoMessage(message)) {
+    const fileName = message.media_file_name?.trim();
+    if (rawText === "[Video]") {
+      return "";
+    }
+    if (fileName && rawText === `[Video] ${fileName}`) {
+      return "";
+    }
+    if (fileName && rawText.startsWith(`[Video] ${fileName} - `)) {
+      return rawText.slice(`[Video] ${fileName} - `.length).trim();
+    }
+  }
+
+  if (isDocumentMessage(message)) {
+    const fileName = message.media_file_name?.trim();
+    if (rawText === "[Document]") {
+      return "";
+    }
+    if (fileName && rawText === `[Document] ${fileName}`) {
+      return "";
+    }
+    if (fileName && rawText.startsWith(`[Document] ${fileName} - `)) {
+      return rawText.slice(`[Document] ${fileName} - `.length).trim();
+    }
+  }
+
+  return rawText;
+}
+
+function getRenderableMessageText(message: Message) {
+  const syntheticPlaceholder = getSyntheticMediaPlaceholder(message);
+  if (syntheticPlaceholder && message.message.trim() === syntheticPlaceholder) {
+    return "";
+  }
+
+  return stripMediaPreviewPrefix(message);
+}
+
 function ActionIcon(props: { children: ReactNode }) {
   return <span className="flex h-4 w-4 items-center justify-center">{props.children}</span>;
+}
+
+async function requestElementFullscreen(element: HTMLElement | null) {
+  if (!element) {
+    return;
+  }
+
+  if (document.fullscreenElement === element) {
+    return;
+  }
+
+  if (typeof element.requestFullscreen === "function") {
+    await element.requestFullscreen();
+  }
+}
+
+function openMediaInNewTab(src: string | null | undefined) {
+  if (!src) {
+    return;
+  }
+
+  window.open(src, "_blank", "noopener,noreferrer");
+}
+
+function getMediaDownloadName(message: Message, fallbackName: string) {
+  const fileName = message.media_file_name?.trim();
+  if (fileName) {
+    return fileName;
+  }
+
+  const mimeType = message.media_mime_type?.trim() || "";
+  const extension = mimeType.startsWith("image/") ? mimeType.slice("image/".length) : "bin";
+  return `${fallbackName}.${extension || "bin"}`;
+}
+
+function IncomingDocumentCard(props: { message: Message }) {
+  const fileName = props.message.media_file_name || "Document";
+  const mimeType = props.message.media_mime_type || "File";
+
+  return (
+    <a
+      className="mb-2 flex items-center gap-3 rounded-[18px] border border-emerald-200/80 bg-emerald-50/70 p-3 text-left transition hover:bg-emerald-50"
+      download={fileName}
+      href={props.message.media_data_url || undefined}
+      rel="noreferrer"
+      target="_blank"
+    >
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-white text-emerald-700 shadow-soft">
+        <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
+          <path d="M14 3H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7l-4-4Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+          <path d="M14 3v4h4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+          <path d="M12 11v6m0 0 2.5-2.5M12 17l-2.5-2.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+        </svg>
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-emerald-950">{fileName}</p>
+        <p className="truncate text-xs text-emerald-900/55">{mimeType}</p>
+      </div>
+    </a>
+  );
+}
+
+function IncomingVideoCard(props: { message: Message }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  return (
+    <div className="mb-2 overflow-hidden rounded-[18px] border border-black/5 bg-emerald-50/50">
+      <video
+        ref={videoRef}
+        className="block max-h-[320px] w-full bg-black object-contain"
+        controls
+        preload="metadata"
+        src={props.message.media_data_url || undefined}
+      />
+      <div className="flex items-center justify-end gap-2 border-t border-emerald-200/70 bg-white/80 px-3 py-2">
+        <button
+          className="text-xs font-medium text-emerald-900/60 transition hover:text-emerald-950"
+          onClick={() => void requestElementFullscreen(videoRef.current)}
+          type="button"
+        >
+          Full screen
+        </button>
+        <button
+          className="text-xs font-medium text-emerald-900/60 transition hover:text-emerald-950"
+          onClick={() => openMediaInNewTab(props.message.media_data_url)}
+          type="button"
+        >
+          Open in new tab
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function getQuickReplyContentLabel(reply: QuickReply) {
@@ -214,12 +394,15 @@ export function ChatWindow(props: ChatWindowProps) {
   const [locationAddress, setLocationAddress] = useState("");
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
+  const [resolvingLocation, setResolvingLocation] = useState(false);
   const [composerError, setComposerError] = useState("");
   const [showCustomerProfile, setShowCustomerProfile] = useState(false);
   const [showAllMessages, setShowAllMessages] = useState(false);
   const [expandedQuickReplyMessageId, setExpandedQuickReplyMessageId] = useState<string | null>(null);
   const [expandedEmojiMessageId, setExpandedEmojiMessageId] = useState<string | null>(null);
+  const [expandedAttachmentMessageId, setExpandedAttachmentMessageId] = useState<string | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [mediaLightbox, setMediaLightbox] = useState<MediaLightbox | null>(null);
 
   const displayPhone = getDisplayPhone(phone, chatJid);
   const title = getDisplayName(contactName, displayPhone);
@@ -264,6 +447,38 @@ export function ChatWindow(props: ChatWindowProps) {
   }, [quickReplies]);
 
   useEffect(() => {
+    if (!mediaLightbox) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMediaLightbox(null);
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [mediaLightbox]);
+
+  useEffect(() => {
+    const locationPanelVisible = showAttachmentMenu || Boolean(expandedAttachmentMessageId);
+    const hasCoordinates = Boolean(latitude.trim() && longitude.trim());
+
+    if (attachmentTab !== "location" || !locationPanelVisible || hasCoordinates || resolvingLocation) {
+      return;
+    }
+
+    void handleSendCurrentLocation();
+  }, [attachmentTab, expandedAttachmentMessageId, latitude, longitude, resolvingLocation, showAttachmentMenu]);
+
+  useEffect(() => {
     const changedConversation = lastPhoneRef.current !== phone;
     const lastMessage = messages[messages.length - 1];
     const nextMessageKey = lastMessage ? `${lastMessage.id}:${lastMessage.created_at}` : "";
@@ -290,7 +505,9 @@ export function ChatWindow(props: ChatWindowProps) {
       setShowAllMessages(false);
       setExpandedQuickReplyMessageId(null);
       setExpandedEmojiMessageId(null);
+      setExpandedAttachmentMessageId(null);
       setShowEmojiPicker(false);
+      setMediaLightbox(null);
       return;
     }
 
@@ -362,6 +579,7 @@ export function ChatWindow(props: ChatWindowProps) {
     setComposerError("");
     setExpandedQuickReplyMessageId(null);
     setExpandedEmojiMessageId(null);
+    setExpandedAttachmentMessageId(null);
 
     if (reply.attachment) {
       const file = await storedAttachmentToFile(reply.attachment);
@@ -374,12 +592,21 @@ export function ChatWindow(props: ChatWindowProps) {
 
   function handleToggleInlineQuickReplies(messageId: string) {
     setExpandedEmojiMessageId(null);
+    setExpandedAttachmentMessageId(null);
     setExpandedQuickReplyMessageId((current) => (current === messageId ? null : messageId));
   }
 
   function handleToggleInlineEmojis(messageId: string) {
     setExpandedQuickReplyMessageId(null);
+    setExpandedAttachmentMessageId(null);
     setExpandedEmojiMessageId((current) => (current === messageId ? null : messageId));
+  }
+
+  function handleToggleInlineAttachments(messageId: string) {
+    setShowAttachmentMenu(false);
+    setExpandedQuickReplyMessageId(null);
+    setExpandedEmojiMessageId(null);
+    setExpandedAttachmentMessageId((current) => (current === messageId ? null : messageId));
   }
 
   function appendEmojiToComposer(emoji: string) {
@@ -395,6 +622,7 @@ export function ChatWindow(props: ChatWindowProps) {
   function handleSendInlineEmoji(emoji: string) {
     setExpandedEmojiMessageId(null);
     setExpandedQuickReplyMessageId(null);
+    setExpandedAttachmentMessageId(null);
     void onSendQuickReply(emoji);
   }
 
@@ -436,6 +664,7 @@ export function ChatWindow(props: ChatWindowProps) {
       setSelectedFile(null);
       setAttachmentCaption("");
       setShowAttachmentMenu(false);
+      setExpandedAttachmentMessageId(null);
     } catch (error) {
       setComposerError(error instanceof Error ? error.message : "Failed to send attachment.");
     }
@@ -447,14 +676,17 @@ export function ChatWindow(props: ChatWindowProps) {
       return;
     }
 
+    setResolvingLocation(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setLatitude(position.coords.latitude.toFixed(6));
         setLongitude(position.coords.longitude.toFixed(6));
         setComposerError("");
+        setResolvingLocation(false);
       },
       () => {
         setComposerError("Unable to get your current location.");
+        setResolvingLocation(false);
       },
       {
         enableHighAccuracy: true,
@@ -485,6 +717,7 @@ export function ChatWindow(props: ChatWindowProps) {
       setLatitude("");
       setLongitude("");
       setShowAttachmentMenu(false);
+      setExpandedAttachmentMessageId(null);
     } catch (error) {
       setComposerError(error instanceof Error ? error.message : "Failed to send location.");
     }
@@ -494,8 +727,124 @@ export function ChatWindow(props: ChatWindowProps) {
     setShowAttachmentMenu(true);
     setShowQuickReplies(false);
     setShowEmojiPicker(false);
+    setExpandedAttachmentMessageId(null);
     setComposerError("");
   }
+
+  const attachmentPanelContent = (
+    <>
+      <div className="flex flex-wrap gap-2">
+        {([
+          { key: "image", label: "Picture" },
+          { key: "document", label: "Document" },
+          { key: "location", label: "Location" }
+        ] as const).map((item) => (
+          <button
+            key={item.key}
+            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+              attachmentTab === item.key
+                ? "bg-gradient-to-r from-emerald-500 to-green-400 text-white shadow-soft"
+                : "bg-white/82 text-emerald-900/60 hover:bg-white"
+            }`}
+            onClick={() => {
+              setAttachmentTab(item.key);
+              setComposerError("");
+            }}
+            type="button"
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {attachmentTab !== "location" ? (
+        <div className="mt-3 space-y-3">
+          <input
+            accept={attachmentTab === "image" ? "image/*" : ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"}
+            aria-label={attachmentTab === "image" ? "Choose picture attachment" : "Choose document attachment"}
+            className="hidden"
+            onChange={handleFileSelection}
+            ref={attachmentTab === "image" ? imageInputRef : documentInputRef}
+            type="file"
+          />
+          <div className="rounded-[22px] bg-emerald-50/75 p-3 text-sm text-emerald-950/62">
+            {selectedFile ? `Selected: ${selectedFile.name}` : `No ${attachmentTab} selected yet.`}
+          </div>
+          <div className="flex gap-2">
+            <button
+              className="secondary-button"
+              onClick={() =>
+                (attachmentTab === "image" ? imageInputRef.current : documentInputRef.current)?.click()
+              }
+              type="button"
+            >
+              Choose {attachmentTab === "image" ? "picture" : "document"}
+            </button>
+            {selectedFile ? (
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  setSelectedFile(null);
+                  setAttachmentCaption("");
+                }}
+                type="button"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+          <input
+            className="input-glass"
+            onChange={(event) => setAttachmentCaption(event.target.value)}
+            placeholder="Optional caption..."
+            value={attachmentCaption}
+          />
+          <button className="primary-button" disabled={sending} onClick={handleSendSelectedAttachment} type="button">
+            {sending ? "Sending..." : `Send ${attachmentTab === "image" ? "picture" : "document"}`}
+          </button>
+        </div>
+      ) : (
+        <div className="mt-3 space-y-3">
+          <div className="grid gap-2 md:grid-cols-2">
+            <input
+              className="input-glass"
+              onChange={(event) => setLatitude(event.target.value)}
+              placeholder="Latitude"
+              value={latitude}
+            />
+            <input
+              className="input-glass"
+              onChange={(event) => setLongitude(event.target.value)}
+              placeholder="Longitude"
+              value={longitude}
+            />
+          </div>
+          <input
+            className="input-glass"
+            onChange={(event) => setLocationName(event.target.value)}
+            placeholder="Place name"
+            value={locationName}
+          />
+          <input
+            className="input-glass"
+            onChange={(event) => setLocationAddress(event.target.value)}
+            placeholder="Address"
+            value={locationAddress}
+          />
+          <div className="flex flex-wrap gap-2">
+            <button className="secondary-button" disabled={resolvingLocation} onClick={handleSendCurrentLocation} type="button">
+              {resolvingLocation ? "Getting location..." : "Use current location"}
+            </button>
+            <button className="primary-button" disabled={sending} onClick={handleSendLocationClick} type="button">
+              {sending ? "Sending..." : "Send location"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {composerError ? <p className="mt-3 text-sm text-rose-500">{composerError}</p> : null}
+    </>
+  );
 
   if (!phone) {
     return (
@@ -609,6 +958,10 @@ export function ChatWindow(props: ChatWindowProps) {
                 key={item.id}
                 className={`flex flex-col ${item.direction === "outgoing" ? "items-end" : "items-start"}`}
               >
+                {(() => {
+                  const renderableText = getRenderableMessageText(item);
+
+                  return (
                 <div
                   className={`max-w-[92%] overflow-hidden px-3 py-2 shadow-soft sm:max-w-[80%] sm:px-4 sm:py-3 ${
                     item.direction === "outgoing"
@@ -616,7 +969,50 @@ export function ChatWindow(props: ChatWindowProps) {
                       : "chat-bubble-incoming border border-emerald-200/90 bg-white text-emerald-950/88"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap break-words text-[13px] leading-5 sm:text-sm sm:leading-6">{item.message}</p>
+                  {isImageMessage(item) ? (
+                    <div className="mb-2 inline-flex max-w-[220px] flex-col overflow-hidden rounded-[18px] border border-black/5 bg-emerald-50/50">
+                      <button
+                        aria-label="Open image preview"
+                        className="group relative block w-full text-left"
+                        onClick={() =>
+                          setMediaLightbox({
+                            src: item.media_data_url || "",
+                            alt: item.media_file_name || "Incoming image",
+                            downloadName: getMediaDownloadName(item, "picture")
+                          })
+                        }
+                        type="button"
+                      >
+                        <img
+                          alt={item.media_file_name || "Incoming image"}
+                          className="block h-auto max-h-[180px] w-full object-cover transition duration-200 group-hover:scale-[1.01]"
+                          loading="lazy"
+                          src={item.media_data_url || undefined}
+                        />
+                        <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 py-2 text-xs font-medium text-white opacity-0 transition group-hover:opacity-100">
+                          Click to enlarge
+                        </span>
+                      </button>
+                      <div className="flex items-center justify-end border-t border-emerald-200/70 bg-white/80 px-2 py-2">
+                        <a
+                          aria-label="Save picture"
+                          className="icon-hover-trigger flex h-8 w-8 items-center justify-center rounded-full text-emerald-900/60 transition hover:bg-white hover:text-emerald-950"
+                          download={getMediaDownloadName(item, "picture")}
+                          href={item.media_data_url || undefined}
+                        >
+                          <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                            <path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v1a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                          </svg>
+                          <span className="icon-hover-label">Save picture</span>
+                        </a>
+                      </div>
+                    </div>
+                  ) : null}
+                  {isVideoMessage(item) ? <IncomingVideoCard message={item} /> : null}
+                  {isDocumentMessage(item) ? <IncomingDocumentCard message={item} /> : null}
+                  {renderableText ? (
+                    <p className="whitespace-pre-wrap break-words text-[13px] leading-5 sm:text-sm sm:leading-6">{renderableText}</p>
+                  ) : null}
                   <p
                     className={`mt-1.5 text-right text-[10px] sm:mt-2 sm:text-[11px] ${
                       item.direction === "outgoing" ? "text-white/78" : "text-emerald-900/46"
@@ -627,6 +1023,8 @@ export function ChatWindow(props: ChatWindowProps) {
                       : formatTime(item.created_at)}
                   </p>
                 </div>
+                  );
+                })()}
 
                 {item.direction === "incoming" && quickReplies.length > 0 ? (
                   <div className="mt-2 flex max-w-[92%] items-center gap-2 overflow-hidden sm:max-w-[80%]">
@@ -672,7 +1070,7 @@ export function ChatWindow(props: ChatWindowProps) {
                       aria-label="Open attachments"
                       className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/62 transition hover:text-emerald-950 disabled:cursor-not-allowed disabled:opacity-55"
                       disabled={sending}
-                      onClick={handleOpenAttachmentMenu}
+                      onClick={() => handleToggleInlineAttachments(item.id)}
                       type="button"
                     >
                       <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
@@ -721,6 +1119,22 @@ export function ChatWindow(props: ChatWindowProps) {
                         ))}
                       </div>
                     ) : null}
+                  </div>
+                ) : null}
+
+                {item.direction === "incoming" && expandedAttachmentMessageId === item.id ? (
+                  <div className="mt-2 w-full max-w-[92%] rounded-[22px] border border-white/60 bg-white/72 p-3 shadow-soft sm:max-w-[80%]">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-ink">Attachments</p>
+                      <button
+                        className="text-xs font-medium text-emerald-900/45 transition hover:text-emerald-900/75"
+                        onClick={() => setExpandedAttachmentMessageId(null)}
+                        type="button"
+                      >
+                        Close
+                      </button>
+                    </div>
+                    <div className="mt-3">{attachmentPanelContent}</div>
                   </div>
                 ) : null}
               </div>
@@ -876,116 +1290,7 @@ export function ChatWindow(props: ChatWindowProps) {
               </button>
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              {([
-                { key: "image", label: "Picture" },
-                { key: "document", label: "Document" },
-                { key: "location", label: "Location" }
-              ] as const).map((item) => (
-                <button
-                  key={item.key}
-                  className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                    attachmentTab === item.key
-                      ? "bg-gradient-to-r from-emerald-500 to-green-400 text-white shadow-soft"
-                      : "bg-white/82 text-emerald-900/60 hover:bg-white"
-                  }`}
-                  onClick={() => {
-                    setAttachmentTab(item.key);
-                    setComposerError("");
-                  }}
-                  type="button"
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
-            {attachmentTab !== "location" ? (
-              <div className="mt-3 space-y-3">
-                <input
-                  accept={attachmentTab === "image" ? "image/*" : ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"}
-                  aria-label={attachmentTab === "image" ? "Choose picture attachment" : "Choose document attachment"}
-                  className="hidden"
-                  onChange={handleFileSelection}
-                  ref={attachmentTab === "image" ? imageInputRef : documentInputRef}
-                  type="file"
-                />
-                <div className="rounded-[22px] bg-emerald-50/75 p-3 text-sm text-emerald-950/62">
-                  {selectedFile ? `Selected: ${selectedFile.name}` : `No ${attachmentTab} selected yet.`}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    className="secondary-button"
-                    onClick={() =>
-                      (attachmentTab === "image" ? imageInputRef.current : documentInputRef.current)?.click()
-                    }
-                    type="button"
-                  >
-                    Choose {attachmentTab === "image" ? "picture" : "document"}
-                  </button>
-                  {selectedFile ? (
-                    <button
-                      className="secondary-button"
-                      onClick={() => {
-                        setSelectedFile(null);
-                        setAttachmentCaption("");
-                      }}
-                      type="button"
-                    >
-                      Clear
-                    </button>
-                  ) : null}
-                </div>
-                <input
-                  className="input-glass"
-                  onChange={(event) => setAttachmentCaption(event.target.value)}
-                  placeholder="Optional caption..."
-                  value={attachmentCaption}
-                />
-                <button className="primary-button" disabled={sending} onClick={handleSendSelectedAttachment} type="button">
-                  {sending ? "Sending..." : `Send ${attachmentTab === "image" ? "picture" : "document"}`}
-                </button>
-              </div>
-            ) : (
-              <div className="mt-3 space-y-3">
-                <div className="grid gap-2 md:grid-cols-2">
-                  <input
-                    className="input-glass"
-                    onChange={(event) => setLatitude(event.target.value)}
-                    placeholder="Latitude"
-                    value={latitude}
-                  />
-                  <input
-                    className="input-glass"
-                    onChange={(event) => setLongitude(event.target.value)}
-                    placeholder="Longitude"
-                    value={longitude}
-                  />
-                </div>
-                <input
-                  className="input-glass"
-                  onChange={(event) => setLocationName(event.target.value)}
-                  placeholder="Place name"
-                  value={locationName}
-                />
-                <input
-                  className="input-glass"
-                  onChange={(event) => setLocationAddress(event.target.value)}
-                  placeholder="Address"
-                  value={locationAddress}
-                />
-                <div className="flex flex-wrap gap-2">
-                  <button className="secondary-button" onClick={handleSendCurrentLocation} type="button">
-                    Use current location
-                  </button>
-                  <button className="primary-button" disabled={sending} onClick={handleSendLocationClick} type="button">
-                    {sending ? "Sending..." : "Send location"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {composerError ? <p className="mt-3 text-sm text-rose-500">{composerError}</p> : null}
+            <div className="mt-3">{attachmentPanelContent}</div>
           </div>
         ) : null}
 
@@ -1113,6 +1418,50 @@ export function ChatWindow(props: ChatWindowProps) {
           </div>
         </div>
       </div>
+
+      {mediaLightbox ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 px-4 py-6 backdrop-blur-sm"
+          onClick={() => setMediaLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Image preview"
+        >
+          <div
+            className="relative max-h-full w-full max-w-5xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
+              <button
+                className="rounded-full bg-white/92 px-3 py-1.5 text-xs font-medium text-emerald-950 shadow-soft transition hover:bg-white"
+                onClick={() => openMediaInNewTab(mediaLightbox.src)}
+                type="button"
+              >
+                Open in new tab
+              </button>
+              <a
+                className="rounded-full bg-white/92 px-3 py-1.5 text-xs font-medium text-emerald-950 shadow-soft transition hover:bg-white"
+                download={mediaLightbox.downloadName}
+                href={mediaLightbox.src}
+              >
+                Save picture
+              </a>
+              <button
+                className="rounded-full bg-white/92 px-3 py-1.5 text-xs font-medium text-emerald-950 shadow-soft transition hover:bg-white"
+                onClick={() => setMediaLightbox(null)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+            <img
+              alt={mediaLightbox.alt}
+              className="max-h-[88vh] w-full rounded-[28px] object-contain shadow-soft"
+              src={mediaLightbox.src}
+            />
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

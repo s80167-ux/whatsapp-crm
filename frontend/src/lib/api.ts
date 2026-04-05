@@ -35,6 +35,10 @@ export type Message = {
   chat_jid?: string | null;
   wa_message_id?: string | null;
   message: string;
+  media_type?: string | null;
+  media_mime_type?: string | null;
+  media_file_name?: string | null;
+  media_data_url?: string | null;
   direction: "incoming" | "outgoing";
   created_at: string;
   send_status?: "sending" | "queued" | "sent" | "delivered" | "read" | "failed";

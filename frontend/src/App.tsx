@@ -14,6 +14,35 @@ type AuthMode = "login" | "register";
 type SidebarView = "inbox" | "pipeline" | "broadcast";
 const conversationPollMs = 8000;
 
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(new Error("Failed to read attachment preview."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function getAttachmentMediaType(file: File) {
+  if (file.type.startsWith("image/")) {
+    return "image";
+  }
+
+  if (file.type.startsWith("video/")) {
+    return "video";
+  }
+
+  return "document";
+}
+
+function buildAttachmentPreviewText(file: File, caption: string) {
+  const mediaType = getAttachmentMediaType(file);
+  const label = mediaType === "image" ? "Image" : mediaType === "video" ? "Video" : "Document";
+  const trimmedCaption = caption.trim();
+
+  return trimmedCaption ? `[${label}] ${file.name} - ${trimmedCaption}` : `[${label}] ${file.name}`;
+}
+
 function App() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
@@ -533,16 +562,19 @@ function App() {
       return;
     }
 
-    const isImage = file.type.startsWith("image/");
-    const previewText = caption.trim()
-      ? `[${isImage ? "Image" : "Document"}] ${file.name} - ${caption.trim()}`
-      : `[${isImage ? "Image" : "Document"}] ${file.name}`;
+    const previewText = buildAttachmentPreviewText(file, caption);
+    const mediaType = getAttachmentMediaType(file);
+    const mediaDataUrl = await readFileAsDataUrl(file);
 
     const optimisticMessage: Message = {
       id: `temp-attachment-${Date.now()}`,
       phone: selectedPhone,
       chat_jid: activeChatJid,
       message: previewText,
+      media_type: mediaType,
+      media_mime_type: file.type || "application/octet-stream",
+      media_file_name: file.name,
+      media_data_url: mediaDataUrl,
       direction: "outgoing",
       created_at: new Date().toISOString(),
       send_status: "sending"

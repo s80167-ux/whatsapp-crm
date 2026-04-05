@@ -58,6 +58,30 @@ const upload = multer({
   }
 });
 
+function getAttachmentMediaType(mimeType) {
+  const normalizedMimeType = String(mimeType || "").trim().toLowerCase();
+
+  if (normalizedMimeType.startsWith("image/")) {
+    return "image";
+  }
+
+  if (normalizedMimeType.startsWith("video/")) {
+    return "video";
+  }
+
+  return "document";
+}
+
+function getAttachmentPreviewText(file, caption) {
+  const mediaType = getAttachmentMediaType(file?.mimetype);
+  const label = mediaType === "image" ? "Image" : mediaType === "video" ? "Video" : "Document";
+  const trimmedCaption = String(caption || "").trim();
+
+  return trimmedCaption
+    ? `[${label}] ${file.originalname} - ${trimmedCaption}`
+    : `[${label}] ${file.originalname}`;
+}
+
 app.use(
   cors({
     origin(origin, callback) {
@@ -366,10 +390,9 @@ app.post("/send/attachment", requireAuth, bindAuthenticatedWhatsAppOwner, upload
       chat_jid: resolvedChatJid
     });
 
-    const label = file.mimetype.startsWith("image/") ? "Image" : "Document";
-    const previewText = caption?.trim()
-      ? `[${label}] ${file.originalname} - ${caption.trim()}`
-      : `[${label}] ${file.originalname}`;
+    const previewText = getAttachmentPreviewText(file, caption);
+    const mediaType = getAttachmentMediaType(file.mimetype);
+    const mediaDataUrl = `data:${file.mimetype || "application/octet-stream"};base64,${file.buffer.toString("base64")}`;
 
     const savedMessage = await saveMessage({
       owner_user_id: req.user.sub,
@@ -377,6 +400,10 @@ app.post("/send/attachment", requireAuth, bindAuthenticatedWhatsAppOwner, upload
       chat_jid: resolvedChatJid,
       wa_message_id: result?.key?.id || null,
       message: previewText,
+      media_type: mediaType,
+      media_mime_type: file.mimetype || "application/octet-stream",
+      media_file_name: file.originalname,
+      media_data_url: mediaDataUrl,
       direction: "outgoing",
       send_status: "sent"
     });

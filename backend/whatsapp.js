@@ -34,6 +34,7 @@ async function loadBaileys() {
 			makeWASocket: module.default,
 			useMultiFileAuthState: module.useMultiFileAuthState,
 			fetchLatestBaileysVersion: module.fetchLatestBaileysVersion,
+			downloadMediaMessage: module.downloadMediaMessage,
 			DisconnectReason: module.DisconnectReason
 		}));
 	}
@@ -60,6 +61,127 @@ function extractIncomingText(message) {
 		message.templateButtonReplyMessage?.selectedDisplayText ||
 		''
 	);
+}
+
+function extractMessageContent(message) {
+	if (!message) {
+		return null;
+	}
+
+	return (
+		message.ephemeralMessage?.message ||
+		message.viewOnceMessage?.message ||
+		message.viewOnceMessageV2?.message ||
+		message.viewOnceMessageV2Extension?.message ||
+		message.documentWithCaptionMessage?.message ||
+		message.editedMessage?.message ||
+		message
+	);
+}
+
+function buildIncomingMessagePreview(message) {
+	const content = extractMessageContent(message);
+	const text = extractIncomingText(content).trim();
+
+	if (text) {
+		return text;
+	}
+
+	if (!content) {
+		return '';
+	}
+
+	if (content.imageMessage) {
+		return '[Image]';
+	}
+
+	if (content.videoMessage) {
+		return '[Video]';
+	}
+
+	if (content.documentMessage) {
+		const fileName = String(content.documentMessage.fileName || '').trim();
+		return fileName ? `[Document] ${fileName}` : '[Document]';
+	}
+
+	if (content.audioMessage) {
+		return content.audioMessage.ptt ? '[Voice note]' : '[Audio]';
+	}
+
+	if (content.stickerMessage) {
+		return '[Sticker]';
+	}
+
+	if (content.contactMessage || content.contactsArrayMessage) {
+		return '[Contact]';
+	}
+
+	if (content.locationMessage || content.liveLocationMessage) {
+		const location = content.locationMessage || content.liveLocationMessage;
+		const name = String(location?.name || location?.address || '').trim();
+		return name ? `[Location] ${name}` : '[Location]';
+	}
+
+	if (content.pollCreationMessage || content.pollCreationMessageV2 || content.pollCreationMessageV3) {
+		return '[Poll]';
+	}
+
+	return '';
+}
+
+async function extractIncomingMedia(message) {
+	const content = extractMessageContent(message);
+	if (!sock) {
+		return null;
+	}
+
+	let mediaMessage = null;
+	let mediaType = null;
+
+	if (content?.imageMessage) {
+		mediaMessage = content.imageMessage;
+		mediaType = 'image';
+	} else if (content?.videoMessage) {
+		mediaMessage = content.videoMessage;
+		mediaType = 'video';
+	} else if (content?.documentMessage) {
+		mediaMessage = content.documentMessage;
+		mediaType = 'document';
+	}
+
+	if (!mediaMessage || !mediaType) {
+		return null;
+	}
+
+	try {
+		const { downloadMediaMessage } = await loadBaileys();
+		const buffer = await downloadMediaMessage(
+			{ message: content },
+			'buffer',
+			{},
+			{ reuploadRequest: sock.updateMediaMessage }
+		);
+
+		if (!buffer || !buffer.length) {
+			return null;
+		}
+
+		const fallbackMimeType = mediaType === 'image'
+			? 'image/jpeg'
+			: mediaType === 'video'
+				? 'video/mp4'
+				: 'application/octet-stream';
+		const mimeType = String(mediaMessage.mimetype || fallbackMimeType).trim() || fallbackMimeType;
+		return {
+			media_type: mediaType,
+			media_mime_type: mimeType,
+			media_file_name: String(mediaMessage.fileName || '').trim() || null,
+			media_data_url: `data:${mimeType};base64,${buffer.toString('base64')}`
+		};
+	} catch (error) {
+		console.warn(`Failed to download incoming ${mediaType} media:`, error?.message || error);
+		return null;
+	}
 }
 
 function extractContactName(msg) {
@@ -94,7 +216,8 @@ async function persistIncomingMessage(msg) {
 	if (msg.key.remoteJid === 'status@broadcast' || msg.key.remoteJid.endsWith('@g.us')) return;
 
 	const phone = await resolveWhatsAppPhone(msg.key.remoteJid, msg.key.remoteJid);
-	const text = extractIncomingText(msg.message).trim();
+	const text = buildIncomingMessagePreview(msg.message);
+	const media = await extractIncomingMedia(msg.message);
 	const contactName = extractContactName(msg);
 	if (!phone || !text) return;
 
@@ -144,6 +267,7 @@ async function persistIncomingMessage(msg) {
 			chat_jid: msg.key.remoteJid,
 			wa_message_id: msg.key.id,
 			message: text,
+			...(media || {}),
 			direction: msg.key.fromMe ? 'outgoing' : 'incoming',
 			send_status: msg.key.fromMe ? 'sent' : undefined,
 			created_at
@@ -519,10 +643,17 @@ async function sendMessageToPhone(phone, message, chatJid) {
 async function sendAttachmentToPhone({ phone, chatJid, buffer, mimeType, fileName, caption }) {
 	if (!sock || connectionState !== 'open') throw new Error('WhatsApp is not connected.');
 	const jid = chatJid || phone + '@s.whatsapp.net';
-	const type = (mimeType || '').startsWith('image/') ? 'image' : 'document';
+	const normalizedMimeType = String(mimeType || '').trim().toLowerCase();
+	const type = normalizedMimeType.startsWith('image/')
+		? 'image'
+		: normalizedMimeType.startsWith('video/')
+			? 'video'
+			: 'document';
 	const msg = type === 'image'
 		? { image: buffer, mimetype: mimeType, fileName, caption }
-		: { document: buffer, mimetype: mimeType, fileName, caption };
+		: type === 'video'
+			? { video: buffer, mimetype: mimeType, fileName, caption }
+			: { document: buffer, mimetype: mimeType, fileName, caption };
 	return await sock.sendMessage(jid, msg);
 }
 

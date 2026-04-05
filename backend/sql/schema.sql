@@ -7,6 +7,10 @@ create table if not exists public.messages (
   chat_jid text,
   wa_message_id text,
   message text not null,
+  media_type text,
+  media_mime_type text,
+  media_file_name text,
+  media_data_url text,
   direction text not null check (direction in ('incoming', 'outgoing')),
   send_status text,
   created_at timestamptz not null default now()
@@ -28,6 +32,10 @@ create table if not exists public.customers (
 alter table public.messages add column if not exists chat_jid text;
 alter table public.messages add column if not exists wa_message_id text;
 alter table public.messages add column if not exists send_status text;
+alter table public.messages add column if not exists media_type text;
+alter table public.messages add column if not exists media_mime_type text;
+alter table public.messages add column if not exists media_file_name text;
+alter table public.messages add column if not exists media_data_url text;
 alter table public.messages add column if not exists owner_user_id uuid references auth.users(id) on delete cascade;
 alter table public.customers add column if not exists id uuid default gen_random_uuid();
 alter table public.customers add column if not exists owner_user_id uuid references auth.users(id) on delete cascade;
