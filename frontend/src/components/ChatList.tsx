@@ -169,18 +169,18 @@ export function ChatList({
                       <div className="flex items-center gap-2">
                         {conversation.status && (
                           <div
-                            className={`h-2.5 w-2.5 shrink-0 rounded-full shadow-sm ring-2 ring-white/50 transition-transform hover:scale-110 active:scale-95`}
+                            className="h-3 w-3 shrink-0 rounded-full shadow-sm ring-2 ring-white/50 transition-transform hover:scale-110 active:scale-95"
                             style={{
                               backgroundColor:
                                 conversation.status === "new_lead"
-                                  ? "#fbbf24" // Yellow
+                                  ? "#fbbf24"
                                   : conversation.status === "interested"
-                                  ? "#22c55e" // Green
+                                  ? "#22c55e"
                                   : conversation.status === "processing"
-                                  ? "#38bdf8" // Light Blue
+                                  ? "#38bdf8"
                                   : conversation.status === "closed_won"
-                                  ? "#1e40af" // Dark Blue
-                                  : "#ef4444" // Red
+                                  ? "#1e40af"
+                                  : "#ef4444"
                             }}
                             title={`Status: ${
                               conversation.status.charAt(0).toUpperCase() +
@@ -190,7 +190,7 @@ export function ChatList({
                         )}
                         {conversation.unreadCount && conversation.unreadCount > 0 ? (
                           <span
-                            className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white/50"
+                            className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-bold text-white shadow-sm ring-2 ring-white/50"
                             title={`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
                           >
                             {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
