@@ -3,6 +3,7 @@ import { ChatList } from "./components/ChatList";
 import { ChatWindow } from "./components/ChatWindow";
 import type { CustomerPanelProps } from "./components/CustomerPanel";
 import { LoginForm } from "./components/LoginForm";
+import { NavigationHeader } from "./components/NavigationHeader";
 import { Sidebar } from "./components/Sidebar";
 import { WhatsAppConnectCard } from "./components/WhatsAppConnectCard";
 import { api, CUSTOMER_STATUSES, type Conversation, type Customer, type CustomerStatus, type Message, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
@@ -712,9 +713,11 @@ function App() {
 
   return (
     <main className="min-h-screen bg-app px-4 py-6 text-slate-700">
-      <div className="mx-auto max-w-[1600px] space-y-4 xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(280px,1fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0">
-        <Sidebar
-          activeView={activeView}
+      <div className="mx-auto max-w-[1600px] space-y-4">
+        <NavigationHeader />
+        <div className="xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(280px,1fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
+          <Sidebar
+            activeView={activeView}
           activeStatusFilter={activeStatusFilter}
           counts={sidebarCounts}
           disconnectingWhatsApp={disconnectingWhatsApp}
@@ -781,8 +784,9 @@ function App() {
           </div>
         </div>
       </div>
-    </main>
-  );
+    </div>
+  </main>
+);
 }
 
 export default App;

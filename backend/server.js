@@ -242,10 +242,23 @@ app.get("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
     const phone = normalizePhone(req.params.phone);
     const customer = await getCustomerInsights(phone, req.user.sub);
     const profile = await getContactProfile(phone, customer.chat_jid || null);
+
+    // Update DB cache if we got live data from WhatsApp
+    if (profile.profilePictureUrl || profile.about) {
+      await upsertCustomer({
+        owner_user_id: req.user.sub,
+        phone,
+        profile_picture_url: profile.profilePictureUrl,
+        about: profile.about
+      }).catch((err) => {
+        console.warn(`[PROFILE CACHE] Failed for ${phone}. If you haven't run the SQL migration yet, this is expected:`, err.message);
+      });
+    }
+
     return res.json({
       ...customer,
-      profile_picture_url: profile.profilePictureUrl,
-      about: profile.about
+      profile_picture_url: profile.profilePictureUrl || customer.profile_picture_url || null,
+      about: profile.about || customer.about || null
     });
   } catch (error) {
     console.error("Failed to fetch customer:", error);

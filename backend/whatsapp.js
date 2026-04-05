@@ -101,16 +101,28 @@ async function persistIncomingMessage(msg) {
 	const ownerUserIds = await resolveOwnerUserIds(phone);
 	if (!ownerUserIds.length) return;
 
-	const tsSecs = Number(typeof msg.messageTimestamp === 'object' ? msg.messageTimestamp.low : msg.messageTimestamp);
-	const created_at = tsSecs && !isNaN(tsSecs) ? new Date(tsSecs * 1000).toISOString() : undefined;
+  const tsSecs = Number(typeof msg.messageTimestamp === 'object' ? msg.messageTimestamp.low : msg.messageTimestamp);
+  const created_at = tsSecs && !isNaN(tsSecs) ? new Date(tsSecs * 1000).toISOString() : undefined;
 
-	for (const ownerUserId of ownerUserIds) {
-		await upsertCustomer({
-			owner_user_id: ownerUserId,
-			phone,
-			chat_jid: msg.key.remoteJid,
-			...(contactName && !msg.key.fromMe ? { contact_name: contactName } : {})
-		});
+  // Proactively fetch profile info for new messages
+  let profileInfo = { profilePictureUrl: null, about: null };
+  if (sock) {
+    try {
+      profileInfo = await getContactProfile(phone, msg.key.remoteJid);
+    } catch (e) {
+      console.warn('Failed to fetch profile info for incoming message:', e.message);
+    }
+  }
+
+  for (const ownerUserId of ownerUserIds) {
+    await upsertCustomer({
+      owner_user_id: ownerUserId,
+      phone,
+      chat_jid: msg.key.remoteJid,
+      contact_name: contactName && !msg.key.fromMe ? contactName : undefined,
+      profile_picture_url: profileInfo.profilePictureUrl || undefined,
+      about: profileInfo.about || undefined
+    });
 
 		await saveMessage({
 			owner_user_id: ownerUserId,
@@ -297,14 +309,23 @@ async function initializeWhatsApp() {
 
 						if (phone) {
 							const contactName = String(contact.name || contact.notify || contact.verifiedName || '').trim();
-							if (contactName) {
-								await require('./supabase').upsertCustomer({
-									owner_user_id: activeOwnerUserId,
-									phone,
-									chat_jid: contact.id,
-									contact_name: contactName
-								}).catch(err => console.warn('Failed to upsert history contact', err.message));
+							
+							// Fetch profile info during history sync
+							let profileInfo = { profilePictureUrl: null, about: null };
+							try {
+								profileInfo = await getContactProfile(phone, contact.id);
+							} catch (e) {
+								// Ignore sync errors for individual profiles
 							}
+
+							await require('./supabase').upsertCustomer({
+								owner_user_id: activeOwnerUserId,
+								phone,
+								chat_jid: contact.id,
+								contact_name: contactName || undefined,
+								profile_picture_url: profileInfo.profilePictureUrl || undefined,
+								about: profileInfo.about || undefined
+							}).catch(err => console.warn('Failed to upsert history contact', err.message));
 						}
 					}
 				}

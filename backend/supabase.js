@@ -414,6 +414,8 @@ async function getCustomerInsights(phone, ownerUserId) {
 
   return {
     ...customer,
+    profile_picture_url: customer.profile_picture_url || null,
+    about: customer.about || null,
     total_messages: rows.length,
     incoming_count: incomingCount,
     outgoing_count: outgoingCount,
@@ -423,7 +425,7 @@ async function getCustomerInsights(phone, ownerUserId) {
   };
 }
 
-async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, status, notes }) {
+async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, status, notes, profile_picture_url, about }) {
   const canonicalPhone = await resolveWhatsAppPhone(phone, chat_jid || null);
   const payload = {
     owner_user_id,
@@ -432,6 +434,8 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
     ...(contact_name !== undefined ? { contact_name } : {}),
     ...(status !== undefined ? { status } : {}),
     ...(notes !== undefined ? { notes } : {}),
+    ...(profile_picture_url !== undefined ? { profile_picture_url } : {}),
+    ...(about !== undefined ? { about } : {}),
     updated_at: new Date().toISOString()
   };
   let writePayload = payload;
@@ -473,6 +477,28 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
 
   if (isMissingColumnError(error, "customers.chat_jid")) {
     const { chat_jid: _ignored, ...fallbackPayload } = writePayload;
+    writePayload = fallbackPayload;
+
+    if (existing.data?.id) {
+      ({ data, error } = await supabase
+        .from("customers")
+        .update(writePayload)
+        .eq("id", existing.data.id)
+        .select("*")
+        .single());
+    } else {
+      ({ data, error } = await supabase
+        .from("customers")
+        .insert(writePayload)
+        .select("*")
+        .single());
+    }
+
+    throwIfTenantSchemaError(error, "customers.owner_user_id");
+  }
+
+  if (isMissingColumnError(error, "customers.profile_picture_url") || isMissingColumnError(error, "customers.about")) {
+    const { profile_picture_url: _p, about: _a, ...fallbackPayload } = writePayload;
     writePayload = fallbackPayload;
 
     if (existing.data?.id) {
