@@ -377,11 +377,12 @@ export function ChatWindow(props: ChatWindowProps) {
                 className={`flex ${item.direction === "outgoing" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[92%] overflow-hidden rounded-[24px] px-3 py-2 shadow-soft sm:max-w-[80%] sm:px-4 sm:py-3 ${
+                  className={`max-w-[92%] overflow-hidden px-3 py-2 shadow-soft sm:max-w-[80%] sm:px-4 sm:py-3 ${
                     item.direction === "outgoing"
                       ? "bg-gradient-to-br from-emerald-700 via-emerald-600 to-green-500 text-white"
                       : "border border-emerald-200/90 bg-white text-emerald-950/88"
                   }`}
+                  style={{ borderRadius: "20px" }}
                 >
                   <p className="whitespace-pre-wrap break-words text-[13px] leading-5 sm:text-sm sm:leading-6">{item.message}</p>
                   <p
