@@ -167,6 +167,27 @@ export function ChatList({
                         {getDisplayName(conversation.contactName, displayPhone)}
                       </p>
                       <div className="flex items-center gap-2">
+                        {conversation.status && (
+                          <div
+                            className={`h-2.5 w-2.5 shrink-0 rounded-full shadow-sm ring-2 ring-white/50 transition-transform hover:scale-110 active:scale-95`}
+                            style={{
+                              backgroundColor:
+                                conversation.status === "new_lead"
+                                  ? "#fbbf24" // Yellow
+                                  : conversation.status === "interested"
+                                  ? "#22c55e" // Green
+                                  : conversation.status === "processing"
+                                  ? "#38bdf8" // Light Blue
+                                  : conversation.status === "closed_won"
+                                  ? "#1e40af" // Dark Blue
+                                  : "#ef4444" // Red
+                            }}
+                            title={`Status: ${
+                              conversation.status.charAt(0).toUpperCase() +
+                              conversation.status.slice(1).replace("_", " ")
+                            }`}
+                          />
+                        )}
                         {conversation.unreadCount && conversation.unreadCount > 0 ? (
                           <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white/50">
                             {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
