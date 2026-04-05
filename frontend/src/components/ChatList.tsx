@@ -169,7 +169,7 @@ export function ChatList({
                       <div className="flex items-center gap-2">
                         {conversation.status && (
                           <div
-                            className="h-3 w-3 shrink-0 rounded-full shadow-sm ring-2 ring-white/50 transition-transform hover:scale-110 active:scale-95"
+                            className="force-rounded h-3 w-3 shrink-0 shadow-sm ring-2 ring-white/50 transition-transform hover:scale-110 active:scale-95"
                             style={{
                               backgroundColor:
                                 conversation.status === "new_lead"
@@ -190,7 +190,7 @@ export function ChatList({
                         )}
                         {conversation.unreadCount && conversation.unreadCount > 0 ? (
                           <span
-                            className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-bold text-white shadow-sm ring-2 ring-white/50"
+                            className="force-rounded flex h-5 min-w-[20px] items-center justify-center bg-blue-500 px-1 text-[10px] font-bold text-white shadow-sm ring-2 ring-white/50"
                             title={`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
                           >
                             {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
