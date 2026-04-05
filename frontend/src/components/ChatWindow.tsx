@@ -15,6 +15,7 @@ type ChatWindowProps = {
   customerPanelProps?: ComponentProps<typeof CustomerPanel> | null;
   onChangeMessage: (value: string) => void;
   onSend: () => void;
+  onSendQuickReply: (value: string) => Promise<void> | void;
   onSendAttachment: (file: File, caption: string) => Promise<void> | void;
   onSendLocation: (payload: {
     latitude: number;
@@ -25,13 +26,25 @@ type ChatWindowProps = {
 };
 
 type AttachmentTab = "image" | "document" | "location";
+type StoredQuickReplyAttachment = {
+  name: string;
+  type: string;
+  dataUrl: string;
+};
+
+type QuickReply = {
+  id: string;
+  text: string;
+  attachment?: StoredQuickReplyAttachment | null;
+};
 
 const quickRepliesStorageKey = "whatsapp-crm.quick-replies";
-const defaultQuickReplies = [
-  "Thanks for reaching out. I will get back to you shortly.",
-  "Can you share your preferred package or budget?",
-  "I have noted your request and will update you soon."
+const defaultQuickReplies: QuickReply[] = [
+  { id: "default-thanks", text: "Thanks for reaching out. I will get back to you shortly." },
+  { id: "default-budget", text: "Can you share your preferred package or budget?" },
+  { id: "default-update", text: "I have noted your request and will update you soon." }
 ];
+const commonEmojis = ["😀", "😂", "😍", "🙏", "👍", "❤️", "🎉", "😄"];
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString([], {
@@ -72,6 +85,96 @@ function ActionIcon(props: { children: ReactNode }) {
   return <span className="flex h-4 w-4 items-center justify-center">{props.children}</span>;
 }
 
+function getQuickReplyContentLabel(reply: QuickReply) {
+  if (reply.text.trim()) {
+    return reply.text;
+  }
+
+  if (reply.attachment?.name) {
+    return `[Attachment] ${reply.attachment.name}`;
+  }
+
+  return "Quick reply";
+}
+
+function getQuickReplyLabel(reply: QuickReply) {
+  const compactValue = getQuickReplyContentLabel(reply).trim().replace(/\s+/g, " ");
+  if (compactValue.length <= 18) {
+    return compactValue;
+  }
+
+  const words = compactValue.split(" ");
+  const labelWords: string[] = [];
+
+  for (const word of words) {
+    const nextLength = labelWords.join(" ").length + word.length + (labelWords.length ? 1 : 0);
+    if (labelWords.length === 3 || nextLength > 18) {
+      break;
+    }
+
+    labelWords.push(word);
+  }
+
+  return (labelWords.join(" ") || compactValue.slice(0, 15)).trimEnd() + "...";
+}
+
+function normalizeQuickReply(item: unknown, index: number): QuickReply | null {
+  if (typeof item === "string") {
+    const text = item.trim();
+    return text ? { id: `legacy-${index}-${text.slice(0, 12)}`, text } : null;
+  }
+
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const candidate = item as Partial<QuickReply> & {
+    attachment?: Partial<StoredQuickReplyAttachment> | null;
+  };
+  const text = typeof candidate.text === "string" ? candidate.text.trim() : "";
+  const attachment = candidate.attachment;
+  const normalizedAttachment = attachment && typeof attachment.name === "string" && typeof attachment.type === "string" && typeof attachment.dataUrl === "string"
+    ? {
+        name: attachment.name,
+        type: attachment.type,
+        dataUrl: attachment.dataUrl
+      }
+    : null;
+
+  if (!text && !normalizedAttachment) {
+    return null;
+  }
+
+  return {
+    id: typeof candidate.id === "string" && candidate.id.trim() ? candidate.id : `reply-${index}-${Date.now()}`,
+    text,
+    attachment: normalizedAttachment
+  };
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(new Error("Failed to read attachment."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function buildStoredQuickReplyAttachment(file: File): Promise<StoredQuickReplyAttachment> {
+  return {
+    name: file.name,
+    type: file.type || "application/octet-stream",
+    dataUrl: await readFileAsDataUrl(file)
+  };
+}
+
+async function storedAttachmentToFile(attachment: StoredQuickReplyAttachment): Promise<File> {
+  const response = await fetch(attachment.dataUrl);
+  const blob = await response.blob();
+  return new File([blob], attachment.name, { type: attachment.type || blob.type || "application/octet-stream" });
+}
+
 export function ChatWindow(props: ChatWindowProps) {
   const {
     contactName,
@@ -85,6 +188,7 @@ export function ChatWindow(props: ChatWindowProps) {
     customerPanelProps,
     onChangeMessage,
     onSend,
+    onSendQuickReply,
     onSendAttachment,
     onSendLocation
   } = props;
@@ -95,11 +199,15 @@ export function ChatWindow(props: ChatWindowProps) {
   const stickToBottomRef = useRef(true);
   const lastPhoneRef = useRef<string | null>(null);
   const lastMessageKeyRef = useRef<string>("");
+  const quickReplyAttachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [attachmentTab, setAttachmentTab] = useState<AttachmentTab>("image");
-  const [quickReplies, setQuickReplies] = useState<string[]>(defaultQuickReplies);
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>(defaultQuickReplies);
   const [newQuickReply, setNewQuickReply] = useState("");
+  const [newQuickReplyAttachment, setNewQuickReplyAttachment] = useState<StoredQuickReplyAttachment | null>(null);
+  const [showQuickReplyEmojiPicker, setShowQuickReplyEmojiPicker] = useState(false);
+  const [quickReplyDraftError, setQuickReplyDraftError] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [attachmentCaption, setAttachmentCaption] = useState("");
   const [locationName, setLocationName] = useState("");
@@ -109,12 +217,15 @@ export function ChatWindow(props: ChatWindowProps) {
   const [composerError, setComposerError] = useState("");
   const [showCustomerProfile, setShowCustomerProfile] = useState(false);
   const [showAllMessages, setShowAllMessages] = useState(false);
+  const [expandedQuickReplyMessageId, setExpandedQuickReplyMessageId] = useState<string | null>(null);
+  const [expandedEmojiMessageId, setExpandedEmojiMessageId] = useState<string | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   const displayPhone = getDisplayPhone(phone, chatJid);
   const title = getDisplayName(contactName, displayPhone);
   const avatarLabel = title.slice(0, 2).toUpperCase();
   const visibleMessages = showAllMessages ? messages : messages.slice(-6);
-  const hiddenMessageCount = Math.max(messages.length - visibleMessages.length, 0);
+  const hiddenMessageCount = Math.max(messages.length - 6, 0);
 
   function updateStickToBottom() {
     const container = listRef.current;
@@ -134,8 +245,14 @@ export function ChatWindow(props: ChatWindowProps) {
 
     try {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
-        setQuickReplies(parsed);
+      if (Array.isArray(parsed)) {
+        const normalized = parsed
+          .map((item, index) => normalizeQuickReply(item, index))
+          .filter((item): item is QuickReply => Boolean(item));
+
+        if (normalized.length > 0) {
+          setQuickReplies(normalized);
+        }
       }
     } catch {
       window.localStorage.removeItem(quickRepliesStorageKey);
@@ -171,6 +288,9 @@ export function ChatWindow(props: ChatWindowProps) {
       setComposerError("");
       setShowCustomerProfile(false);
       setShowAllMessages(false);
+      setExpandedQuickReplyMessageId(null);
+      setExpandedEmojiMessageId(null);
+      setShowEmojiPicker(false);
       return;
     }
 
@@ -186,28 +306,116 @@ export function ChatWindow(props: ChatWindowProps) {
     }
   }, [messages, phone]);
 
-  function handleAddQuickReply() {
-    const value = newQuickReply.trim();
-    if (!value) {
-      return;
-    }
-
-    if (quickReplies.includes(value)) {
-      setNewQuickReply("");
-      return;
-    }
-
-    setQuickReplies((current) => [value, ...current].slice(0, 12));
+  function clearQuickReplyDraft() {
     setNewQuickReply("");
+    setNewQuickReplyAttachment(null);
+    setQuickReplyDraftError("");
+    setShowQuickReplyEmojiPicker(false);
   }
 
-  function handlePickQuickReply(value: string) {
-    onChangeMessage(messageText ? `${messageText} ${value}` : value);
+  function handleAddQuickReply() {
+    const value = newQuickReply.trim();
+    if (!value && !newQuickReplyAttachment) {
+      setQuickReplyDraftError("Add text, an emoji, or an attachment first.");
+      return;
+    }
+
+    const alreadyExists = quickReplies.some(
+      (reply) =>
+        reply.text === value &&
+        reply.attachment?.dataUrl === newQuickReplyAttachment?.dataUrl &&
+        reply.attachment?.name === newQuickReplyAttachment?.name
+    );
+
+    if (alreadyExists) {
+      clearQuickReplyDraft();
+      return;
+    }
+
+    setQuickReplies((current) => [
+      {
+        id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `reply-${Date.now()}`,
+        text: value,
+        attachment: newQuickReplyAttachment
+      },
+      ...current
+    ].slice(0, 12));
+    clearQuickReplyDraft();
+  }
+
+  async function handlePickQuickReply(reply: QuickReply) {
+    if (reply.attachment) {
+      const file = await storedAttachmentToFile(reply.attachment);
+      await onSendAttachment(file, reply.text);
+      setShowQuickReplies(false);
+      return;
+    }
+
+    const nextText = reply.text;
+    onChangeMessage(messageText ? `${messageText} ${nextText}` : nextText);
     setShowQuickReplies(false);
   }
 
-  function handleDeleteQuickReply(value: string) {
-    setQuickReplies((current) => current.filter((item) => item !== value));
+  async function handleSendQuickReplyClick(reply: QuickReply) {
+    setShowQuickReplies(false);
+    setShowAttachmentMenu(false);
+    setComposerError("");
+    setExpandedQuickReplyMessageId(null);
+    setExpandedEmojiMessageId(null);
+
+    if (reply.attachment) {
+      const file = await storedAttachmentToFile(reply.attachment);
+      await onSendAttachment(file, reply.text);
+      return;
+    }
+
+    await onSendQuickReply(reply.text);
+  }
+
+  function handleToggleInlineQuickReplies(messageId: string) {
+    setExpandedEmojiMessageId(null);
+    setExpandedQuickReplyMessageId((current) => (current === messageId ? null : messageId));
+  }
+
+  function handleToggleInlineEmojis(messageId: string) {
+    setExpandedQuickReplyMessageId(null);
+    setExpandedEmojiMessageId((current) => (current === messageId ? null : messageId));
+  }
+
+  function appendEmojiToComposer(emoji: string) {
+    const nextValue = messageText && !/\s$/.test(messageText) ? `${messageText} ${emoji}` : `${messageText}${emoji}`;
+    onChangeMessage(nextValue);
+  }
+
+  function handlePickComposerEmoji(emoji: string) {
+    appendEmojiToComposer(emoji);
+    setShowEmojiPicker(false);
+  }
+
+  function handleSendInlineEmoji(emoji: string) {
+    setExpandedEmojiMessageId(null);
+    setExpandedQuickReplyMessageId(null);
+    void onSendQuickReply(emoji);
+  }
+
+  function handleDeleteQuickReply(replyId: string) {
+    setQuickReplies((current) => current.filter((item) => item.id !== replyId));
+  }
+
+  async function handleQuickReplyAttachmentSelection(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      return;
+    }
+
+    try {
+      setQuickReplyDraftError("");
+      setNewQuickReplyAttachment(await buildStoredQuickReplyAttachment(file));
+    } catch (error) {
+      setQuickReplyDraftError(error instanceof Error ? error.message : "Failed to attach file.");
+    } finally {
+      event.target.value = "";
+    }
   }
 
   function handleFileSelection(event: ChangeEvent<HTMLInputElement>) {
@@ -282,6 +490,13 @@ export function ChatWindow(props: ChatWindowProps) {
     }
   }
 
+  function handleOpenAttachmentMenu() {
+    setShowAttachmentMenu(true);
+    setShowQuickReplies(false);
+    setShowEmojiPicker(false);
+    setComposerError("");
+  }
+
   if (!phone) {
     return (
       <section className="glass-panel flex min-h-[320px] items-center justify-center border border-white/70 bg-white/58 p-6 sm:min-h-[420px]">
@@ -304,6 +519,24 @@ export function ChatWindow(props: ChatWindowProps) {
             <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-800/65">Active conversation</p>
             <h3 className="mt-0.5 truncate pr-2 text-sm font-semibold text-ink sm:text-lg">{title}</h3>
             <p className="mt-0.5 truncate pr-2 text-[11px] text-emerald-900/45 sm:text-sm">{formatPhoneDisplay(phone, chatJid)}</p>
+            {showCustomerProfile && customerPanelProps ? (
+              <button
+                className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-900/58 transition hover:text-emerald-950 sm:text-xs"
+                onClick={() => setShowCustomerProfile(false)}
+                type="button"
+              >
+                <svg fill="none" height="14" viewBox="0 0 24 24" width="14">
+                  <path
+                    d="m6 15 6-6 6 6"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                  />
+                </svg>
+                Collapse details
+              </button>
+            ) : null}
           </div>
 
           {customerPanelProps ? (
@@ -316,11 +549,11 @@ export function ChatWindow(props: ChatWindowProps) {
               {profilePictureUrl ? (
                 <img
                   alt={title}
-                  className="h-8 w-8 rounded-2xl object-cover shadow-soft sm:h-10 sm:w-10"
+                  className="h-10 w-10 rounded-2xl object-cover shadow-soft sm:h-14 sm:w-14"
                   src={profilePictureUrl}
                 />
               ) : (
-                <div className="flex h-8 w-8 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-[10px] font-semibold text-white shadow-soft sm:h-10 sm:w-10 sm:text-xs">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-[10px] font-semibold text-white shadow-soft sm:h-14 sm:w-14 sm:text-sm">
                   {avatarLabel}
                 </div>
               )}
@@ -374,15 +607,14 @@ export function ChatWindow(props: ChatWindowProps) {
             {visibleMessages.map((item) => (
               <div
                 key={item.id}
-                className={`flex ${item.direction === "outgoing" ? "justify-end" : "justify-start"}`}
+                className={`flex flex-col ${item.direction === "outgoing" ? "items-end" : "items-start"}`}
               >
                 <div
                   className={`max-w-[92%] overflow-hidden px-3 py-2 shadow-soft sm:max-w-[80%] sm:px-4 sm:py-3 ${
                     item.direction === "outgoing"
-                      ? "bg-gradient-to-br from-emerald-700 via-emerald-600 to-green-500 text-white"
-                      : "border border-emerald-200/90 bg-white text-emerald-950/88"
+                      ? "chat-bubble-outgoing bg-gradient-to-br from-emerald-700 via-emerald-600 to-green-500 text-white"
+                      : "chat-bubble-incoming border border-emerald-200/90 bg-white text-emerald-950/88"
                   }`}
-                  style={{ borderRadius: "20px" }}
                 >
                   <p className="whitespace-pre-wrap break-words text-[13px] leading-5 sm:text-sm sm:leading-6">{item.message}</p>
                   <p
@@ -395,6 +627,102 @@ export function ChatWindow(props: ChatWindowProps) {
                       : formatTime(item.created_at)}
                   </p>
                 </div>
+
+                {item.direction === "incoming" && quickReplies.length > 0 ? (
+                  <div className="mt-2 flex max-w-[92%] items-center gap-2 overflow-hidden sm:max-w-[80%]">
+                    <button
+                      aria-label={expandedQuickReplyMessageId === item.id ? "Hide quick replies" : "Show quick replies"}
+                      className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/62 transition hover:text-emerald-950 disabled:cursor-not-allowed disabled:opacity-55"
+                      disabled={sending}
+                      onClick={() => handleToggleInlineQuickReplies(item.id)}
+                      type="button"
+                    >
+                      <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                        <path
+                          d="M7 10h10M7 14h6m-7 7 3.6-3H18a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3H6A3 3 0 0 0 3 7v8a3 3 0 0 0 3 3v3Z"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="1.8"
+                        />
+                      </svg>
+                      <span className="icon-hover-label">
+                        Quick replies
+                      </span>
+                    </button>
+
+                    <button
+                      aria-label={expandedEmojiMessageId === item.id ? "Hide emoji replies" : "Show emoji replies"}
+                      className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/62 transition hover:text-emerald-950 disabled:cursor-not-allowed disabled:opacity-55"
+                      disabled={sending}
+                      onClick={() => handleToggleInlineEmojis(item.id)}
+                      type="button"
+                    >
+                      <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+                        <path d="M9 10h.01M15 10h.01" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                        <path d="M8.5 14c.8 1.3 2.05 2 3.5 2s2.7-.7 3.5-2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                      </svg>
+                      <span className="icon-hover-label">
+                        Emojis
+                      </span>
+                    </button>
+
+                    <button
+                      aria-label="Open attachments"
+                      className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/62 transition hover:text-emerald-950 disabled:cursor-not-allowed disabled:opacity-55"
+                      disabled={sending}
+                      onClick={handleOpenAttachmentMenu}
+                      type="button"
+                    >
+                      <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                        <path
+                          d="m21.4 11.1-8.5 8.5a5 5 0 0 1-7.1-7.1l9.2-9.2a3.5 3.5 0 0 1 5 5L10.5 17.8a2 2 0 1 1-2.8-2.8l8-8"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="1.8"
+                        />
+                      </svg>
+                      <span className="icon-hover-label">
+                        Attachments
+                      </span>
+                    </button>
+
+                    {expandedQuickReplyMessageId === item.id ? (
+                      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-1">
+                        {quickReplies.map((reply) => (
+                          <button
+                            key={`${item.id}-${reply.id}`}
+                            className="quick-reply-chip shrink-0 border border-emerald-200/90 bg-white/92 px-3 py-1.5 text-[11px] font-medium text-emerald-900/78 transition hover:bg-white hover:text-emerald-950 disabled:cursor-not-allowed disabled:opacity-55 sm:text-xs"
+                            disabled={sending}
+                            onClick={() => void handleSendQuickReplyClick(reply)}
+                            type="button"
+                          >
+                            {reply.attachment ? `📎 ${getQuickReplyLabel(reply)}` : getQuickReplyLabel(reply)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {expandedEmojiMessageId === item.id ? (
+                      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-1">
+                        {commonEmojis.map((emoji) => (
+                          <button
+                            key={`${item.id}-${emoji}`}
+                            className="icon-hover-trigger quick-reply-chip shrink-0 border border-emerald-200/90 bg-white/92 px-3 py-1.5 text-base leading-none text-emerald-900/88 transition hover:bg-white hover:text-emerald-950 disabled:cursor-not-allowed disabled:opacity-55"
+                            disabled={sending}
+                            onClick={() => handleSendInlineEmoji(emoji)}
+                            type="button"
+                          >
+                            {emoji}
+                            <span className="icon-hover-label">{`Send ${emoji}`}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ))}
           </>
@@ -418,18 +746,18 @@ export function ChatWindow(props: ChatWindowProps) {
             <div className="mt-3 max-h-36 overflow-y-auto pr-1">
               <div className="flex flex-wrap gap-2">
               {quickReplies.map((reply) => (
-                <div key={reply} className="flex items-center gap-1 rounded-full bg-emerald-50 pr-1 shadow-soft">
+                <div key={reply.id} className="flex items-center gap-1 rounded-full bg-emerald-50 pr-1 shadow-soft">
                   <button
                     className="rounded-full px-3 py-2 text-left text-sm text-emerald-950/74 transition hover:bg-white"
-                    onClick={() => handlePickQuickReply(reply)}
+                    onClick={() => void handlePickQuickReply(reply)}
                     type="button"
                   >
-                    {reply}
+                    {reply.attachment ? `📎 ${getQuickReplyContentLabel(reply)}` : getQuickReplyContentLabel(reply)}
                   </button>
                   <button
-                    aria-label={`Delete quick reply: ${reply}`}
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-emerald-900/38 transition hover:bg-white hover:text-rose-500"
-                    onClick={() => handleDeleteQuickReply(reply)}
+                    aria-label={`Delete quick reply: ${getQuickReplyContentLabel(reply)}`}
+                    className="icon-hover-trigger flex h-8 w-8 items-center justify-center rounded-full text-emerald-900/38 transition hover:bg-white hover:text-rose-500"
+                    onClick={() => handleDeleteQuickReply(reply.id)}
                     type="button"
                   >
                     <svg fill="none" height="14" viewBox="0 0 24 24" width="14">
@@ -441,12 +769,54 @@ export function ChatWindow(props: ChatWindowProps) {
                         strokeWidth="2"
                       />
                     </svg>
+                    <span className="icon-hover-label">Delete</span>
                   </button>
                 </div>
               ))}
               </div>
             </div>
-            <div className="mt-3 flex gap-2">
+            <input
+              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+              aria-label="Choose quick reply attachment"
+              className="hidden"
+              onChange={(event) => void handleQuickReplyAttachmentSelection(event)}
+              ref={quickReplyAttachmentInputRef}
+              type="file"
+            />
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                className="icon-hover-trigger flex h-10 w-10 shrink-0 items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 transition hover:text-emerald-950"
+                onClick={() => setShowQuickReplyEmojiPicker((current) => !current)}
+                type="button"
+              >
+                <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+                  <path d="M9 10h.01M15 10h.01" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                  <path d="M8.5 14c.8 1.3 2.05 2 3.5 2s2.7-.7 3.5-2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                </svg>
+                <span className="icon-hover-label">
+                  Add emoji
+                </span>
+              </button>
+              <button
+                className="icon-hover-trigger flex h-10 w-10 shrink-0 items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 transition hover:text-emerald-950"
+                onClick={() => quickReplyAttachmentInputRef.current?.click()}
+                type="button"
+              >
+                <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
+                  <path
+                    d="m21.4 11.1-8.5 8.5a5 5 0 0 1-7.1-7.1l9.2-9.2a3.5 3.5 0 0 1 5 5L10.5 17.8a2 2 0 1 1-2.8-2.8l8-8"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="1.8"
+                  />
+                </svg>
+                <span className="icon-hover-label">
+                  Add attachment
+                </span>
+              </button>
+
               <input
                 className="input-glass"
                 onChange={(event) => setNewQuickReply(event.target.value)}
@@ -463,6 +833,33 @@ export function ChatWindow(props: ChatWindowProps) {
                 Save reply
               </button>
             </div>
+            {showQuickReplyEmojiPicker ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {commonEmojis.map((emoji) => (
+                  <button
+                    key={`quick-reply-draft-${emoji}`}
+                    className="quick-reply-chip border border-emerald-200/90 bg-white/92 px-3 py-2 text-xl leading-none transition hover:bg-white"
+                    onClick={() => setNewQuickReply((current) => `${current}${emoji}`)}
+                    type="button"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {newQuickReplyAttachment ? (
+              <div className="mt-3 flex items-center justify-between gap-2 rounded-[18px] bg-emerald-50/75 px-3 py-2 text-sm text-emerald-950/72">
+                <span className="truncate">Attached: {newQuickReplyAttachment.name}</span>
+                <button
+                  className="text-xs font-medium text-emerald-900/55 transition hover:text-emerald-950"
+                  onClick={() => setNewQuickReplyAttachment(null)}
+                  type="button"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : null}
+            {quickReplyDraftError ? <p className="mt-3 text-sm text-rose-500">{quickReplyDraftError}</p> : null}
           </div>
         ) : null}
 
@@ -592,18 +989,46 @@ export function ChatWindow(props: ChatWindowProps) {
           </div>
         ) : null}
 
+        {showEmojiPicker ? (
+          <div className="rounded-[26px] border border-white/60 bg-white/72 p-3 shadow-soft">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-ink">Emojis</p>
+              <button
+                className="text-xs font-medium text-emerald-900/45 transition hover:text-emerald-900/75"
+                onClick={() => setShowEmojiPicker(false)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {commonEmojis.map((emoji) => (
+                <button
+                  key={emoji}
+                  className="icon-hover-trigger quick-reply-chip border border-emerald-200/90 bg-white/92 px-3 py-2 text-xl leading-none transition hover:bg-white"
+                  onClick={() => handlePickComposerEmoji(emoji)}
+                  type="button"
+                >
+                  {emoji}
+                  <span className="icon-hover-label">{`Insert ${emoji}`}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="rounded-[26px] border border-white/60 bg-white/72 p-2 shadow-soft">
           <div className="flex items-center gap-2">
           <button
-            className={`flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent sm:h-11 sm:w-11 ${
+            className={`icon-hover-trigger flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent sm:h-11 sm:w-11 ${
               showQuickReplies ? "text-emerald-950" : ""
             }`}
             onClick={() => {
               setShowQuickReplies((current) => !current);
               setShowAttachmentMenu(false);
+              setShowEmojiPicker(false);
               setComposerError("");
             }}
-            title="Quick replies"
             type="button"
           >
             <ActionIcon>
@@ -617,18 +1042,19 @@ export function ChatWindow(props: ChatWindowProps) {
                 />
               </svg>
             </ActionIcon>
+            <span className="icon-hover-label">Quick replies</span>
           </button>
 
           <button
-            className={`flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent sm:h-11 sm:w-11 ${
+            className={`icon-hover-trigger flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent sm:h-11 sm:w-11 ${
               showAttachmentMenu ? "text-emerald-950" : ""
             }`}
             onClick={() => {
               setShowAttachmentMenu((current) => !current);
               setShowQuickReplies(false);
+              setShowEmojiPicker(false);
               setComposerError("");
             }}
-            title="Attachments and location"
             type="button"
           >
             <ActionIcon>
@@ -642,6 +1068,31 @@ export function ChatWindow(props: ChatWindowProps) {
                 />
               </svg>
             </ActionIcon>
+            <span className="icon-hover-label">Attachments</span>
+          </button>
+
+          <button
+            className={`icon-hover-trigger flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-emerald-900/72 shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent sm:h-11 sm:w-11 ${
+              showEmojiPicker ? "text-emerald-950" : ""
+            }`}
+            onClick={() => {
+              setShowEmojiPicker((current) => !current);
+              setShowAttachmentMenu(false);
+              setShowQuickReplies(false);
+              setComposerError("");
+            }}
+            type="button"
+          >
+            <ActionIcon>
+              <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M9 10h.01M15 10h.01" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                <path d="M8.5 14c.8 1.3 2.05 2 3.5 2s2.7-.7 3.5-2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+              </svg>
+            </ActionIcon>
+            <span className="icon-hover-label">
+              Emojis
+            </span>
           </button>
 
           <input

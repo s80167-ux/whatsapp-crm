@@ -121,7 +121,105 @@ function throwIfTenantSchemaError(error, columnName) {
   }
 }
 
+function hasCustomerChanges(existingCustomer, nextCustomer) {
+  return Object.entries(nextCustomer).some(([key, value]) => {
+    if (key === "updated_at") {
+      return false;
+    }
+
+    return existingCustomer?.[key] !== value;
+  });
+}
+
+async function findExistingMessage({ owner_user_id, phone, chat_jid, wa_message_id, message, direction, created_at }) {
+  if (wa_message_id) {
+    const byWhatsAppId = await supabase
+      .from("messages")
+      .select("*")
+      .eq("owner_user_id", owner_user_id)
+      .eq("wa_message_id", wa_message_id)
+      .limit(1)
+      .maybeSingle();
+
+    throwIfTenantSchemaError(byWhatsAppId.error, "messages.owner_user_id");
+
+    if (!isMissingColumnError(byWhatsAppId.error, "messages.wa_message_id")) {
+      if (byWhatsAppId.error) {
+        throw byWhatsAppId.error;
+      }
+
+      if (byWhatsAppId.data) {
+        return byWhatsAppId.data;
+      }
+    }
+  }
+
+  if (!created_at) {
+    return null;
+  }
+
+  let fallbackQuery = supabase
+    .from("messages")
+    .select("*")
+    .eq("owner_user_id", owner_user_id)
+    .eq("phone", phone)
+    .eq("message", message)
+    .eq("direction", direction)
+    .eq("created_at", created_at)
+    .limit(1);
+
+  if (chat_jid) {
+    fallbackQuery = fallbackQuery.eq("chat_jid", chat_jid);
+  }
+
+  const fallback = await fallbackQuery.maybeSingle();
+
+  throwIfTenantSchemaError(fallback.error, "messages.owner_user_id");
+
+  if (isMissingColumnError(fallback.error, "messages.chat_jid")) {
+    fallbackQuery = supabase
+      .from("messages")
+      .select("*")
+      .eq("owner_user_id", owner_user_id)
+      .eq("phone", phone)
+      .eq("message", message)
+      .eq("direction", direction)
+      .eq("created_at", created_at)
+      .limit(1);
+
+    const noChatJidFallback = await fallbackQuery.maybeSingle();
+
+    throwIfTenantSchemaError(noChatJidFallback.error, "messages.owner_user_id");
+
+    if (noChatJidFallback.error) {
+      throw noChatJidFallback.error;
+    }
+
+    return noChatJidFallback.data || null;
+  }
+
+  if (fallback.error) {
+    throw fallback.error;
+  }
+
+  return fallback.data || null;
+}
+
 async function saveMessage({ owner_user_id, phone, chat_jid, wa_message_id, message, direction, send_status, created_at }) {
+  const existingMessage = await findExistingMessage({
+    owner_user_id,
+    phone,
+    chat_jid,
+    wa_message_id,
+    message,
+    direction,
+    created_at
+  });
+
+  if (existingMessage) {
+    return existingMessage;
+  }
+
   let query = supabase
     .from("messages")
     .insert({
@@ -445,7 +543,7 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
   const lookupValues = await getPhoneLookupValues(phone, chat_jid || null);
   const existing = await supabase
     .from("customers")
-    .select("id")
+    .select("*")
     .eq("owner_user_id", owner_user_id)
     .in("phone", lookupValues)
     .limit(1)
@@ -461,6 +559,10 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
   let error;
 
   if (existing.data?.id) {
+    if (!hasCustomerChanges(existing.data, writePayload)) {
+      return normalizeCustomerRecord(existing.data);
+    }
+
     ({ data, error } = await supabase
       .from("customers")
       .update(writePayload)

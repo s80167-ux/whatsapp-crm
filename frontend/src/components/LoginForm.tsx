@@ -88,7 +88,7 @@ export function LoginForm(props: LoginFormProps) {
             />
             <button
               type="button"
-              className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center text-emerald-900/40 hover:text-emerald-900/70 transition-colors"
+              className="icon-hover-trigger absolute right-3 top-1/2 flex -translate-y-1/2 items-center justify-center text-emerald-900/40 transition-colors hover:text-emerald-900/70"
               onClick={() => setShowPassword(!showPassword)}
               aria-label={showPassword ? "Hide password" : "Show password"}
             >
@@ -105,6 +105,7 @@ export function LoginForm(props: LoginFormProps) {
                   <circle cx="12" cy="12" r="3"/>
                 </svg>
               )}
+              <span className="icon-hover-label">{showPassword ? "Hide password" : "Show password"}</span>
             </button>
           </div>
         </label>

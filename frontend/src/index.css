@@ -44,6 +44,77 @@ textarea {
   border-radius: 9999px !important;
 }
 
+.chat-bubble-incoming {
+  border-radius: 24px 24px 24px 10px !important;
+}
+
+.chat-bubble-outgoing {
+  border-radius: 24px 24px 10px 24px !important;
+}
+
+.quick-reply-chip {
+  border-radius: 18px !important;
+}
+
+.chat-status-dot {
+  border-radius: 9999px !important;
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 1px;
+}
+
+.chat-status-dot-new-lead {
+  background-color: #fbbf24;
+}
+
+.chat-status-dot-interested {
+  background-color: #22c55e;
+}
+
+.chat-status-dot-processing {
+  background-color: #38bdf8;
+}
+
+.chat-status-dot-closed-won {
+  background-color: #1e40af;
+}
+
+.chat-status-dot-closed-lost {
+  background-color: #ef4444;
+}
+
+.chat-unread-badge {
+  border-radius: 9999px !important;
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 1px;
+}
+
+.icon-hover-trigger {
+  position: relative;
+}
+
+.icon-hover-label {
+  pointer-events: none;
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  z-index: 30;
+  margin-top: 0.35rem;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: rgba(16, 42, 33, 0.88);
+  opacity: 0;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.92), 0 4px 10px rgba(16, 42, 33, 0.26);
+  transition: opacity 0.18s ease;
+}
+
+.icon-hover-trigger:hover .icon-hover-label,
+.icon-hover-trigger:focus-visible .icon-hover-label {
+  opacity: 1;
+}
+
 
 @layer components {
   .glass-panel {

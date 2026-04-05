@@ -3,7 +3,7 @@ const { Boom } = require('@hapi/boom');
 const fs = require('fs/promises');
 const path = require('path');
 const QRCode = require('qrcode');
-const { saveMessage, upsertCustomer, getCustomerOwnerIdsByPhone } = require('./supabase');
+const { saveMessage, updateOutgoingMessageStatus, upsertCustomer, getCustomerOwnerIdsByPhone } = require('./supabase');
 const { normalizePhone, resolveWhatsAppPhone, extractDigits } = require('./wa-identifiers');
 
 let sock = null;
@@ -123,6 +123,20 @@ async function persistIncomingMessage(msg) {
       profile_picture_url: profileInfo.profilePictureUrl || undefined,
       about: profileInfo.about || undefined
     });
+
+		if (msg.key.fromMe) {
+			const updatedMessage = await updateOutgoingMessageStatus({
+				owner_user_id: ownerUserId,
+				phone,
+				chat_jid: msg.key.remoteJid,
+				wa_message_id: msg.key.id,
+				send_status: 'sent'
+			});
+
+			if (updatedMessage) {
+				continue;
+			}
+		}
 
 		await saveMessage({
 			owner_user_id: ownerUserId,

@@ -163,50 +163,49 @@ export function ChatList({
                 <div className="min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                       <p className={`truncate text-sm font-bold leading-5 transition-colors sm:text-sm ${active ? "text-emerald-950" : "text-ink group-hover:text-emerald-950"}`} title={getDisplayName(conversation.contactName, displayPhone)}>
+                       <p className={`truncate text-sm font-bold leading-5 transition-colors sm:text-sm ${active ? "text-emerald-950" : "text-ink group-hover:text-emerald-950"}`}>
                         {getDisplayName(conversation.contactName, displayPhone)}
                       </p>
                       <div className="flex items-center gap-2">
                         {conversation.status && (
                           <div
-                            className="h-3 w-3 shrink-0 shadow-sm transition-transform hover:scale-110 active:scale-95"
-                            style={{
-                              borderRadius: "9999px",
-                              outline: "2px solid rgba(255,255,255,0.5)",
-                              outlineOffset: "1px",
-                              backgroundColor:
-                                conversation.status === "new_lead"
-                                  ? "#fbbf24"
-                                  : conversation.status === "interested"
-                                  ? "#22c55e"
-                                  : conversation.status === "processing"
-                                  ? "#38bdf8"
-                                  : conversation.status === "closed_won"
-                                  ? "#1e40af"
-                                  : "#ef4444"
-                            }}
-                            title={`Status: ${
-                              conversation.status.charAt(0).toUpperCase() +
-                              conversation.status.slice(1).replace(/_/g, " ")
+                            className={`icon-hover-trigger chat-status-dot h-3 w-3 shrink-0 shadow-sm transition-transform hover:scale-110 active:scale-95 ${
+                              conversation.status === "new_lead"
+                                ? "chat-status-dot-new-lead"
+                                : conversation.status === "interested"
+                                ? "chat-status-dot-interested"
+                                : conversation.status === "processing"
+                                ? "chat-status-dot-processing"
+                                : conversation.status === "closed_won"
+                                ? "chat-status-dot-closed-won"
+                                : "chat-status-dot-closed-lost"
                             }`}
-                          />
+                          >
+                            <span className="icon-hover-label">
+                              {`Status: ${
+                                conversation.status.charAt(0).toUpperCase() +
+                                conversation.status.slice(1).replace(/_/g, " ")
+                              }`}
+                            </span>
+                          </div>
                         )}
                         {conversation.unreadCount && conversation.unreadCount > 0 ? (
                           <span
-                            className="flex h-5 min-w-[20px] items-center justify-center bg-blue-500 px-1 text-[10px] font-bold text-white shadow-sm"
-                            style={{ borderRadius: "9999px", outline: "2px solid rgba(255,255,255,0.5)", outlineOffset: "1px" }}
-                            title={`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
+                            className="icon-hover-trigger chat-unread-badge flex h-5 min-w-[20px] items-center justify-center bg-blue-500 px-1 text-[10px] font-bold text-white shadow-sm"
                           >
                             {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+                            <span className="icon-hover-label">
+                              {`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
+                            </span>
                           </span>
                         ) : null}
                         <span className={`shrink-0 text-[10px] font-medium transition-colors sm:text-[10px] ${active ? "text-emerald-600" : "text-emerald-900/40"}`}>{formatTimestamp(conversation.timestamp)}</span>
                       </div>
                     </div>
-                    <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors sm:text-[11px] ${active ? "text-emerald-700/60" : "text-emerald-900/45"}`} title={formatPhoneDisplay(conversation.phone, conversation.chatJid)}>
+                    <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors sm:text-[11px] ${active ? "text-emerald-700/60" : "text-emerald-900/45"}`}>
                       {formatPhoneDisplay(conversation.phone, conversation.chatJid)}
                     </p>
-                    <p className={`mt-1.5 hidden truncate text-xs leading-4 transition-colors md:block ${active ? "text-emerald-950/70" : "text-emerald-950/50 group-hover:text-emerald-950/70"}`} title={conversation.lastMessage}>
+                    <p className={`mt-1.5 hidden truncate text-xs leading-4 transition-colors md:block ${active ? "text-emerald-950/70" : "text-emerald-950/50 group-hover:text-emerald-950/70"}`}>
                       {conversation.lastMessage}
                     </p>
                   </div>

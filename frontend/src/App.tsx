@@ -429,11 +429,15 @@ function App() {
   }
 
   async function handleSend() {
-    if (!selectedPhone || !chatInput.trim() || !token) {
+    await sendTextMessage(chatInput);
+  }
+
+  async function sendTextMessage(rawMessage: string) {
+    if (!selectedPhone || !rawMessage.trim() || !token) {
       return;
     }
 
-    const outgoingText = chatInput.trim();
+    const outgoingText = rawMessage.trim();
     const tempId = `temp-${Date.now()}`;
     const optimisticMessage: Message = {
       id: tempId,
@@ -448,7 +452,10 @@ function App() {
     setSending(true);
     setDashboardError("");
     setMessages((current) => [...current, optimisticMessage]);
-    setChatInput("");
+
+    if (rawMessage === chatInput) {
+      setChatInput("");
+    }
 
     try {
       const sentMessage = await api.sendMessage(
@@ -776,6 +783,7 @@ function App() {
                 onSendAttachment={handleSendAttachment}
                 onSendLocation={handleSendLocation}
                 onSend={handleSend}
+                onSendQuickReply={sendTextMessage}
                 phone={selectedPhone}
                 profilePictureUrl={customerDraft?.profile_picture_url || null}
                 sending={sending}

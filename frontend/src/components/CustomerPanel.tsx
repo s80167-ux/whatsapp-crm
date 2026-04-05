@@ -98,13 +98,14 @@ export function CustomerPanel(props: CustomerPanelProps) {
           {onClose ? (
             <button
               aria-label="Close customer profile"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/82 text-emerald-900/60 shadow-soft transition hover:bg-white hover:text-emerald-950"
+              className="icon-hover-trigger flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/82 text-emerald-900/60 shadow-soft transition hover:bg-white hover:text-emerald-950"
               onClick={onClose}
               type="button"
             >
               <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
                 <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
               </svg>
+              <span className="icon-hover-label">Close profile</span>
             </button>
           ) : null}
         </div>

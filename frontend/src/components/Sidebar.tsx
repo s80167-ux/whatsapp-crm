@@ -265,13 +265,12 @@ export function Sidebar({
           <div className="mt-3 flex items-center gap-3">
             <button
               aria-label={showPasswordForm ? "Hide change password form" : "Show change password form"}
-              className="group flex w-fit appearance-none items-center justify-center gap-0 overflow-hidden border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-emerald-900/72 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent"
+              className="icon-hover-trigger flex w-fit appearance-none items-center justify-center gap-0 overflow-visible border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-emerald-900/72 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent"
               onClick={() => {
                 setShowPasswordForm((current) => !current);
                 setPasswordError("");
                 setPasswordSuccess("");
               }}
-              title="Change password"
               type="button"
             >
               <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
@@ -283,16 +282,15 @@ export function Sidebar({
                   strokeWidth="2"
                 />
               </svg>
-              <span className="max-w-0 overflow-hidden whitespace-nowrap text-sm opacity-0 transition-all duration-200 group-hover:ml-2 group-hover:max-w-40 group-hover:opacity-100">
+              <span className="icon-hover-label">
                 Change password
               </span>
             </button>
 
             <button
               aria-label="Logout"
-              className="group flex w-fit appearance-none items-center justify-center gap-0 overflow-hidden border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-emerald-900/72 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent"
+              className="icon-hover-trigger flex w-fit appearance-none items-center justify-center gap-0 overflow-visible border-0 bg-transparent px-0 py-0 shadow-none outline-none ring-0 text-emerald-900/72 transition hover:bg-transparent hover:text-emerald-950 focus:bg-transparent"
               onClick={onLogout}
-              title="Logout"
               type="button"
             >
               <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
@@ -304,7 +302,7 @@ export function Sidebar({
                   strokeWidth="2"
                 />
               </svg>
-              <span className="max-w-0 overflow-hidden whitespace-nowrap text-sm opacity-0 transition-all duration-200 group-hover:ml-2 group-hover:max-w-20 group-hover:opacity-100">
+              <span className="icon-hover-label">
                 Logout
               </span>
             </button>
