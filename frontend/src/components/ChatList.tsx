@@ -91,7 +91,7 @@ export function ChatList({
 
       <div className="mb-3 hidden space-y-3 md:block">
         <input
-          className="input-glass"
+          className="input-glass border-emerald-950/20 bg-white/70 focus:bg-white focus:ring-emerald-500/20"
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search phone or message..."
           value={query}
@@ -100,8 +100,8 @@ export function ChatList({
           {(["all", "today", "recent"] as const).map((item) => (
             <button
               key={item}
-              className={`rounded-full px-3 py-1.5 text-xs font-medium capitalize transition ${
-                filter === item ? "bg-emerald-500 text-white shadow-soft" : "bg-white/50 text-emerald-900/65 hover:bg-white/80"
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold capitalize transition-all duration-200 ${
+                filter === item ? "bg-emerald-600 text-white shadow-soft" : "bg-emerald-950/10 text-emerald-950/60 hover:bg-emerald-950/20"
               }`}
               onClick={() => setFilter(item)}
               type="button"
@@ -145,10 +145,10 @@ export function ChatList({
             return (
               <button
                 key={conversation.chatJid || resolvedPhone || conversation.timestamp}
-                className={`w-full max-w-full min-w-0 overflow-hidden rounded-[20px] border px-3 py-3 text-left transition sm:rounded-[24px] sm:px-4 sm:py-3 ${
+                className={`group w-full max-w-full min-w-0 overflow-hidden rounded-[20px] border px-3 py-3 text-left transition-all duration-300 sm:rounded-[24px] sm:px-4 sm:py-3 ${
                   active
-                    ? "border-emerald-200 bg-emerald-50/88 shadow-soft"
-                    : "border-white/45 bg-white/35 hover:bg-white/60"
+                    ? "border-emerald-400/50 bg-white shadow-glass translate-y-[-1px]"
+                    : "border-white/70 bg-white/45 hover:bg-white/95 shadow-sm hover:shadow-soft"
                 }`}
                 disabled={!resolvedPhone}
                 onClick={() => {
@@ -160,17 +160,19 @@ export function ChatList({
               >
                 <div className="min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold leading-5 text-ink sm:text-sm sm:leading-5" title={getDisplayName(conversation.contactName, displayPhone)}>
-                      {getDisplayName(conversation.contactName, displayPhone)}
-                    </p>
-                    <p className="mt-1 truncate text-xs text-emerald-900/45 sm:text-xs" title={formatPhoneDisplay(conversation.phone, conversation.chatJid)}>
+                    <div className="flex items-center justify-between gap-2">
+                       <p className={`truncate text-sm font-bold leading-5 transition-colors sm:text-sm ${active ? "text-emerald-950" : "text-ink group-hover:text-emerald-950"}`} title={getDisplayName(conversation.contactName, displayPhone)}>
+                        {getDisplayName(conversation.contactName, displayPhone)}
+                      </p>
+                      <span className={`shrink-0 text-[10px] font-medium transition-colors sm:text-[10px] ${active ? "text-emerald-600" : "text-emerald-900/40"}`}>{formatTimestamp(conversation.timestamp)}</span>
+                    </div>
+                    <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors sm:text-[11px] ${active ? "text-emerald-700/60" : "text-emerald-900/45"}`} title={formatPhoneDisplay(conversation.phone, conversation.chatJid)}>
                       {formatPhoneDisplay(conversation.phone, conversation.chatJid)}
                     </p>
-                    <p className="mt-1 hidden truncate text-sm leading-5 text-emerald-950/62 md:block" title={conversation.lastMessage}>
+                    <p className={`mt-1.5 hidden truncate text-xs leading-4 transition-colors md:block ${active ? "text-emerald-950/70" : "text-emerald-950/50 group-hover:text-emerald-950/70"}`} title={conversation.lastMessage}>
                       {conversation.lastMessage}
                     </p>
                   </div>
-                  <span className="shrink-0 text-xs text-emerald-900/45 sm:text-xs">{formatTimestamp(conversation.timestamp)}</span>
                 </div>
               </button>
             );
