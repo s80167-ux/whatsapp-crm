@@ -1,6 +1,25 @@
 import { useMemo, useState } from "react";
-import type { Conversation, CustomerStatus } from "../lib/api";
-import { getDisplayName, getDisplayPhone, getResolvedPhone, formatPhoneDisplay } from "../lib/display";
+import { CUSTOMER_STATUS_LABELS, type Conversation, type CustomerStatus } from "../lib/api";
+import { getConversationIdentifier, getDisplayName, getDisplayPhone, getResolvedPhone, formatPhoneDisplay } from "../lib/display";
+
+const STATUS_ORDER: CustomerStatus[] = ["new_lead", "interested", "processing", "closed_won", "closed_lost"];
+
+function getStatusDotClass(status: CustomerStatus) {
+  switch (status) {
+    case "new_lead":
+      return "chat-status-dot-new-lead";
+    case "interested":
+      return "chat-status-dot-interested";
+    case "processing":
+      return "chat-status-dot-processing";
+    case "closed_won":
+      return "chat-status-dot-closed-won";
+    case "closed_lost":
+      return "chat-status-dot-closed-lost";
+    default:
+      return "";
+  }
+}
 
 type ContactListProps = {
   contacts: Conversation[];
@@ -9,7 +28,7 @@ type ContactListProps = {
   refreshing: boolean;
   activeStatusFilter: CustomerStatus | null;
   onRefresh: () => void;
-  onSelect: (phone: string) => void;
+  onSelect: (conversationId: string) => void;
 };
 
 function formatTimestamp(value: string) {
@@ -77,6 +96,7 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
     return contacts
       .filter((contact) => {
         const resolvedPhone = getResolvedPhone(contact.phone, contact.chatJid) || "";
+        const conversationId = getConversationIdentifier(contact.phone, contact.chatJid) || "";
         const displayPhone = getDisplayPhone(contact.phone, contact.chatJid) || resolvedPhone;
         const displayName = getDisplayName(contact.contactName, displayPhone).toLowerCase();
 
@@ -86,6 +106,7 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
 
         return (
           resolvedPhone.toLowerCase().includes(normalizedQuery) ||
+          conversationId.toLowerCase().includes(normalizedQuery) ||
           displayPhone.toLowerCase().includes(normalizedQuery) ||
           displayName.includes(normalizedQuery) ||
           contact.lastMessage.toLowerCase().includes(normalizedQuery)
@@ -145,21 +166,23 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
         <div className="flex flex-col space-y-2 pr-1">
           {filteredContacts.map((contact) => {
             const resolvedPhone = getResolvedPhone(contact.phone, contact.chatJid);
+            const conversationId = getConversationIdentifier(contact.phone, contact.chatJid);
             const displayPhone = getDisplayPhone(contact.phone, contact.chatJid);
-            const active = selectedPhone === resolvedPhone;
+            const activeStatuses = STATUS_ORDER.filter((status) => (contact.status_counts?.[status] ?? 0) > 0);
+            const active = selectedPhone === conversationId;
 
             return (
               <button
-                key={contact.chatJid || resolvedPhone || contact.timestamp}
+                key={contact.chatJid || conversationId || contact.timestamp}
                 className={`group relative w-full max-w-full min-w-0 overflow-hidden rounded-lg border px-3 py-3 text-left transition-all duration-300 sm:px-4 sm:py-3 ${
                   active
                     ? "border-transparent bg-[#e9edef] shadow-none"
                     : "border-transparent bg-white hover:bg-[#f5f6f6] shadow-none"
                 }`}
-                disabled={!resolvedPhone}
+                disabled={!conversationId}
                 onClick={() => {
-                  if (resolvedPhone) {
-                    onSelect(resolvedPhone);
+                  if (conversationId) {
+                    onSelect(conversationId);
                   }
                 }}
                 type="button"
@@ -200,11 +223,16 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
                       </div>
                     </div>
 
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${getStatusBadgeClass(contact.status)}`}>
-                        {getStatusLabel(contact.status)}
-                      </span>
-                    </div>
+                    {activeStatuses.length ? (
+                      <div className="mt-2 flex items-center gap-2">
+                        {activeStatuses.map((status) => (
+                          <span key={status} className="icon-hover-trigger flex h-5 w-5 items-center justify-center rounded-full border border-whatsapp-line bg-white shadow-soft">
+                            <span className={`chat-status-dot h-2.5 w-2.5 shrink-0 ${getStatusDotClass(status)}`} />
+                            <span className="icon-hover-label">{`${CUSTOMER_STATUS_LABELS[status]}: ${contact.status_counts?.[status] ?? 0}`}</span>
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
 
                     <p className={`mt-2 line-clamp-2 text-xs leading-5 transition-colors ${active ? "text-ink/80" : "text-whatsapp-muted group-hover:text-ink/80"}`}>
                       {contact.lastMessage}

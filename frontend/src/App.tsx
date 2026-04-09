@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChatList } from "./components/ChatList";
 import { ChatWindow } from "./components/ChatWindow";
 import { ContactList } from "./components/ContactList";
@@ -7,14 +7,15 @@ import type { CustomerPanelProps } from "./components/CustomerPanel";
 import { LoginForm } from "./components/LoginForm";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
-import { api, CUSTOMER_STATUSES, type Conversation, type Customer, type CustomerStatus, type Message, type SalesLeadItem, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
-import { getResolvedPhone } from "./lib/display";
-import { supabase } from "./lib/supabase";
+import { ApiError, api, CUSTOMER_STATUSES, setApiSessionId, setApiUnauthorizedHandler, type Conversation, type Customer, type CustomerStatus, type Message, type SalesLeadItem, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
+import { getConversationIdentifier, getResolvedPhone } from "./lib/display";
+import { clearPasswordRecoveryCallback, getEmailVerificationRedirectUrl, getPasswordRecoveryRedirectUrl, isPasswordRecoveryCallback, supabase } from "./lib/supabase";
 
 type AuthMode = "login" | "register";
 type DashboardTab = "inbox" | "contacts";
 type SidebarView = "inbox" | "pipeline" | "broadcast";
 const conversationPollMs = 8000;
+const dashboardSessionStorageKey = "whatsapp-crm-dashboard-session-id";
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -25,7 +26,15 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
+function isStickerFile(file: File) {
+  return file.type === "image/webp" || /\.webp$/i.test(file.name);
+}
+
 function getAttachmentMediaType(file: File) {
+  if (isStickerFile(file)) {
+    return "sticker";
+  }
+
   if (file.type.startsWith("image/")) {
     return "image";
   }
@@ -39,7 +48,7 @@ function getAttachmentMediaType(file: File) {
 
 function buildAttachmentPreviewText(file: File, caption: string) {
   const mediaType = getAttachmentMediaType(file);
-  const label = mediaType === "image" ? "Image" : mediaType === "video" ? "Video" : "Document";
+  const label = mediaType === "image" ? "Image" : mediaType === "video" ? "Video" : mediaType === "sticker" ? "Sticker" : "Document";
   const trimmedCaption = caption.trim();
 
   return trimmedCaption ? `[${label}] ${file.name} - ${trimmedCaption}` : `[${label}] ${file.name}`;
@@ -53,10 +62,18 @@ function App() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [passwordResetRequestLoading, setPasswordResetRequestLoading] = useState(false);
+  const [verificationResendLoading, setVerificationResendLoading] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const [passwordRecoveryActive, setPasswordRecoveryActive] = useState(false);
   const [token, setToken] = useState("");
+  const [dashboardSessionId, setDashboardSessionId] = useState("");
+  const [sessionConflictMessage, setSessionConflictMessage] = useState("");
+  const [replacingActiveSession, setReplacingActiveSession] = useState(false);
   const [userEmail, setUserEmail] = useState("");
   const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTab>("inbox");
   const [activeView, setActiveView] = useState<SidebarView>("inbox");
@@ -86,23 +103,108 @@ function App() {
   const [disconnectingWhatsApp, setDisconnectingWhatsApp] = useState(false);
   const [deletingConversationKey, setDeletingConversationKey] = useState<string | null>(null);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  const handlingSessionRevocationRef = useRef(false);
+
+  function resetDashboardState() {
+    setToken("");
+    setDashboardSessionId("");
+    setSessionConflictMessage("");
+    setUserEmail("");
+    setConversations([]);
+    setSelectedPhone(null);
+    setMessages([]);
+    setCustomerDraft(null);
+    setSalesLeadItems([]);
+    setConnectedWhatsAppPhone(null);
+  }
+
+  function persistDashboardSession(nextSessionId: string) {
+    setDashboardSessionId(nextSessionId);
+    setApiSessionId(nextSessionId);
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (nextSessionId) {
+      window.sessionStorage.setItem(dashboardSessionStorageKey, nextSessionId);
+      window.localStorage.removeItem(dashboardSessionStorageKey);
+      return;
+    }
+
+    window.sessionStorage.removeItem(dashboardSessionStorageKey);
+    window.localStorage.removeItem(dashboardSessionStorageKey);
+  }
+
+  async function ensureDashboardSession(
+    activeToken: string,
+    options?: {
+      forceRefresh?: boolean;
+      replaceExisting?: boolean;
+    }
+  ) {
+    const forceRefresh = options?.forceRefresh === true;
+    const storedSessionId =
+      !forceRefresh && typeof window !== "undefined"
+        ? window.sessionStorage.getItem(dashboardSessionStorageKey) || ""
+        : "";
+
+    if (storedSessionId) {
+      persistDashboardSession(storedSessionId);
+      return storedSessionId;
+    }
+
+    const { sessionId } = await api.createDashboardSession(activeToken, options?.replaceExisting === true);
+    persistDashboardSession(sessionId);
+    return sessionId;
+  }
+
+  async function handleSessionRevoked(message: string) {
+    if (handlingSessionRevocationRef.current) {
+      return;
+    }
+
+    handlingSessionRevocationRef.current = true;
+
+    if (saveTimer) {
+      window.clearTimeout(saveTimer);
+      setSaveTimer(null);
+    }
+
+    await supabase.auth.signOut().catch(() => undefined);
+    persistDashboardSession("");
+    resetDashboardState();
+    setPasswordRecoveryActive(false);
+    setDashboardError(message);
+    setAuthError(message);
+    setAuthNotice("");
+    handlingSessionRevocationRef.current = false;
+  }
 
   useEffect(() => {
     setCustomerPanelCollapsed(false);
   }, [selectedPhone, activeDashboardTab]);
+
+  useEffect(() => {
+    setApiUnauthorizedHandler((error) => handleSessionRevoked(error.message));
+
+    return () => {
+      setApiUnauthorizedHandler(null);
+    };
+  }, [saveTimer]);
 
   function updateConversationStatus(params: {
     phone?: string | null;
     chatJid?: string | null;
     status: CustomerStatus;
   }) {
-    const targetResolvedPhone = getResolvedPhone(params.phone, params.chatJid);
+    const targetConversationId = getConversationIdentifier(params.phone, params.chatJid);
     const targetChatJid = String(params.chatJid || "").trim() || null;
 
     setConversations((current) =>
       current.map((conversation) => {
-        const conversationResolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid);
-        const matchesPhone = Boolean(targetResolvedPhone && conversationResolvedPhone === targetResolvedPhone);
+        const conversationId = getConversationIdentifier(conversation.phone, conversation.chatJid);
+        const matchesPhone = Boolean(targetConversationId && conversationId === targetConversationId);
         const matchesChatJid = Boolean(targetChatJid && conversation.chatJid === targetChatJid);
 
         if (!matchesPhone && !matchesChatJid) {
@@ -121,13 +223,13 @@ function App() {
     phone?: string | null;
     chatJid?: string | null;
   }) {
-    const targetResolvedPhone = getResolvedPhone(params.phone, params.chatJid);
+    const targetConversationId = getConversationIdentifier(params.phone, params.chatJid);
     const targetChatJid = String(params.chatJid || "").trim() || null;
 
     setConversations((current) =>
       current.map((conversation) => {
-        const conversationResolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid);
-        const matchesPhone = Boolean(targetResolvedPhone && conversationResolvedPhone === targetResolvedPhone);
+        const conversationId = getConversationIdentifier(conversation.phone, conversation.chatJid);
+        const matchesPhone = Boolean(targetConversationId && conversationId === targetConversationId);
         const matchesChatJid = Boolean(targetChatJid && conversation.chatJid === targetChatJid);
 
         if (!matchesPhone && !matchesChatJid) {
@@ -177,11 +279,11 @@ function App() {
           return null;
         }
 
-        if (current && data.some((item) => getResolvedPhone(item.phone, item.chatJid) === current)) {
+        if (current && data.some((item) => getConversationIdentifier(item.phone, item.chatJid) === current)) {
           return current;
         }
 
-        return getResolvedPhone(data[0]?.phone, data[0]?.chatJid) || null;
+        return getConversationIdentifier(data[0]?.phone, data[0]?.chatJid) || null;
       });
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to load conversations.");
@@ -194,13 +296,13 @@ function App() {
     }
   }
 
-  async function loadMessages(phone: string, activeToken: string, silent = false) {
+  async function loadMessages(phone: string, activeToken: string, chatJid?: string | null, silent = false) {
     if (!silent) {
       setLoadingMessages(true);
     }
 
     try {
-      const data = await api.getMessages(phone, activeToken);
+      const data = await api.getMessages(phone, activeToken, chatJid);
       setMessages(data);
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to load messages.");
@@ -211,14 +313,15 @@ function App() {
     }
   }
 
-  async function loadCustomer(phone: string, activeToken: string, silent = false) {
+  async function loadCustomer(phone: string, activeToken: string, chatJid?: string | null, silent = false) {
     if (!silent) {
       setLoadingCustomer(true);
     }
 
     try {
-      const data = await api.getCustomer(phone, activeToken);
+      const data = await api.getCustomer(phone, activeToken, chatJid);
       setCustomerDraft(data);
+      setSelectedPhone((current) => data.phone || current);
       updateConversationStatus({
         phone: data.phone,
         chatJid: data.chat_jid,
@@ -255,8 +358,8 @@ function App() {
       return;
     }
 
-    const resolvedPhone = getResolvedPhone(phone, chatJid);
-    const conversationKey = String(chatJid || resolvedPhone || phone || "").trim() || null;
+    const conversationId = getConversationIdentifier(phone, chatJid);
+    const conversationKey = String(chatJid || conversationId || phone || "").trim() || null;
 
     setDeletingConversationKey(conversationKey);
     setDashboardError("");
@@ -266,15 +369,15 @@ function App() {
 
       setConversations((current) =>
         current.filter((conversation) => {
-          const conversationResolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid);
-          const matchesPhone = Boolean(resolvedPhone && conversationResolvedPhone === resolvedPhone);
+          const currentConversationId = getConversationIdentifier(conversation.phone, conversation.chatJid);
+          const matchesPhone = Boolean(conversationId && currentConversationId === conversationId);
           const matchesChatJid = Boolean(chatJid && conversation.chatJid === chatJid);
 
           return !matchesPhone && !matchesChatJid;
         })
       );
 
-      if (selectedPhone && resolvedPhone && selectedPhone === resolvedPhone) {
+      if (selectedPhone && conversationId && selectedPhone === conversationId) {
         setSelectedPhone(null);
         setMessages([]);
         setCustomerDraft(null);
@@ -292,7 +395,7 @@ function App() {
       return;
     }
 
-    const targetPhone = getResolvedPhone(message.phone, message.chat_jid) || message.phone;
+    const targetPhone = getConversationIdentifier(message.phone, message.chat_jid) || message.phone;
     const targetChatJid = message.chat_jid || activeChatJid || null;
 
     setDeletingMessageId(message.id);
@@ -307,8 +410,8 @@ function App() {
 
       if (selectedPhone && selectedPhone === targetPhone) {
         await Promise.allSettled([
-          loadMessages(targetPhone, token, true),
-          loadCustomer(targetPhone, token, true),
+          loadMessages(targetPhone, token, targetChatJid, true),
+          loadCustomer(targetPhone, token, targetChatJid, true),
           loadCustomerSalesItems(targetPhone, token, targetChatJid, true)
         ]);
       }
@@ -330,6 +433,7 @@ function App() {
       const savedCustomer = await api.saveCustomer(
         nextCustomer.phone,
         {
+          chat_jid: nextCustomer.chat_jid || null,
           status: nextCustomer.status,
           notes: nextCustomer.notes
         },
@@ -374,25 +478,109 @@ function App() {
 
       setSalesLeadItems((current) => [item, ...current]);
 
-      if (payload.status !== selectedStatus) {
-        const savedCustomer = await api.saveCustomer(
-          selectedPhone,
-          {
-            status: payload.status,
-            notes: selectedNotes
-          },
-          token
-        );
+      setCustomerDraft((current) =>
+        current
+          ? {
+              ...current,
+              chat_jid: activeCustomerChatJid,
+              status: payload.status,
+              notes: selectedNotes
+            }
+          : current
+      );
+      updateConversationStatus({
+        phone: selectedPhone,
+        chatJid: activeCustomerChatJid,
+        status: payload.status
+      });
 
-        setCustomerDraft(savedCustomer);
-        updateConversationStatus({
-          phone: savedCustomer.phone,
-          chatJid: savedCustomer.chat_jid,
-          status: savedCustomer.status
-        });
-      }
+      const savedCustomer = await api.saveCustomer(
+        selectedPhone,
+        {
+          chat_jid: activeCustomerChatJid,
+          status: payload.status,
+          notes: selectedNotes
+        },
+        token
+      );
+
+      setCustomerDraft(savedCustomer);
+      updateConversationStatus({
+        phone: savedCustomer.phone,
+        chatJid: savedCustomer.chat_jid,
+        status: savedCustomer.status
+      });
+      await loadConversations(token, true);
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to save sales lead item.");
+      throw error;
+    } finally {
+      setSavingSalesLeadItem(false);
+    }
+  }
+
+  async function handleUpdateSalesLeadItem(payload: {
+    itemId: string;
+    status: CustomerStatus;
+    productType: string;
+    packageName: string;
+    price: number;
+    quantity: number;
+  }) {
+    if (!token || !selectedPhone) {
+      return;
+    }
+
+    setSavingSalesLeadItem(true);
+
+    try {
+      const item = await api.updateCustomerSalesItem(
+        selectedPhone,
+        payload.itemId,
+        {
+          ...payload,
+          chatJid: activeCustomerChatJid
+        },
+        token
+      );
+
+      setSalesLeadItems((current) => current.map((existingItem) => (existingItem.id === item.id ? item : existingItem)));
+
+      setCustomerDraft((current) =>
+        current
+          ? {
+              ...current,
+              chat_jid: activeCustomerChatJid,
+              status: payload.status,
+              notes: selectedNotes
+            }
+          : current
+      );
+      updateConversationStatus({
+        phone: selectedPhone,
+        chatJid: activeCustomerChatJid,
+        status: payload.status
+      });
+
+      const savedCustomer = await api.saveCustomer(
+        selectedPhone,
+        {
+          chat_jid: activeCustomerChatJid,
+          status: payload.status,
+          notes: selectedNotes
+        },
+        token
+      );
+
+      setCustomerDraft(savedCustomer);
+      updateConversationStatus({
+        phone: savedCustomer.phone,
+        chatJid: savedCustomer.chat_jid,
+        status: savedCustomer.status
+      });
+      await loadConversations(token, true);
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "Failed to update sales lead item.");
       throw error;
     } finally {
       setSavingSalesLeadItem(false);
@@ -465,24 +653,111 @@ function App() {
     }
   }
 
+  const leadConversations = useMemo(() => {
+    if (!connectedWhatsAppPhone) {
+      return conversations;
+    }
+
+    return conversations.filter((conversation) => normalizePhoneValue(conversation.phone) !== connectedWhatsAppPhone);
+  }, [connectedWhatsAppPhone, conversations]);
+
+  const selectedConversation = useMemo(
+    () => leadConversations.find((conversation) => getConversationIdentifier(conversation.phone, conversation.chatJid) === selectedPhone) || null,
+    [leadConversations, selectedPhone]
+  );
+  const activeChatJid = selectedConversation?.chatJid || customerDraft?.chat_jid || null;
+
   useEffect(() => {
     let mounted = true;
+    const recoveryCallbackActive = isPasswordRecoveryCallback();
 
-    supabase.auth.getSession().then(({ data }) => {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(dashboardSessionStorageKey);
+    }
+
+    async function bootstrapAuth() {
+      const { data } = await supabase.auth.getSession();
+
       if (!mounted) {
         return;
       }
 
-      setToken(data.session?.access_token || "");
+      const activeToken = data.session?.access_token || "";
+      setToken(activeToken);
       setUserEmail(data.session?.user.email || "");
-      setAuthReady(true);
-    });
+      setPasswordRecoveryActive(recoveryCallbackActive);
+
+      if (activeToken) {
+        if (recoveryCallbackActive) {
+          persistDashboardSession("");
+          setSessionConflictMessage("");
+          setAuthError("");
+          setAuthNotice("Secure recovery verified. Enter a new password to finish resetting your account.");
+          clearPasswordRecoveryCallback();
+          setAuthReady(true);
+          return;
+        }
+
+        try {
+          await ensureDashboardSession(activeToken);
+        } catch (error) {
+          if (!mounted) {
+            return;
+          }
+
+          if (error instanceof ApiError && error.code === "SESSION_ALREADY_ACTIVE") {
+            persistDashboardSession("");
+            setSessionConflictMessage(error.message);
+            setAuthError("");
+          } else {
+            const message = error instanceof Error ? error.message : "Failed to restore dashboard session.";
+            await handleSessionRevoked(message);
+          }
+        }
+      } else {
+        persistDashboardSession("");
+      }
+
+      if (mounted) {
+        setAuthReady(true);
+      }
+    }
+
+    void bootstrapAuth();
 
     const {
       data: { subscription }
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setToken(session?.access_token || "");
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "INITIAL_SESSION") {
+        return;
+      }
+
+      const activeToken = session?.access_token || "";
+      setToken(activeToken);
       setUserEmail(session?.user.email || "");
+
+      if (event === "PASSWORD_RECOVERY") {
+        persistDashboardSession("");
+        setSessionConflictMessage("");
+        setPassword("");
+        setConfirmPassword("");
+        setAuthError("");
+        setAuthNotice("Secure recovery verified. Enter a new password to finish resetting your account.");
+        setPasswordRecoveryActive(true);
+        clearPasswordRecoveryCallback();
+        setAuthReady(true);
+        return;
+      }
+
+      if (!activeToken) {
+        persistDashboardSession("");
+        setSessionConflictMessage("");
+        setPasswordRecoveryActive(false);
+        setAuthReady(true);
+        return;
+      }
+
+      setPasswordRecoveryActive(false);
       setAuthReady(true);
     });
 
@@ -497,27 +772,27 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!token) {
+    if (!token || !dashboardSessionId) {
       setConnectedWhatsAppPhone(null);
       return;
     }
 
     loadWhatsAppState(true);
     loadConversations(token);
-  }, [token]);
+  }, [dashboardSessionId, token]);
 
   useEffect(() => {
-    if (!token || !selectedPhone) {
+    if (!token || !dashboardSessionId || !selectedPhone) {
       setMessages([]);
       setCustomerDraft(null);
       setSalesLeadItems([]);
       return;
     }
 
-    loadMessages(selectedPhone, token);
-    loadCustomer(selectedPhone, token);
-    loadCustomerSalesItems(selectedPhone, token, customerDraft?.chat_jid || null);
-  }, [customerDraft?.chat_jid, selectedPhone, token]);
+    loadMessages(selectedPhone, token, activeChatJid);
+    loadCustomer(selectedPhone, token, activeChatJid);
+    loadCustomerSalesItems(selectedPhone, token, activeChatJid);
+  }, [activeChatJid, dashboardSessionId, selectedPhone, token]);
 
   useEffect(() => {
     if (whatsAppStatus?.connected) {
@@ -552,7 +827,7 @@ function App() {
   }, [token]);
 
   useEffect(() => {
-    if (!token) {
+    if (!token || !dashboardSessionId) {
       return;
     }
 
@@ -561,16 +836,16 @@ function App() {
       loadConversations(token, true);
 
       if (selectedPhone) {
-        loadMessages(selectedPhone, token, true);
-        loadCustomer(selectedPhone, token, true);
-        loadCustomerSalesItems(selectedPhone, token, customerDraft?.chat_jid || null, true);
+        loadMessages(selectedPhone, token, activeChatJid, true);
+        loadCustomer(selectedPhone, token, activeChatJid, true);
+        loadCustomerSalesItems(selectedPhone, token, activeChatJid, true);
       }
     }, conversationPollMs);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [selectedPhone, token]);
+  }, [activeChatJid, dashboardSessionId, selectedPhone, token]);
 
   useEffect(() => {
     return () => {
@@ -579,20 +854,6 @@ function App() {
       }
     };
   }, [saveTimer]);
-
-  const leadConversations = useMemo(() => {
-    if (!connectedWhatsAppPhone) {
-      return conversations;
-    }
-
-    return conversations.filter((conversation) => normalizePhoneValue(conversation.phone) !== connectedWhatsAppPhone);
-  }, [connectedWhatsAppPhone, conversations]);
-
-  const selectedConversation = useMemo(
-    () => leadConversations.find((conversation) => getResolvedPhone(conversation.phone, conversation.chatJid) === selectedPhone) || null,
-    [leadConversations, selectedPhone]
-  );
-  const activeChatJid = selectedConversation?.chatJid || customerDraft?.chat_jid || null;
 
   useEffect(() => {
     if (!selectedConversation?.unreadCount || !selectedPhone) {
@@ -610,20 +871,29 @@ function App() {
 
   const visibleConversations = useMemo(() => {
     if (activeStatusFilter) {
-      return leadConversations.filter((conversation) => conversation.status === activeStatusFilter);
+      return leadConversations.filter((conversation) => (conversation.status_counts?.[activeStatusFilter] ?? 0) > 0);
     }
 
     return leadConversations;
   }, [activeStatusFilter, leadConversations]);
 
+  const customerStatusCounts =
+    customerDraft?.status_counts || {
+      new_lead: 0,
+      interested: 0,
+      processing: 0,
+      closed_won: 0,
+      closed_lost: 0
+    };
+
   const sidebarStats = useMemo(
     () => ({
       statusCounts: {
-        new_lead: leadConversations.filter((conversation) => conversation.status === "new_lead").length,
-        interested: leadConversations.filter((conversation) => conversation.status === "interested").length,
-        processing: leadConversations.filter((conversation) => conversation.status === "processing").length,
-        closed_won: leadConversations.filter((conversation) => conversation.status === "closed_won").length,
-        closed_lost: leadConversations.filter((conversation) => conversation.status === "closed_lost").length
+        new_lead: leadConversations.filter((conversation) => (conversation.status_counts?.new_lead ?? 0) > 0).length,
+        interested: leadConversations.filter((conversation) => (conversation.status_counts?.interested ?? 0) > 0).length,
+        processing: leadConversations.filter((conversation) => (conversation.status_counts?.processing ?? 0) > 0).length,
+        closed_won: leadConversations.filter((conversation) => (conversation.status_counts?.closed_won ?? 0) > 0).length,
+        closed_lost: leadConversations.filter((conversation) => (conversation.status_counts?.closed_lost ?? 0) > 0).length
       },
       currentThreadMessages: messages.length,
       activeContact: selectedConversation?.contactName || customerDraft?.contact_name || selectedPhone || "None"
@@ -639,21 +909,51 @@ function App() {
 
     if (
       selectedPhone &&
-      visibleConversations.some((conversation) => getResolvedPhone(conversation.phone, conversation.chatJid) === selectedPhone)
+      visibleConversations.some((conversation) => getConversationIdentifier(conversation.phone, conversation.chatJid) === selectedPhone)
     ) {
       return;
     }
 
-    setSelectedPhone(getResolvedPhone(visibleConversations[0].phone, visibleConversations[0].chatJid));
+    setSelectedPhone(getConversationIdentifier(visibleConversations[0].phone, visibleConversations[0].chatJid));
   }, [selectedPhone, visibleConversations]);
 
   async function handleAuthSubmit() {
     setAuthLoading(true);
     setAuthError("");
+    setAuthNotice("");
+    setSessionConflictMessage("");
 
     try {
+      if (passwordRecoveryActive) {
+        const trimmedPassword = password.trim();
+        const trimmedConfirmation = confirmPassword.trim();
+
+        if (trimmedPassword.length < 6) {
+          throw new Error("Password must be at least 6 characters.");
+        }
+
+        if (trimmedPassword !== trimmedConfirmation) {
+          throw new Error("Passwords do not match.");
+        }
+
+        const { error } = await supabase.auth.updateUser({ password: trimmedPassword });
+
+        if (error) {
+          throw error;
+        }
+
+        await supabase.auth.signOut();
+        persistDashboardSession("");
+        resetDashboardState();
+        setPasswordRecoveryActive(false);
+        setPassword("");
+        setConfirmPassword("");
+        setAuthNotice("Password updated. Log in with your new password.");
+        return;
+      }
+
       if (mode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password
         });
@@ -661,10 +961,21 @@ function App() {
         if (error) {
           throw error;
         }
+
+        const activeToken = data.session?.access_token;
+
+        if (!activeToken) {
+          throw new Error("Authentication succeeded but no session was returned.");
+        }
+
+        await ensureDashboardSession(activeToken, { forceRefresh: true });
       } else {
         const { data, error } = await supabase.auth.signUp({
           email,
-          password
+          password,
+          options: {
+            emailRedirectTo: getEmailVerificationRedirectUrl()
+          }
         });
 
         if (error) {
@@ -672,15 +983,113 @@ function App() {
         }
 
         if (!data.session) {
-          setAuthError("Account created. Confirm your email in Supabase before logging in.");
+          setAuthNotice("Account created. Confirm your email before logging in.");
+        } else {
+          await ensureDashboardSession(data.session.access_token, { forceRefresh: true });
         }
       }
 
       setPassword("");
+      setConfirmPassword("");
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Authentication failed.");
+      if (error instanceof ApiError && error.code === "SESSION_ALREADY_ACTIVE") {
+        setSessionConflictMessage(error.message);
+        setAuthError("");
+      } else {
+        setAuthError(error instanceof Error ? error.message : "Authentication failed.");
+      }
     } finally {
       setAuthLoading(false);
+    }
+  }
+
+  async function handleRequestPasswordReset() {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setAuthError("Enter a valid email address to receive a secure reset link.");
+      setAuthNotice("");
+      return;
+    }
+
+    setPasswordResetRequestLoading(true);
+    setAuthError("");
+    setAuthNotice("");
+    setSessionConflictMessage("");
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: getPasswordRecoveryRedirectUrl()
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setAuthNotice("If an account exists for that email, a secure password reset link has been sent.");
+      setPassword("");
+    } catch {
+      setAuthNotice("If an account exists for that email, a secure password reset link has been sent.");
+      setPassword("");
+    } finally {
+      setPasswordResetRequestLoading(false);
+    }
+  }
+
+  async function handleReplaceActiveSession() {
+    if (!token) {
+      return;
+    }
+
+    setReplacingActiveSession(true);
+    setAuthError("");
+
+    try {
+      await ensureDashboardSession(token, {
+        forceRefresh: true,
+        replaceExisting: true
+      });
+      setAuthError("");
+      setSessionConflictMessage("");
+      setPassword("");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Failed to replace the active session.");
+    } finally {
+      setReplacingActiveSession(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setAuthError("Enter a valid email address to resend the verification link.");
+      setAuthNotice("");
+      return;
+    }
+
+    setVerificationResendLoading(true);
+    setAuthError("");
+    setAuthNotice("");
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: normalizedEmail,
+        options: {
+          emailRedirectTo: getEmailVerificationRedirectUrl()
+        }
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setAuthNotice("If a pending account exists for that email, a new verification link has been sent.");
+    } catch {
+      setAuthNotice("If a pending account exists for that email, a new verification link has been sent.");
+    } finally {
+      setVerificationResendLoading(false);
     }
   }
 
@@ -853,15 +1262,14 @@ function App() {
   async function handleLogout() {
     if (saveTimer) {
       window.clearTimeout(saveTimer);
+      setSaveTimer(null);
+    }
+    if (token && dashboardSessionId) {
+      await api.deleteDashboardSession(token).catch(() => undefined);
     }
     await supabase.auth.signOut();
-    setToken("");
-    setUserEmail("");
-    setConversations([]);
-    setSelectedPhone(null);
-    setMessages([]);
-    setCustomerDraft(null);
-    setSalesLeadItems([]);
+    persistDashboardSession("");
+    resetDashboardState();
   }
 
   function scheduleCustomerSave(nextCustomer: Customer, immediate = false) {
@@ -880,11 +1288,12 @@ function App() {
     setSaveTimer(timeout);
   }
 
-  const selectedStatus = customerDraft?.status || "new_lead";
+  const activeCustomerPhone = customerDraft?.phone || selectedPhone;
+  const selectedStatus = selectedConversation?.status || customerDraft?.status || "new_lead";
   const selectedNotes = customerDraft?.notes || "";
-  const activeCustomerChatJid = customerDraft?.chat_jid || selectedConversation?.chatJid || null;
+  const activeCustomerChatJid = selectedConversation?.chatJid || customerDraft?.chat_jid || null;
 
-  const customerPanelProps: CustomerPanelProps | null = selectedPhone
+  const customerPanelProps: CustomerPanelProps | null = activeCustomerPhone
     ? {
         contactName: selectedConversation?.contactName || customerDraft?.contact_name || null,
         about: customerDraft?.about || null,
@@ -896,19 +1305,19 @@ function App() {
         loading: loadingCustomer,
         notes: selectedNotes,
         outgoingCount: customerDraft?.outgoing_count,
-        phone: selectedPhone,
+        phone: activeCustomerPhone,
         profilePictureUrl: customerDraft?.profile_picture_url || null,
         saving: savingCustomer,
         status: selectedStatus,
-        statusCounts: sidebarStats.statusCounts,
+        statusCounts: customerStatusCounts,
         totalMessages: customerDraft?.total_messages,
         onNotesChange: (value) => {
-          if (!selectedPhone) {
+          if (!activeCustomerPhone) {
             return;
           }
 
           const nextCustomer: Customer = {
-            phone: selectedPhone,
+            phone: activeCustomerPhone,
             chat_jid: activeCustomerChatJid,
             contact_name: customerDraft?.contact_name || selectedConversation?.contactName || null,
             profile_picture_url: customerDraft?.profile_picture_url || null,
@@ -919,7 +1328,7 @@ function App() {
             last_message_at: customerDraft?.last_message_at || null,
             last_message_preview: customerDraft?.last_message_preview || null,
             last_direction: customerDraft?.last_direction || null,
-            status: customerDraft?.status || "new_lead",
+            status: selectedStatus,
             notes: value
           };
 
@@ -929,21 +1338,32 @@ function App() {
       }
     : null;
 
-  if (!token) {
+  if (!token || !dashboardSessionId) {
     return (
       <main className="min-h-screen bg-app px-4 py-10">
         <div className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-6xl items-center justify-center">
           <LoginForm
             authReady={authReady}
+            confirmPassword={confirmPassword}
             email={email}
             error={authError}
             loading={authLoading}
             mode={mode}
+            notice={authNotice}
+            onConfirmPasswordChange={setConfirmPassword}
             onEmailChange={setEmail}
             onModeChange={setMode}
             onPasswordChange={setPassword}
+            onRequestPasswordReset={handleRequestPasswordReset}
+            onResendVerification={handleResendVerification}
+            onReplaceActiveSession={handleReplaceActiveSession}
             onSubmit={handleAuthSubmit}
             password={password}
+            passwordRecoveryActive={passwordRecoveryActive}
+            passwordResetRequestLoading={passwordResetRequestLoading}
+            replacingActiveSession={replacingActiveSession}
+            sessionConflictMessage={sessionConflictMessage}
+            verificationResendLoading={verificationResendLoading}
           />
         </div>
       </main>
@@ -998,9 +1418,9 @@ function App() {
                     loadConversations(token, true);
 
                     if (selectedPhone) {
-                      loadMessages(selectedPhone, token, true);
-                      loadCustomer(selectedPhone, token, true);
-                      loadCustomerSalesItems(selectedPhone, token, customerDraft?.chat_jid || null, true);
+                      loadMessages(selectedPhone, token, activeCustomerChatJid, true);
+                      loadCustomer(selectedPhone, token, activeCustomerChatJid, true);
+                      loadCustomerSalesItems(selectedPhone, token, activeCustomerChatJid, true);
                     }
                   }}
                   onSelect={(phone) => {
@@ -1024,8 +1444,8 @@ function App() {
                     loadConversations(token, true);
 
                     if (selectedPhone) {
-                      loadCustomer(selectedPhone, token, true);
-                      loadCustomerSalesItems(selectedPhone, token, customerDraft?.chat_jid || null, true);
+                      loadCustomer(selectedPhone, token, activeCustomerChatJid, true);
+                      loadCustomerSalesItems(selectedPhone, token, activeCustomerChatJid, true);
                     }
                   }}
                   onSelect={(phone) => {
@@ -1042,7 +1462,7 @@ function App() {
                 <ChatWindow
                   contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
                   customerPanelProps={customerPanelProps}
-                  chatJid={customerDraft?.chat_jid || selectedConversation?.chatJid || null}
+                  chatJid={selectedConversation?.chatJid || customerDraft?.chat_jid || null}
                   deletingMessageId={deletingMessageId}
                   loading={loadingMessages}
                   loadingSalesLeadItems={loadingSalesLeadItems}
@@ -1050,12 +1470,13 @@ function App() {
                   messages={messages}
                   onChangeMessage={setChatInput}
                   onCreateSalesLeadItem={handleCreateSalesLeadItem}
+                  onUpdateSalesLeadItem={handleUpdateSalesLeadItem}
                   onDeleteMessage={handleDeleteMessage}
                   onSendAttachment={handleSendAttachment}
                   onSendLocation={handleSendLocation}
                   onSend={handleSend}
                   onSendQuickReply={sendTextMessage}
-                  phone={selectedPhone}
+                  phone={activeCustomerPhone}
                   profilePictureUrl={customerDraft?.profile_picture_url || null}
                   salesLeadItems={salesLeadItems}
                   salesLeadStatus={selectedStatus}

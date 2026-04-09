@@ -27,6 +27,14 @@ type ChatWindowProps = {
     price: number;
     quantity: number;
   }) => Promise<void> | void;
+  onUpdateSalesLeadItem?: (payload: {
+    itemId: string;
+    status: CustomerStatus;
+    productType: string;
+    packageName: string;
+    price: number;
+    quantity: number;
+  }) => Promise<void> | void;
   onDeleteMessage?: (message: Message) => Promise<void> | void;
   onSend: () => void;
   onSendQuickReply: (value: string) => Promise<void> | void;
@@ -39,7 +47,7 @@ type ChatWindowProps = {
   }) => Promise<void> | void;
 };
 
-type AttachmentTab = "image" | "document" | "location";
+type AttachmentTab = "image" | "sticker" | "document" | "location";
 type StoredQuickReplyAttachment = {
   name: string;
   type: string;
@@ -71,6 +79,44 @@ function formatTime(value: string) {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function isSameCalendarDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function getMessageDayKey(value: string) {
+  const date = new Date(value);
+
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function formatMessageDateIndicator(value: string) {
+  const messageDate = new Date(value);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  if (isSameCalendarDay(messageDate, today)) {
+    return "Today";
+  }
+
+  if (isSameCalendarDay(messageDate, yesterday)) {
+    return "Yesterday";
+  }
+
+  const includeYear = messageDate.getFullYear() !== today.getFullYear();
+
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+    ...(includeYear ? { year: "numeric" } : {})
+  }).format(messageDate);
 }
 
 function formatSalesLeadTimestamp(value: string) {
@@ -138,6 +184,10 @@ function isImageMessage(message: Message) {
   return message.media_type === "image" && Boolean(message.media_data_url);
 }
 
+function isStickerMessage(message: Message) {
+  return message.media_type === "sticker" && Boolean(message.media_data_url);
+}
+
 function isVideoMessage(message: Message) {
   return message.media_type === "video" && Boolean(message.media_data_url);
 }
@@ -149,6 +199,10 @@ function isDocumentMessage(message: Message) {
 function getSyntheticMediaPlaceholder(message: Message) {
   if (isImageMessage(message)) {
     return "[Image]";
+  }
+
+  if (isStickerMessage(message)) {
+    return "[Sticker]";
   }
 
   if (isVideoMessage(message)) {
@@ -175,6 +229,19 @@ function stripMediaPreviewPrefix(message: Message) {
     }
     if (fileName && rawText.startsWith(`[Image] ${fileName} - `)) {
       return rawText.slice(`[Image] ${fileName} - `.length).trim();
+    }
+  }
+
+  if (isStickerMessage(message)) {
+    const fileName = message.media_file_name?.trim();
+    if (rawText === "[Sticker]") {
+      return "";
+    }
+    if (fileName && rawText === `[Sticker] ${fileName}`) {
+      return "";
+    }
+    if (fileName && rawText.startsWith(`[Sticker] ${fileName} - `)) {
+      return rawText.slice(`[Sticker] ${fileName} - `.length).trim();
     }
   }
 
@@ -249,8 +316,42 @@ function getMediaDownloadName(message: Message, fallbackName: string) {
   }
 
   const mimeType = message.media_mime_type?.trim() || "";
-  const extension = mimeType.startsWith("image/") ? mimeType.slice("image/".length) : "bin";
+  const extension = mimeType.includes("/") ? mimeType.slice(mimeType.indexOf("/") + 1) : "bin";
   return `${fallbackName}.${extension || "bin"}`;
+}
+
+function IncomingStickerCard(props: { message: Message; onOpenPreview: (message: Message) => void }) {
+  return (
+    <div className="mb-2 inline-flex max-w-[180px] flex-col overflow-hidden rounded-[22px] border border-whatsapp-line bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.95),_rgba(237,247,244,0.88))] p-2">
+      <button
+        aria-label="Open sticker preview"
+        className="icon-hover-trigger group relative block rounded-[18px] bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(230,242,238,0.9))] text-left"
+        onClick={() => props.onOpenPreview(props.message)}
+        type="button"
+      >
+        <img
+          alt={props.message.media_file_name || "Sticker"}
+          className="block h-auto max-h-[160px] w-full object-contain transition duration-200 group-hover:scale-[1.02]"
+          loading="lazy"
+          src={props.message.media_data_url || undefined}
+        />
+        <span className="icon-hover-label">Open sticker preview</span>
+      </button>
+      <div className="mt-2 flex items-center justify-end gap-2 px-1 pb-1">
+        <a
+          aria-label="Save sticker"
+          className="icon-hover-trigger flex h-8 w-8 items-center justify-center rounded-full text-whatsapp-muted transition hover:bg-white hover:text-whatsapp-deep"
+          download={getMediaDownloadName(props.message, "sticker")}
+          href={props.message.media_data_url || undefined}
+        >
+          <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+            <path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v1a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+          </svg>
+          <span className="icon-hover-label">Save sticker</span>
+        </a>
+      </div>
+    </div>
+  );
 }
 
 function IncomingDocumentCard(props: { message: Message }) {
@@ -420,6 +521,7 @@ export function ChatWindow(props: ChatWindowProps) {
     customerPanelProps,
     onChangeMessage,
     onCreateSalesLeadItem,
+    onUpdateSalesLeadItem,
     onDeleteMessage,
     onSend,
     onSendQuickReply,
@@ -429,7 +531,9 @@ export function ChatWindow(props: ChatWindowProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const stickerInputRef = useRef<HTMLInputElement | null>(null);
   const documentInputRef = useRef<HTMLInputElement | null>(null);
+  const activeSalesLeadEditorRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
   const lastPhoneRef = useRef<string | null>(null);
   const lastMessageKeyRef = useRef<string>("");
@@ -458,6 +562,13 @@ export function ChatWindow(props: ChatWindowProps) {
   const [leadQuantity, setLeadQuantity] = useState("1");
   const [leadStatus, setLeadStatus] = useState<CustomerStatus>(salesLeadStatus || "new_lead");
   const [leadFormError, setLeadFormError] = useState("");
+  const [editingSalesLeadItemId, setEditingSalesLeadItemId] = useState<string | null>(null);
+  const [editLeadProductType, setEditLeadProductType] = useState("");
+  const [editLeadPackageName, setEditLeadPackageName] = useState("");
+  const [editLeadPrice, setEditLeadPrice] = useState("");
+  const [editLeadQuantity, setEditLeadQuantity] = useState("1");
+  const [editLeadStatus, setEditLeadStatus] = useState<CustomerStatus>(salesLeadStatus || "new_lead");
+  const [editLeadFormError, setEditLeadFormError] = useState("");
   const [showAllMessages, setShowAllMessages] = useState(false);
   const [expandedQuickReplyMessageId, setExpandedQuickReplyMessageId] = useState<string | null>(null);
   const [expandedEmojiMessageId, setExpandedEmojiMessageId] = useState<string | null>(null);
@@ -471,6 +582,27 @@ export function ChatWindow(props: ChatWindowProps) {
   const visibleMessages = showAllMessages ? messages : messages.slice(-6);
   const hiddenMessageCount = Math.max(messages.length - 6, 0);
   const canRegisterLead = Boolean(phone && onCreateSalesLeadItem);
+
+  function resetEditSalesLeadForm() {
+    setEditingSalesLeadItemId(null);
+    setEditLeadProductType("");
+    setEditLeadPackageName("");
+    setEditLeadPrice("");
+    setEditLeadQuantity("1");
+    setEditLeadStatus(salesLeadStatus || "new_lead");
+    setEditLeadFormError("");
+  }
+
+  function startEditingSalesLeadItem(item: SalesLeadItem) {
+    setEditingSalesLeadItemId(item.id);
+    setExpandedLeadRegistrationMessageId(null);
+    setEditLeadProductType(item.product_type);
+    setEditLeadPackageName(item.package_name);
+    setEditLeadPrice(String(item.price));
+    setEditLeadQuantity(String(item.quantity));
+    setEditLeadStatus(item.lead_status || salesLeadStatus || "new_lead");
+    setEditLeadFormError("");
+  }
 
   async function handleCreateSalesLead() {
     if (!onCreateSalesLeadItem || !expandedLeadRegistrationMessageId) {
@@ -522,7 +654,122 @@ export function ChatWindow(props: ChatWindowProps) {
 
   useEffect(() => {
     setLeadStatus(salesLeadStatus || "new_lead");
+    setEditLeadStatus((current) => (editingSalesLeadItemId ? current : salesLeadStatus || "new_lead"));
   }, [salesLeadStatus]);
+
+  useEffect(() => {
+    if (!editingSalesLeadItemId || typeof window === "undefined") {
+      return;
+    }
+
+    const editorElement = activeSalesLeadEditorRef.current;
+    if (!editorElement) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      editorElement.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+        inline: "nearest"
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [editingSalesLeadItemId]);
+
+  async function handleUpdateSalesLead(itemId: string) {
+    if (!onUpdateSalesLeadItem) {
+      return;
+    }
+
+    const productType = editLeadProductType.trim();
+    const packageName = editLeadPackageName.trim();
+    const price = Number(editLeadPrice);
+    const quantity = Number(editLeadQuantity);
+    const status = editLeadStatus;
+
+    if (!productType || !packageName) {
+      setEditLeadFormError("Product type and package are required.");
+      return;
+    }
+
+    if (!Number.isFinite(price) || price < 0) {
+      setEditLeadFormError("Price must be a valid non-negative number.");
+      return;
+    }
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setEditLeadFormError("Quantity must be a whole number greater than 0.");
+      return;
+    }
+
+    setEditLeadFormError("");
+
+    try {
+      await onUpdateSalesLeadItem({
+        itemId,
+        status,
+        productType,
+        packageName,
+        price,
+        quantity
+      });
+      resetEditSalesLeadForm();
+    } catch (error) {
+      setEditLeadFormError(error instanceof Error ? error.message : "Failed to update sales lead details.");
+    }
+  }
+
+  function renderSalesLeadEditForm(itemId: string) {
+    return (
+      <div className="mt-2 rounded-lg border border-whatsapp-line bg-white p-3 shadow-soft">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block sm:col-span-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">Lead status</span>
+            <select className="input-glass mt-1" onChange={(event) => setEditLeadStatus(event.target.value as CustomerStatus)} value={editLeadStatus}>
+              {CUSTOMER_STATUSES.map((itemStatus) => (
+                <option key={itemStatus} value={itemStatus}>
+                  {CUSTOMER_STATUS_LABELS[itemStatus]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">Product type</span>
+            <select className="input-glass mt-1" onChange={(event) => setEditLeadProductType(event.target.value)} value={editLeadProductType}>
+              <option value="">Select product type</option>
+              <option value="Mobile">Mobile</option>
+              <option value="Fixed">Fixed</option>
+              <option value="Solution">Solution</option>
+              <option value="Managed Services">Managed Services</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">Package</span>
+            <input className="input-glass mt-1" onChange={(event) => setEditLeadPackageName(event.target.value)} value={editLeadPackageName} />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">Price</span>
+            <input className="input-glass mt-1" min="0" onChange={(event) => setEditLeadPrice(event.target.value)} step="0.01" type="number" value={editLeadPrice} />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">Quantity</span>
+            <input className="input-glass mt-1" min="1" onChange={(event) => setEditLeadQuantity(event.target.value)} step="1" type="number" value={editLeadQuantity} />
+          </label>
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <button className="primary-button" disabled={savingSalesLeadItem} onClick={() => void handleUpdateSalesLead(itemId)} type="button">
+            {savingSalesLeadItem ? "Saving..." : "Save changes"}
+          </button>
+          <button className="secondary-button" onClick={resetEditSalesLeadForm} type="button">
+            Cancel
+          </button>
+        </div>
+        {editLeadFormError ? <p className="mt-3 text-sm text-rose-500">{editLeadFormError}</p> : null}
+      </div>
+    );
+  }
 
   function updateStickToBottom() {
     const container = listRef.current;
@@ -623,6 +870,7 @@ export function ChatWindow(props: ChatWindowProps) {
       setLeadQuantity("1");
       setLeadStatus(salesLeadStatus || "new_lead");
       setLeadFormError("");
+      resetEditSalesLeadForm();
       setShowAllMessages(false);
       setExpandedQuickReplyMessageId(null);
       setExpandedEmojiMessageId(null);
@@ -877,6 +1125,7 @@ export function ChatWindow(props: ChatWindowProps) {
       <div className="flex flex-wrap gap-2">
         {([
           { key: "image", label: "Picture" },
+          { key: "sticker", label: "Sticker" },
           { key: "document", label: "Document" },
           { key: "location", label: "Location" }
         ] as const).map((item) => (
@@ -901,11 +1150,11 @@ export function ChatWindow(props: ChatWindowProps) {
       {attachmentTab !== "location" ? (
         <div className="mt-3 space-y-3">
           <input
-            accept={attachmentTab === "image" ? "image/*" : ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"}
-            aria-label={attachmentTab === "image" ? "Choose picture attachment" : "Choose document attachment"}
+            accept={attachmentTab === "image" ? "image/*" : attachmentTab === "sticker" ? "image/webp,.webp" : ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"}
+            aria-label={attachmentTab === "image" ? "Choose picture attachment" : attachmentTab === "sticker" ? "Choose sticker attachment" : "Choose document attachment"}
             className="hidden"
             onChange={handleFileSelection}
-            ref={attachmentTab === "image" ? imageInputRef : documentInputRef}
+            ref={attachmentTab === "image" ? imageInputRef : attachmentTab === "sticker" ? stickerInputRef : documentInputRef}
             type="file"
           />
           <div className="rounded-[22px] border border-whatsapp-line bg-whatsapp-canvas p-3 text-sm text-whatsapp-muted">
@@ -915,11 +1164,11 @@ export function ChatWindow(props: ChatWindowProps) {
             <button
               className="secondary-button"
               onClick={() =>
-                (attachmentTab === "image" ? imageInputRef.current : documentInputRef.current)?.click()
+                (attachmentTab === "image" ? imageInputRef.current : attachmentTab === "sticker" ? stickerInputRef.current : documentInputRef.current)?.click()
               }
               type="button"
             >
-              Choose {attachmentTab === "image" ? "picture" : "document"}
+              Choose {attachmentTab === "image" ? "picture" : attachmentTab === "sticker" ? "sticker" : "document"}
             </button>
             {selectedFile ? (
               <button
@@ -937,11 +1186,11 @@ export function ChatWindow(props: ChatWindowProps) {
           <input
             className="input-glass"
             onChange={(event) => setAttachmentCaption(event.target.value)}
-            placeholder="Optional caption..."
+            placeholder={attachmentTab === "sticker" ? "Optional note for CRM preview..." : "Optional caption..."}
             value={attachmentCaption}
           />
           <button className="primary-button" disabled={sending} onClick={handleSendSelectedAttachment} type="button">
-            {sending ? "Sending..." : `Send ${attachmentTab === "image" ? "picture" : "document"}`}
+            {sending ? "Sending..." : `Send ${attachmentTab === "image" ? "picture" : attachmentTab === "sticker" ? "sticker" : "document"}`}
           </button>
         </div>
       ) : (
@@ -1101,118 +1350,193 @@ export function ChatWindow(props: ChatWindowProps) {
               </div>
             ) : null}
 
-            {visibleMessages.map((item) => {
+            {visibleMessages.map((item, index) => {
               const renderableText = getRenderableMessageText(item);
               const canDeleteMessage = Boolean(onDeleteMessage) && !item.id.startsWith("temp-");
               const isDeletingMessage = deletingMessageId === item.id;
               const showIncomingActions = item.direction === "incoming" && quickReplies.length > 0;
               const linkedSalesLeadItems = salesLeadItems.filter((salesItem) => salesItem.message_id === item.id);
               const hasLinkedSalesLead = linkedSalesLeadItems.length > 0;
-              const linkedLeadStatus = salesLeadStatus || "new_lead";
+              const linkedLeadStatus = linkedSalesLeadItems[0]?.lead_status || salesLeadStatus || "new_lead";
+              const activeEditingLinkedItem = linkedSalesLeadItems.find((salesItem) => salesItem.id === editingSalesLeadItemId) || null;
+              const previousItem = visibleMessages[index - 1];
+              const showDateIndicator = !previousItem || getMessageDayKey(previousItem.created_at) !== getMessageDayKey(item.created_at);
 
               return (
-              <div
-                key={item.id}
-                className={`flex flex-col ${item.direction === "outgoing" ? "items-end" : "items-start"}`}
-              >
-                <div
-                  className={`max-w-[92%] overflow-hidden px-3 py-2 shadow-soft sm:max-w-[80%] sm:px-4 sm:py-3 ${
-                    item.direction === "outgoing"
-                      ? "chat-bubble-outgoing border border-[#cfe7bb] bg-whatsapp-soft text-ink/90"
-                      : "chat-bubble-incoming border border-whatsapp-line bg-white text-ink/90"
-                  }`}
-                >
-                  {hasLinkedSalesLead ? (
-                    <div className="mb-2 flex items-center gap-2">
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${getLeadStatusBadgeClasses(linkedLeadStatus)}`}
-                      >
-                        <span className="h-2 w-2 rounded-full bg-current opacity-80" />
-                        {CUSTOMER_STATUS_LABELS[linkedLeadStatus]}
-                      </span>
-                      <span className="text-[10px] font-medium text-whatsapp-muted">
-                        {linkedSalesLeadItems.length} lead{linkedSalesLeadItems.length === 1 ? "" : "s"}
+                <div key={item.id} className="space-y-2">
+                  {showDateIndicator ? (
+                    <div className="flex justify-center py-1">
+                      <span className="rounded-full border border-whatsapp-line bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-whatsapp-muted shadow-soft sm:text-[11px]">
+                        {formatMessageDateIndicator(item.created_at)}
                       </span>
                     </div>
                   ) : null}
-                  {isImageMessage(item) ? (
-                    <div className="mb-2 inline-flex max-w-[220px] flex-col overflow-hidden rounded-lg border border-whatsapp-line bg-[#f7f1ea]">
-                      <button
-                        aria-label="Open image preview"
-                        className="icon-hover-trigger group relative block w-full text-left"
-                        onClick={() =>
-                          setMediaLightbox({
-                            src: item.media_data_url || "",
-                            alt: item.media_file_name || "Incoming image",
-                            downloadName: getMediaDownloadName(item, "picture")
-                          })
-                        }
-                        type="button"
-                      >
-                        <img
-                          alt={item.media_file_name || "Incoming image"}
-                          className="block h-auto max-h-[180px] w-full object-cover transition duration-200 group-hover:scale-[1.01]"
-                          loading="lazy"
-                          src={item.media_data_url || undefined}
+
+                  <div
+                    className={`flex flex-col ${item.direction === "outgoing" ? "items-end" : "items-start"}`}
+                  >
+                    <div
+                      className={`max-w-[92%] overflow-hidden px-3 py-2 shadow-soft sm:max-w-[80%] sm:px-4 sm:py-3 ${
+                        item.direction === "outgoing"
+                          ? "chat-bubble-outgoing border border-[#cfe7bb] bg-whatsapp-soft text-ink/90"
+                          : "chat-bubble-incoming border border-whatsapp-line bg-white text-ink/90"
+                      }`}
+                    >
+                      {hasLinkedSalesLead ? (
+                        <div className="mb-2 flex items-center gap-2">
+                          {onUpdateSalesLeadItem ? (
+                            <button
+                              aria-label={activeEditingLinkedItem ? "Hide linked sales lead editor" : "Edit linked sales lead"}
+                              className={`icon-hover-trigger inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] transition hover:brightness-[0.98] ${getLeadStatusBadgeClasses(linkedLeadStatus)}`}
+                              onClick={() => {
+                                if (activeEditingLinkedItem) {
+                                  resetEditSalesLeadForm();
+                                  return;
+                                }
+
+                                startEditingSalesLeadItem(linkedSalesLeadItems[0]);
+                              }}
+                              type="button"
+                            >
+                              <span className="h-2 w-2 rounded-full bg-current opacity-80" />
+                              {CUSTOMER_STATUS_LABELS[linkedLeadStatus]}
+                              <svg aria-hidden="true" fill="none" height="11" viewBox="0 0 24 24" width="11">
+                                <path d="M4 20h4l10-10-4-4L4 16v4Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                                <path d="m12.5 7.5 4 4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                              </svg>
+                              <span className="icon-hover-label">{activeEditingLinkedItem ? "Hide lead editor" : "Edit lead"}</span>
+                            </button>
+                          ) : (
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${getLeadStatusBadgeClasses(linkedLeadStatus)}`}
+                            >
+                              <span className="h-2 w-2 rounded-full bg-current opacity-80" />
+                              {CUSTOMER_STATUS_LABELS[linkedLeadStatus]}
+                            </span>
+                          )}
+                          <span className="text-[10px] font-medium text-whatsapp-muted">
+                            {linkedSalesLeadItems.length} lead{linkedSalesLeadItems.length === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                      ) : null}
+                      {isImageMessage(item) ? (
+                        <div className="mb-2 inline-flex max-w-[220px] flex-col overflow-hidden rounded-lg border border-whatsapp-line bg-[#f7f1ea]">
+                          <button
+                            aria-label="Open image preview"
+                            className="icon-hover-trigger group relative block w-full text-left"
+                            onClick={() =>
+                              setMediaLightbox({
+                                src: item.media_data_url || "",
+                                alt: item.media_file_name || "Incoming image",
+                                downloadName: getMediaDownloadName(item, "picture")
+                              })
+                            }
+                            type="button"
+                          >
+                            <img
+                              alt={item.media_file_name || "Incoming image"}
+                              className="block h-auto max-h-[180px] w-full object-cover transition duration-200 group-hover:scale-[1.01]"
+                              loading="lazy"
+                              src={item.media_data_url || undefined}
+                            />
+                            <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 py-2 text-xs font-medium text-white opacity-0 transition group-hover:opacity-100">
+                              Click to enlarge
+                            </span>
+                            <span className="icon-hover-label">Open image preview</span>
+                          </button>
+                          <div className="flex items-center justify-end border-t border-whatsapp-line bg-white px-2 py-2">
+                            <a
+                              aria-label="Save picture"
+                              className="icon-hover-trigger flex h-8 w-8 items-center justify-center rounded-full text-whatsapp-muted transition hover:bg-whatsapp-soft hover:text-whatsapp-deep"
+                              download={getMediaDownloadName(item, "picture")}
+                              href={item.media_data_url || undefined}
+                            >
+                              <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                                <path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v1a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                              </svg>
+                              <span className="icon-hover-label">Save picture</span>
+                            </a>
+                          </div>
+                        </div>
+                      ) : null}
+                      {isStickerMessage(item) ? (
+                        <IncomingStickerCard
+                          message={item}
+                          onOpenPreview={(message) =>
+                            setMediaLightbox({
+                              src: message.media_data_url || "",
+                              alt: message.media_file_name || "Sticker",
+                              downloadName: getMediaDownloadName(message, "sticker")
+                            })
+                          }
                         />
-                        <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 py-2 text-xs font-medium text-white opacity-0 transition group-hover:opacity-100">
-                          Click to enlarge
-                        </span>
-                        <span className="icon-hover-label">Open image preview</span>
-                      </button>
-                      <div className="flex items-center justify-end border-t border-whatsapp-line bg-white px-2 py-2">
-                        <a
-                          aria-label="Save picture"
-                          className="icon-hover-trigger flex h-8 w-8 items-center justify-center rounded-full text-whatsapp-muted transition hover:bg-whatsapp-soft hover:text-whatsapp-deep"
-                          download={getMediaDownloadName(item, "picture")}
-                          href={item.media_data_url || undefined}
+                      ) : null}
+                      {isVideoMessage(item) ? <IncomingVideoCard message={item} /> : null}
+                      {isDocumentMessage(item) ? <IncomingDocumentCard message={item} /> : null}
+                      {renderableText ? (
+                        <p className="whitespace-pre-wrap break-words text-[13px] leading-5 sm:text-sm sm:leading-6">{renderableText}</p>
+                      ) : null}
+                      <p
+                        className={`mt-1.5 text-right text-[10px] sm:mt-2 sm:text-[11px] ${
+                          item.direction === "outgoing" ? "text-ink/65" : "text-whatsapp-muted"
+                        }`}
+                      >
+                        {item.direction === "outgoing"
+                          ? `${formatTime(item.created_at)} | ${formatStatus(item)}`
+                          : formatTime(item.created_at)}
+                      </p>
+                    </div>
+
+                    {activeEditingLinkedItem ? (
+                      <div className="mt-2 w-full max-w-[92%] sm:max-w-[80%]" ref={activeSalesLeadEditorRef}>
+                        {linkedSalesLeadItems.length > 1 ? (
+                          <div className="mb-2 flex flex-wrap gap-2">
+                            {linkedSalesLeadItems.map((salesItem, index) => {
+                              const isActiveItem = salesItem.id === activeEditingLinkedItem.id;
+
+                              return (
+                                <button
+                                  key={salesItem.id}
+                                  className={`rounded-full border px-3 py-1 text-[11px] font-medium transition ${
+                                    isActiveItem
+                                      ? `${getLeadStatusBadgeClasses(salesItem.lead_status || linkedLeadStatus)}`
+                                      : "border-whatsapp-line bg-white text-whatsapp-muted hover:border-whatsapp-dark/30 hover:text-whatsapp-deep"
+                                  }`}
+                                  onClick={() => startEditingSalesLeadItem(salesItem)}
+                                  type="button"
+                                >
+                                  {salesItem.package_name || `Lead ${index + 1}`}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                        {renderSalesLeadEditForm(activeEditingLinkedItem.id)}
+                      </div>
+                    ) : null}
+
+                    {canDeleteMessage && !showIncomingActions ? (
+                      <div className="mt-2 flex max-w-[92%] items-center gap-2 overflow-hidden sm:max-w-[80%]">
+                        <button
+                          aria-label={isDeletingMessage ? "Deleting message" : "Delete message"}
+                          className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-55"
+                          disabled={isDeletingMessage}
+                          onClick={() => handleDeleteMessageClick(item)}
+                          type="button"
                         >
                           <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
-                            <path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v1a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                            <path d="M4 7h16" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                            <path d="M10 11v6M14 11v6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                            <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                            <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
                           </svg>
-                          <span className="icon-hover-label">Save picture</span>
-                        </a>
+                          <span className="icon-hover-label">{isDeletingMessage ? "Deleting..." : "Delete message"}</span>
+                        </button>
                       </div>
-                    </div>
-                  ) : null}
-                  {isVideoMessage(item) ? <IncomingVideoCard message={item} /> : null}
-                  {isDocumentMessage(item) ? <IncomingDocumentCard message={item} /> : null}
-                  {renderableText ? (
-                    <p className="whitespace-pre-wrap break-words text-[13px] leading-5 sm:text-sm sm:leading-6">{renderableText}</p>
-                  ) : null}
-                  <p
-                    className={`mt-1.5 text-right text-[10px] sm:mt-2 sm:text-[11px] ${
-                      item.direction === "outgoing" ? "text-ink/65" : "text-whatsapp-muted"
-                    }`}
-                  >
-                    {item.direction === "outgoing"
-                      ? `${formatTime(item.created_at)} | ${formatStatus(item)}`
-                      : formatTime(item.created_at)}
-                  </p>
-                </div>
+                    ) : null}
 
-                {canDeleteMessage && !showIncomingActions ? (
-                  <div className="mt-2 flex max-w-[92%] items-center gap-2 overflow-hidden sm:max-w-[80%]">
-                    <button
-                      aria-label={isDeletingMessage ? "Deleting message" : "Delete message"}
-                      className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-55"
-                      disabled={isDeletingMessage}
-                      onClick={() => handleDeleteMessageClick(item)}
-                      type="button"
-                    >
-                      <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
-                        <path d="M4 7h16" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-                        <path d="M10 11v6M14 11v6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-                        <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-                        <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-                      </svg>
-                      <span className="icon-hover-label">{isDeletingMessage ? "Deleting..." : "Delete message"}</span>
-                    </button>
-                  </div>
-                ) : null}
-
-                {showIncomingActions ? (
-                  <div className="mt-2 flex max-w-[92%] items-center gap-2 overflow-hidden sm:max-w-[80%]">
+                    {showIncomingActions ? (
+                      <div className="mt-2 flex max-w-[92%] items-center gap-2 overflow-hidden sm:max-w-[80%]">
                     <button
                       aria-label={expandedQuickReplyMessageId === item.id ? "Hide quick replies" : "Show quick replies"}
                       className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-whatsapp-deep disabled:cursor-not-allowed disabled:opacity-55"
@@ -1342,11 +1666,11 @@ export function ChatWindow(props: ChatWindowProps) {
                         ))}
                       </div>
                     ) : null}
-                  </div>
-                ) : null}
+                      </div>
+                    ) : null}
 
-                {item.direction === "incoming" && expandedAttachmentMessageId === item.id ? (
-                  <div className="mt-2 w-full max-w-[92%] rounded-lg border border-whatsapp-line bg-white p-3 shadow-soft sm:max-w-[80%]">
+                    {item.direction === "incoming" && expandedAttachmentMessageId === item.id ? (
+                      <div className="mt-2 w-full max-w-[92%] rounded-lg border border-whatsapp-line bg-white p-3 shadow-soft sm:max-w-[80%]">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-sm font-semibold text-ink">Attachments</p>
                       <button
@@ -1472,6 +1796,7 @@ export function ChatWindow(props: ChatWindowProps) {
                         <div className="mt-3 space-y-2">
                           {salesLeadItems.map((salesItem) => {
                             const total = salesItem.price * salesItem.quantity;
+                            const itemLeadStatus = salesItem.lead_status || salesLeadStatus || "new_lead";
 
                             return (
                               <div key={salesItem.id} className="rounded-xl border border-whatsapp-line bg-whatsapp-canvas p-3">
@@ -1480,11 +1805,11 @@ export function ChatWindow(props: ChatWindowProps) {
                                     <p className="text-sm font-semibold text-ink">{salesItem.product_type}</p>
                                     <p className="mt-1 text-xs text-whatsapp-muted">{salesItem.package_name}</p>
                                   </div>
-                                  {salesLeadStatus ? (
-                                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] shadow-soft ${getLeadStatusBadgeClasses(salesLeadStatus)}`}>
-                                      {CUSTOMER_STATUS_LABELS[salesLeadStatus]}
+                                  <div className="flex items-center gap-2">
+                                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] shadow-soft ${getLeadStatusBadgeClasses(itemLeadStatus)}`}>
+                                      {CUSTOMER_STATUS_LABELS[itemLeadStatus]}
                                     </span>
-                                  ) : null}
+                                  </div>
                                 </div>
                                 <div className="mt-3 grid gap-2 text-xs text-whatsapp-muted sm:grid-cols-3">
                                   <div className="rounded-lg border border-whatsapp-line bg-white px-3 py-2">
@@ -1510,6 +1835,7 @@ export function ChatWindow(props: ChatWindowProps) {
                   </div>
                 ) : null}
               </div>
+            </div>
               );
             })}
           </>
@@ -1563,7 +1889,7 @@ export function ChatWindow(props: ChatWindowProps) {
               </div>
             </div>
             <input
-              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+              accept="image/*,image/webp,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
               aria-label="Choose quick reply attachment"
               className="hidden"
               onChange={(event) => void handleQuickReplyAttachmentSelection(event)}
@@ -1817,7 +2143,7 @@ export function ChatWindow(props: ChatWindowProps) {
                 download={mediaLightbox.downloadName}
                 href={mediaLightbox.src}
               >
-                Save picture
+                Save media
               </a>
               <button
                 className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-whatsapp-deep shadow-soft transition hover:bg-whatsapp-soft"

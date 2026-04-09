@@ -11,6 +11,28 @@ function normalizePhone(rawPhone) {
   return String(rawPhone || "").replace(/\D/g, "");
 }
 
+function normalizeCustomerPhone(rawPhone) {
+  const digits = normalizePhone(rawPhone);
+
+  if (!digits) {
+    return null;
+  }
+
+  if (digits.startsWith("60")) {
+    return digits;
+  }
+
+  if (digits.startsWith("6")) {
+    return digits;
+  }
+
+  if (digits.startsWith("0")) {
+    return `6${digits}`;
+  }
+
+  return null;
+}
+
 function getIdentifierMeta(value) {
   const rawValue = String(value || "").trim();
 
@@ -59,11 +81,11 @@ async function resolvePhoneFromIdentifier(value) {
   }
 
   const reverseMappedPhone = await readMappingFile(`lid-mapping-${digits}_reverse.json`);
-  return normalizePhone(reverseMappedPhone || digits) || null;
+  return normalizeCustomerPhone(reverseMappedPhone || digits);
 }
 
 async function resolveLidFromPhone(value) {
-  const digits = extractDigits(value);
+  const digits = normalizeCustomerPhone(value);
 
   if (!digits) {
     return null;
@@ -80,7 +102,7 @@ async function resolveIdentifierCandidate(value) {
   }
 
   const mappedPhone = await readMappingFile(`lid-mapping-${meta.digits}_reverse.json`);
-  const canonicalPhone = normalizePhone(mappedPhone || meta.digits) || null;
+  const canonicalPhone = normalizeCustomerPhone(mappedPhone || meta.digits);
 
   return {
     ...meta,
@@ -151,6 +173,7 @@ async function getPhoneLookupValues(value, chatJid) {
 
 module.exports = {
   normalizePhone,
+  normalizeCustomerPhone,
   extractDigits,
   resolvePhoneFromIdentifier,
   resolveLidFromPhone,

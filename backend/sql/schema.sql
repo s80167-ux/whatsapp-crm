@@ -67,3 +67,11 @@ create table if not exists public.whatsapp_profiles (
 );
 
 alter table public.whatsapp_profiles disable row level security;
+
+create table if not exists public.active_sessions (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  session_id text not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.active_sessions disable row level security;

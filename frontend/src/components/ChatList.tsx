@@ -1,6 +1,25 @@
 import { useMemo, useState } from "react";
-import type { Conversation } from "../lib/api";
-import { getDisplayName, getDisplayPhone, getResolvedPhone, formatPhoneDisplay } from "../lib/display";
+import { CUSTOMER_STATUS_LABELS, type Conversation, type CustomerStatus } from "../lib/api";
+import { getConversationIdentifier, getDisplayName, getDisplayPhone, getResolvedPhone, formatPhoneDisplay } from "../lib/display";
+
+const STATUS_ORDER: CustomerStatus[] = ["new_lead", "interested", "processing", "closed_won", "closed_lost"];
+
+function getStatusDotClass(status: CustomerStatus) {
+  switch (status) {
+    case "new_lead":
+      return "chat-status-dot-new-lead";
+    case "interested":
+      return "chat-status-dot-interested";
+    case "processing":
+      return "chat-status-dot-processing";
+    case "closed_won":
+      return "chat-status-dot-closed-won";
+    case "closed_lost":
+      return "chat-status-dot-closed-lost";
+    default:
+      return "";
+  }
+}
 
 type ChatListProps = {
   activeView: "inbox" | "pipeline" | "broadcast";
@@ -12,7 +31,7 @@ type ChatListProps = {
   loading: boolean;
   refreshing: boolean;
   whatsAppConnected: boolean;
-  onSelect: (phone: string) => void;
+  onSelect: (conversationId: string) => void;
 };
 
 function formatTimestamp(value: string) {
@@ -43,8 +62,10 @@ export function ChatList({
     return conversations
       .filter((conversation) => {
         const resolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid) || "";
+        const conversationId = getConversationIdentifier(conversation.phone, conversation.chatJid) || "";
         const matchesQuery =
           resolvedPhone.toLowerCase().includes(query.toLowerCase()) ||
+          conversationId.toLowerCase().includes(query.toLowerCase()) ||
           getDisplayName(conversation.contactName, resolvedPhone).toLowerCase().includes(query.toLowerCase()) ||
           conversation.lastMessage.toLowerCase().includes(query.toLowerCase());
 
@@ -145,9 +166,11 @@ export function ChatList({
         <div className="flex flex-col space-y-2 pr-1">
           {filteredConversations.map((conversation) => {
             const resolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid);
+            const conversationId = getConversationIdentifier(conversation.phone, conversation.chatJid);
             const displayPhone = getDisplayPhone(conversation.phone, conversation.chatJid);
-            const active = selectedPhone === resolvedPhone;
-            const conversationKey = conversation.chatJid || resolvedPhone || conversation.timestamp;
+            const activeStatuses = STATUS_ORDER.filter((status) => (conversation.status_counts?.[status] ?? 0) > 0);
+            const active = selectedPhone === conversationId;
+            const conversationKey = conversation.chatJid || conversationId || conversation.timestamp;
             const deleting = deletingConversationKey === conversationKey;
 
             return (
@@ -158,10 +181,10 @@ export function ChatList({
                       ? "border-transparent bg-[#e9edef] shadow-none"
                       : "border-transparent bg-white hover:bg-[#f5f6f6] shadow-none"
                   }`}
-                  disabled={!resolvedPhone || deleting}
+                  disabled={!conversationId || deleting}
                   onClick={() => {
-                    if (resolvedPhone) {
-                      onSelect(resolvedPhone);
+                    if (conversationId) {
+                      onSelect(conversationId);
                     }
                   }}
                   type="button"
@@ -173,28 +196,18 @@ export function ChatList({
                           {getDisplayName(conversation.contactName, displayPhone)}
                         </p>
                         <div className="flex items-center gap-2">
-                          {conversation.status && (
-                            <div
-                              className={`icon-hover-trigger chat-status-dot h-3 w-3 shrink-0 shadow-sm transition-transform hover:scale-110 active:scale-95 ${
-                                conversation.status === "new_lead"
-                                  ? "chat-status-dot-new-lead"
-                                  : conversation.status === "interested"
-                                  ? "chat-status-dot-interested"
-                                  : conversation.status === "processing"
-                                  ? "chat-status-dot-processing"
-                                  : conversation.status === "closed_won"
-                                  ? "chat-status-dot-closed-won"
-                                  : "chat-status-dot-closed-lost"
-                              }`}
-                            >
-                              <span className="icon-hover-label">
-                                {`Status: ${
-                                  conversation.status.charAt(0).toUpperCase() +
-                                  conversation.status.slice(1).replace(/_/g, " ")
-                                }`}
-                              </span>
+                          {activeStatuses.length ? (
+                            <div className="flex items-center gap-1">
+                              {activeStatuses.map((status) => (
+                                <div
+                                  key={status}
+                                  className={`icon-hover-trigger chat-status-dot h-3 w-3 shrink-0 shadow-sm transition-transform hover:scale-110 active:scale-95 ${getStatusDotClass(status)}`}
+                                >
+                                  <span className="icon-hover-label">{`${CUSTOMER_STATUS_LABELS[status]}: ${conversation.status_counts?.[status] ?? 0}`}</span>
+                                </div>
+                              ))}
                             </div>
-                          )}
+                          ) : null}
                           {conversation.unreadCount && conversation.unreadCount > 0 ? (
                             <span
                               className="icon-hover-trigger chat-unread-badge flex h-5 min-w-[20px] items-center justify-center bg-blue-500 px-1 text-[10px] font-bold text-white shadow-sm"
@@ -208,12 +221,12 @@ export function ChatList({
                           <button
                             aria-label={deleting ? "Deleting chat" : "Delete chat"}
                             className="icon-hover-trigger flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-whatsapp-muted transition hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
-                            disabled={deleting || !resolvedPhone}
+                            disabled={deleting || !conversationId}
                             onClick={(event) => {
                               event.preventDefault();
                               event.stopPropagation();
 
-                              if (!resolvedPhone) {
+                              if (!conversationId) {
                                 return;
                               }
 
@@ -221,7 +234,7 @@ export function ChatList({
                                 return;
                               }
 
-                              onDeleteConversation(resolvedPhone, conversation.chatJid);
+                              onDeleteConversation(conversationId, conversation.chatJid);
                             }}
                             type="button"
                           >

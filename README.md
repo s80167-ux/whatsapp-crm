@@ -96,12 +96,16 @@ Optional:
 
 After Railway gives you a public backend URL, set it in the Vercel frontend as `VITE_API_URL`, then redeploy the frontend.
 
+Set `VITE_PUBLIC_APP_URL` to your public frontend domain so Supabase verification emails and other auth redirects always point at the live app, even if the action is triggered from localhost during development.
+
 Example:
 
 ```bash
 cd frontend
 npx vercel env add VITE_API_URL production
+npx vercel env add VITE_PUBLIC_APP_URL production
 npx vercel --prod
 ```
 
-Use your Railway backend URL as the value, for example `https://your-backend.up.railway.app`.
+Use your Railway backend URL as the `VITE_API_URL` value, for example `https://your-backend.up.railway.app`.
+Use your public frontend URL as the `VITE_PUBLIC_APP_URL` value, for example `https://rezekicrm.vercel.app`.

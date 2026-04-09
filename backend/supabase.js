@@ -1,5 +1,5 @@
 const { createClient } = require("@supabase/supabase-js");
-const { getPhoneLookupValues, resolveWhatsAppPhone } = require("./wa-identifiers");
+const { getPhoneLookupValues, normalizePhone, resolveWhatsAppPhone } = require("./wa-identifiers");
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey =
@@ -178,6 +178,23 @@ function throwIfSalesItemsSchemaError(error) {
   }
 }
 
+function activeSessionsSchemaError(error) {
+  const wrappedError = new Error(
+    "Active dashboard sessions are not configured. Run backend/sql/2026-04-10_add_active_sessions.sql in Supabase before using single-session login."
+  );
+  wrappedError.status = 500;
+  wrappedError.cause = error;
+  return wrappedError;
+}
+
+function throwIfActiveSessionsSchemaError(error) {
+  const errorMessage = String(error?.message || "");
+
+  if (error?.code === "42P01" || errorMessage.includes("active_sessions")) {
+    throw activeSessionsSchemaError(error);
+  }
+}
+
 function hasCustomerChanges(existingCustomer, nextCustomer) {
   return Object.entries(nextCustomer).some(([key, value]) => {
     if (key === "updated_at") {
@@ -186,6 +203,22 @@ function hasCustomerChanges(existingCustomer, nextCustomer) {
 
     return existingCustomer?.[key] !== value;
   });
+}
+
+function createEmptyStatusCounts() {
+  return {
+    new_lead: 0,
+    interested: 0,
+    processing: 0,
+    closed_won: 0,
+    closed_lost: 0
+  };
+}
+
+function incrementStatusCount(statusCounts, status) {
+  if (Object.prototype.hasOwnProperty.call(statusCounts, status)) {
+    statusCounts[status] += 1;
+  }
 }
 
 async function findExistingMessage({ owner_user_id, phone, chat_jid, wa_message_id, message, direction, created_at }) {
@@ -303,6 +336,88 @@ async function findExistingCustomer({ owner_user_id, phone, chat_jid }) {
   }
 
   return existing.data || null;
+}
+
+async function findExistingCustomerByExactPhone({ owner_user_id, phone }) {
+  const normalizedPhone = String(phone || "").trim();
+
+  if (!normalizedPhone) {
+    return null;
+  }
+
+  const existing = await supabase
+    .from("customers")
+    .select("*")
+    .eq("owner_user_id", owner_user_id)
+    .eq("phone", normalizedPhone)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  throwIfTenantSchemaError(existing.error, "customers.owner_user_id");
+
+  if (existing.error) {
+    throw existing.error;
+  }
+
+  return existing.data || null;
+}
+
+function mergeCustomerWritePayload({ primaryCustomer, secondaryCustomer, nextCustomer, chatJid }) {
+  const mergedPhone = shouldPreserveExistingPhone(primaryCustomer?.phone, nextCustomer.phone, chatJid)
+    ? primaryCustomer.phone
+    : nextCustomer.phone;
+
+  return {
+    ...nextCustomer,
+    phone: mergedPhone,
+    chat_jid:
+      nextCustomer.chat_jid !== undefined
+        ? nextCustomer.chat_jid
+        : primaryCustomer?.chat_jid || secondaryCustomer?.chat_jid || null,
+    contact_name:
+      nextCustomer.contact_name !== undefined
+        ? nextCustomer.contact_name
+        : primaryCustomer?.contact_name || secondaryCustomer?.contact_name || null,
+    status:
+      nextCustomer.status !== undefined
+        ? nextCustomer.status
+        : primaryCustomer?.status || secondaryCustomer?.status || "new_lead",
+    notes:
+      nextCustomer.notes !== undefined
+        ? nextCustomer.notes
+        : primaryCustomer?.notes || secondaryCustomer?.notes || "",
+    profile_picture_url:
+      nextCustomer.profile_picture_url !== undefined
+        ? nextCustomer.profile_picture_url
+        : primaryCustomer?.profile_picture_url || secondaryCustomer?.profile_picture_url || null,
+    about:
+      nextCustomer.about !== undefined
+        ? nextCustomer.about
+        : primaryCustomer?.about || secondaryCustomer?.about || null,
+    unread_count:
+      nextCustomer.unread_count !== undefined
+        ? nextCustomer.unread_count
+        : Math.max(primaryCustomer?.unread_count || 0, secondaryCustomer?.unread_count || 0)
+  };
+}
+
+async function deleteCustomerById({ owner_user_id, customerId }) {
+  if (!customerId) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from("customers")
+    .delete()
+    .eq("owner_user_id", owner_user_id)
+    .eq("id", customerId);
+
+  throwIfTenantSchemaError(error, "customers.owner_user_id");
+
+  if (error) {
+    throw error;
+  }
 }
 
 async function saveMessage({ owner_user_id, phone, chat_jid, wa_message_id, message, direction, send_status, created_at, media_type, media_mime_type, media_file_name, media_data_url }) {
@@ -427,15 +542,47 @@ async function updateOutgoingMessageStatus({ owner_user_id, phone, chat_jid, wa_
   return null;
 }
 
-async function getMessagesByPhone(phone, ownerUserId) {
-  const lookupValues = await getPhoneLookupValues(phone);
-  const resolvedPhone = await resolveWhatsAppPhone(phone);
-  const { data, error } = await supabase
-    .from("messages")
-    .select("*")
-    .eq("owner_user_id", ownerUserId)
-    .in("phone", lookupValues)
-    .order("created_at", { ascending: true });
+async function getMessagesByPhone(phone, ownerUserId, chatJid) {
+  const lookupValues = await getPhoneLookupValues(phone, chatJid || null);
+  const resolvedPhone = await resolveWhatsAppPhone(phone, chatJid || null);
+  let data;
+  let error;
+
+  if (chatJid) {
+    const [byChatJid, byPhone] = await Promise.all([
+      supabase
+        .from("messages")
+        .select("*")
+        .eq("owner_user_id", ownerUserId)
+        .eq("chat_jid", chatJid)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("messages")
+        .select("*")
+        .eq("owner_user_id", ownerUserId)
+        .in("phone", lookupValues)
+        .order("created_at", { ascending: true })
+    ]);
+
+    if (isMissingColumnError(byChatJid.error, "messages.chat_jid")) {
+      data = byPhone.data;
+      error = byPhone.error;
+    } else {
+      data = Array.from(
+        new Map(
+          [...(byPhone.data || []), ...(byChatJid.data || [])].map((item) => [item.id, item])
+        ).values()
+      ).sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime());
+      error = byChatJid.error || byPhone.error;
+    }
+  } else {
+    ({ data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("owner_user_id", ownerUserId)
+      .in("phone", lookupValues)
+      .order("created_at", { ascending: true }));
+  }
 
   throwIfTenantSchemaError(error, "messages.owner_user_id");
 
@@ -488,17 +635,19 @@ async function deleteMessage({ owner_user_id, message_id }) {
 }
 
 async function getConversations(ownerUserId) {
-  let [{ data: messageRows, error: messageError }, { data: customerRows, error: customerError }] = await Promise.all([
+  let [{ data: messageRows, error: messageError }, { data: customerRows, error: customerError }, { data: salesItemsRows, error: salesItemsError }] = await Promise.all([
     supabase
       .from("messages")
       .select("phone, chat_jid, message, created_at, direction")
       .eq("owner_user_id", ownerUserId)
       .order("created_at", { ascending: false }),
-    supabase.from("customers").select("phone, chat_jid, status, contact_name, notes, unread_count, profile_picture_url").eq("owner_user_id", ownerUserId)
+    supabase.from("customers").select("phone, chat_jid, status, contact_name, notes, unread_count, profile_picture_url").eq("owner_user_id", ownerUserId),
+    supabase.from("customer_sales_items").select("lead_status, phone, chat_jid").eq("owner_user_id", ownerUserId)
   ]);
 
   throwIfTenantSchemaError(messageError, "messages.owner_user_id");
   throwIfTenantSchemaError(customerError, "customers.owner_user_id");
+  throwIfSalesItemsSchemaError(salesItemsError);
 
   if (isMissingColumnError(messageError, "messages.chat_jid")) {
     ({ data: messageRows, error: messageError } = await supabase
@@ -527,8 +676,19 @@ async function getConversations(ownerUserId) {
     console.warn("Customers lookup failed while building conversations. Falling back to default status.", customerError.message);
   }
 
+  if (salesItemsError && isMissingColumnError(salesItemsError, "customer_sales_items.lead_status")) {
+    salesItemsRows = null;
+    salesItemsError = null;
+  }
+
+  if (salesItemsError) {
+    throw salesItemsError;
+  }
+
   const customerMap = new Map();
   const customerChatJidMap = new Map();
+  const statusCountsByPhone = new Map();
+  const statusCountsByChatJid = new Map();
 
   for (const customer of customerRows || []) {
     const resolvedPhone = await resolveWhatsAppPhone(customer.phone, customer.chat_jid || null);
@@ -547,27 +707,54 @@ async function getConversations(ownerUserId) {
       });
     }
   }
+
+  for (const row of salesItemsRows || []) {
+    const resolvedPhone = await resolveWhatsAppPhone(row.phone, row.chat_jid || null);
+
+    if (resolvedPhone) {
+      const statusCounts = statusCountsByPhone.get(resolvedPhone) || createEmptyStatusCounts();
+      incrementStatusCount(statusCounts, row.lead_status);
+      statusCountsByPhone.set(resolvedPhone, statusCounts);
+    }
+
+    if (row.chat_jid) {
+      const statusCounts = statusCountsByChatJid.get(row.chat_jid) || createEmptyStatusCounts();
+      incrementStatusCount(statusCounts, row.lead_status);
+      statusCountsByChatJid.set(row.chat_jid, statusCounts);
+    }
+  }
+
   const seen = new Set();
   const conversations = [];
 
   for (const row of messageRows || []) {
     const resolvedPhone = await resolveWhatsAppPhone(row.phone, row.chat_jid || null);
     const matchedCustomer = customerMap.get(resolvedPhone) || customerChatJidMap.get(row.chat_jid) || null;
+    const conversationKey = resolvedPhone || row.chat_jid || matchedCustomer?.chat_jid || null;
 
-    if (!resolvedPhone || seen.has(resolvedPhone)) {
+    if (!conversationKey || seen.has(conversationKey)) {
       continue;
     }
 
-    seen.add(resolvedPhone);
+    seen.add(conversationKey);
+    const statusCounts =
+      statusCountsByChatJid.get(matchedCustomer?.chat_jid || row.chat_jid || "") ||
+      (resolvedPhone ? statusCountsByPhone.get(resolvedPhone) : null) ||
+      createEmptyStatusCounts();
+    const activeStatuses = Object.entries(statusCounts)
+      .filter(([, count]) => count > 0)
+      .map(([status]) => status);
+
     conversations.push({
-      phone: resolvedPhone,
+      phone: resolvedPhone || matchedCustomer?.phone || row.phone || "",
       chatJid: matchedCustomer?.chat_jid || row.chat_jid || null,
       contactName: matchedCustomer?.contact_name || null,
       profilePictureUrl: matchedCustomer?.profile_picture_url || null,
       lastMessage: row.message,
       timestamp: row.created_at,
       lastDirection: row.direction,
-      status: matchedCustomer?.status || "new_lead",
+      status: activeStatuses[0] || null,
+      status_counts: statusCounts,
       unreadCount: matchedCustomer?.unread_count || 0
     });
   }
@@ -575,16 +762,56 @@ async function getConversations(ownerUserId) {
   return conversations;
 }
 
-async function getCustomerByPhone(phone, ownerUserId) {
-  const lookupValues = await getPhoneLookupValues(phone);
-  const { data, error } = await supabase
+async function getCustomerByPhone(phone, ownerUserId, chatJid) {
+  let data = null;
+  let error = null;
+
+  if (chatJid) {
+    ({ data, error } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("owner_user_id", ownerUserId)
+      .eq("chat_jid", chatJid)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle());
+
+    throwIfTenantSchemaError(error, "customers.owner_user_id");
+
+    if (!isMissingColumnError(error, "customers.chat_jid") && (error || data)) {
+      if (error) {
+        throw error;
+      }
+
+      const resolvedPhone = await resolveWhatsAppPhone(phone, data?.chat_jid || chatJid || null);
+
+      const normalizedCustomer = normalizeCustomerRecord(
+        data || {
+          phone: resolvedPhone || phone,
+          chat_jid: chatJid,
+          contact_name: null,
+          status: "new_lead",
+          notes: ""
+        }
+      );
+
+      return {
+        ...normalizedCustomer,
+        phone: resolvedPhone || normalizedCustomer.phone || phone,
+        chat_jid: normalizedCustomer.chat_jid || chatJid || null
+      };
+    }
+  }
+
+  const lookupValues = await getPhoneLookupValues(phone, chatJid || null);
+  ({ data, error } = await supabase
     .from("customers")
     .select("*")
     .eq("owner_user_id", ownerUserId)
     .in("phone", lookupValues)
     .order("updated_at", { ascending: false })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle());
 
   throwIfTenantSchemaError(error, "customers.owner_user_id");
 
@@ -592,28 +819,68 @@ async function getCustomerByPhone(phone, ownerUserId) {
     throw error;
   }
 
-  const resolvedPhone = await resolveWhatsAppPhone(phone, data?.chat_jid || null);
+  const resolvedPhone = await resolveWhatsAppPhone(phone, data?.chat_jid || chatJid || null);
 
-  return normalizeCustomerRecord(
+  const normalizedCustomer = normalizeCustomerRecord(
     data || {
       phone: resolvedPhone || phone,
-      chat_jid: null,
+      chat_jid: chatJid || null,
       contact_name: null,
       status: "new_lead",
       notes: ""
     }
   );
+
+  return {
+    ...normalizedCustomer,
+    phone: resolvedPhone || normalizedCustomer.phone || phone,
+    chat_jid: normalizedCustomer.chat_jid || chatJid || null
+  };
 }
 
-async function getCustomerInsights(phone, ownerUserId) {
-  const customer = await getCustomerByPhone(phone, ownerUserId);
-  const lookupValues = await getPhoneLookupValues(phone, customer?.chat_jid || null);
-  const { data: messages, error } = await supabase
-    .from("messages")
-    .select("direction, created_at, message")
-    .eq("owner_user_id", ownerUserId)
-    .in("phone", lookupValues)
-    .order("created_at", { ascending: false });
+async function getCustomerInsights(phone, ownerUserId, chatJid) {
+  const customer = await getCustomerByPhone(phone, ownerUserId, chatJid);
+  const scopedChatJid = customer?.chat_jid || chatJid || null;
+  const lookupValues = await getPhoneLookupValues(phone, scopedChatJid);
+  const canonicalPhone = await resolveWhatsAppPhone(phone, scopedChatJid);
+  let messages;
+  let error;
+
+  if (scopedChatJid) {
+    const [byChatJid, byPhone] = await Promise.all([
+      supabase
+        .from("messages")
+        .select("id, direction, created_at, message")
+        .eq("owner_user_id", ownerUserId)
+        .eq("chat_jid", scopedChatJid)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("messages")
+        .select("id, direction, created_at, message")
+        .eq("owner_user_id", ownerUserId)
+        .in("phone", lookupValues)
+        .order("created_at", { ascending: false })
+    ]);
+
+    if (isMissingColumnError(byChatJid.error, "messages.chat_jid")) {
+      messages = byPhone.data;
+      error = byPhone.error;
+    } else {
+      messages = Array.from(
+        new Map(
+          [...(byPhone.data || []), ...(byChatJid.data || [])].map((item) => [item.id, item])
+        ).values()
+      ).sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+      error = byChatJid.error || byPhone.error;
+    }
+  } else {
+    ({ data: messages, error } = await supabase
+      .from("messages")
+      .select("id, direction, created_at, message")
+      .eq("owner_user_id", ownerUserId)
+      .in("phone", lookupValues)
+      .order("created_at", { ascending: false }));
+  }
 
   throwIfTenantSchemaError(error, "messages.owner_user_id");
 
@@ -621,15 +888,75 @@ async function getCustomerInsights(phone, ownerUserId) {
     throw error;
   }
 
+  let salesItemsStatusCounts = null;
+  let salesItemsError = null;
+
+  ({ data: salesItemsStatusCounts, error: salesItemsError } = await supabase
+    .from("customer_sales_items")
+    .select("lead_status, phone, chat_jid")
+    .eq("owner_user_id", ownerUserId));
+
+  throwIfSalesItemsSchemaError(salesItemsError);
+
+  if (salesItemsError && isMissingColumnError(salesItemsError, "customer_sales_items.lead_status")) {
+    salesItemsStatusCounts = null;
+    salesItemsError = null;
+  }
+
+  if (salesItemsError) {
+    throw salesItemsError;
+  }
+
   const rows = messages || [];
   const incomingCount = rows.filter((item) => item.direction === "incoming").length;
   const outgoingCount = rows.filter((item) => item.direction === "outgoing").length;
   const latestMessage = rows[0] || null;
+  const statusCounts = createEmptyStatusCounts();
+
+  if (salesItemsStatusCounts) {
+    for (const row of salesItemsStatusCounts) {
+      const rowResolvedPhone = await resolveWhatsAppPhone(row.phone, row.chat_jid || null);
+
+      if (!canonicalPhone || rowResolvedPhone !== canonicalPhone) {
+        continue;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(statusCounts, row.lead_status)) {
+        statusCounts[row.lead_status] += 1;
+      }
+    }
+  } else {
+    const { data: customerRows, error: customerRowsError } = await supabase
+      .from("customers")
+      .select("status, notes, phone, chat_jid")
+      .eq("owner_user_id", ownerUserId);
+
+    throwIfTenantSchemaError(customerRowsError, "customers.owner_user_id");
+
+    if (customerRowsError) {
+      throw customerRowsError;
+    }
+
+    for (const row of customerRows || []) {
+      const rowResolvedPhone = await resolveWhatsAppPhone(row.phone, row.chat_jid || null);
+
+      if (!canonicalPhone || rowResolvedPhone !== canonicalPhone) {
+        continue;
+      }
+
+      const normalizedStatus = normalizeCustomerStatus(row.status, row.notes);
+
+      if (Object.prototype.hasOwnProperty.call(statusCounts, normalizedStatus)) {
+        statusCounts[normalizedStatus] += 1;
+      }
+    }
+  }
 
   return {
     ...customer,
     profile_picture_url: customer.profile_picture_url || null,
     about: customer.about || null,
+    status_counts: statusCounts,
     total_messages: rows.length,
     incoming_count: incomingCount,
     outgoing_count: outgoingCount,
@@ -799,11 +1126,37 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
   };
   let writePayload = payload;
 
-  const existingCustomer = await findExistingCustomer({
+  let existingCustomer = await findExistingCustomer({
     owner_user_id,
     phone,
     chat_jid
   });
+
+  const phoneOwnedCustomer = await findExistingCustomerByExactPhone({
+    owner_user_id,
+    phone: writePayload.phone
+  });
+
+  if (existingCustomer?.id && phoneOwnedCustomer?.id && existingCustomer.id !== phoneOwnedCustomer.id) {
+    const primaryCustomer = phoneOwnedCustomer;
+    const secondaryCustomer = existingCustomer;
+
+    writePayload = mergeCustomerWritePayload({
+      primaryCustomer,
+      secondaryCustomer,
+      nextCustomer: writePayload,
+      chatJid: chat_jid
+    });
+
+    await deleteCustomerById({
+      owner_user_id,
+      customerId: secondaryCustomer.id
+    });
+
+    existingCustomer = primaryCustomer;
+  } else if (!existingCustomer && phoneOwnedCustomer?.id) {
+    existingCustomer = phoneOwnedCustomer;
+  }
 
   if (shouldPreserveExistingPhone(existingCustomer?.phone, writePayload.phone, chat_jid)) {
     writePayload = {
@@ -1071,12 +1424,44 @@ async function upsertWhatsAppProfile({ owner_user_id, phone, username, profile_p
 
 async function getCustomerSalesItems(phone, ownerUserId, chatJid) {
   const lookupValues = await getPhoneLookupValues(phone, chatJid || null);
-  const { data, error } = await supabase
-    .from("customer_sales_items")
-    .select("id, message_id, phone, chat_jid, product_type, package_name, price, quantity, created_at, updated_at")
-    .eq("owner_user_id", ownerUserId)
-    .in("phone", lookupValues)
-    .order("created_at", { ascending: false });
+  let data;
+  let error;
+
+  if (chatJid) {
+    const [byChatJid, byPhone] = await Promise.all([
+      supabase
+        .from("customer_sales_items")
+        .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
+        .eq("owner_user_id", ownerUserId)
+        .eq("chat_jid", chatJid)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("customer_sales_items")
+        .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
+        .eq("owner_user_id", ownerUserId)
+        .in("phone", lookupValues)
+        .order("created_at", { ascending: false })
+    ]);
+
+    if (isMissingColumnError(byChatJid.error, "customer_sales_items.chat_jid")) {
+      data = byPhone.data;
+      error = byPhone.error;
+    } else {
+      data = Array.from(
+        new Map(
+          [...(byPhone.data || []), ...(byChatJid.data || [])].map((item) => [item.id, item])
+        ).values()
+      ).sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+      error = byChatJid.error || byPhone.error;
+    }
+  } else {
+    ({ data, error } = await supabase
+      .from("customer_sales_items")
+      .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
+      .eq("owner_user_id", ownerUserId)
+      .in("phone", lookupValues)
+      .order("created_at", { ascending: false }));
+  }
 
   throwIfSalesItemsSchemaError(error);
 
@@ -1109,7 +1494,82 @@ async function getOwnedMessageRecord(messageId, ownerUserId) {
   return data || null;
 }
 
-async function createCustomerSalesItem({ owner_user_id, message_id, phone, chat_jid, product_type, package_name, price, quantity }) {
+async function getOwnedCustomerSalesItem(itemId, ownerUserId) {
+  const { data, error } = await supabase
+    .from("customer_sales_items")
+    .select("id, phone, chat_jid")
+    .eq("owner_user_id", ownerUserId)
+    .eq("id", itemId)
+    .maybeSingle();
+
+  throwIfSalesItemsSchemaError(error);
+
+  if (error) {
+    throw error;
+  }
+
+  return data || null;
+}
+
+async function salesItemBelongsToCustomerConversation({ phone, chat_jid, salesItem }) {
+  const targetChatJid = String(chat_jid || "").trim() || null;
+  const itemChatJid = String(salesItem?.chat_jid || "").trim() || null;
+
+  if (targetChatJid && itemChatJid) {
+    return targetChatJid === itemChatJid;
+  }
+
+  const [targetLookupValues, itemLookupValues] = await Promise.all([
+    getPhoneLookupValues(phone, targetChatJid),
+    getPhoneLookupValues(salesItem?.phone, itemChatJid)
+  ]);
+
+  const targetIdentifiers = new Set(targetLookupValues.map((value) => normalizePhone(value)).filter(Boolean));
+
+  for (const identifier of itemLookupValues.map((value) => normalizePhone(value)).filter(Boolean)) {
+    if (targetIdentifiers.has(identifier)) {
+      return true;
+    }
+  }
+
+  const [canonicalPhone, itemPhone] = await Promise.all([
+    resolveWhatsAppPhone(phone, targetChatJid),
+    resolveWhatsAppPhone(salesItem?.phone, itemChatJid)
+  ]);
+
+  return Boolean(canonicalPhone && itemPhone && canonicalPhone === itemPhone);
+}
+
+async function messageBelongsToCustomerConversation({ phone, chat_jid, messageRecord }) {
+  const targetChatJid = String(chat_jid || "").trim() || null;
+  const messageChatJid = String(messageRecord?.chat_jid || "").trim() || null;
+
+  if (targetChatJid && messageChatJid) {
+    return targetChatJid === messageChatJid;
+  }
+
+  const [targetLookupValues, messageLookupValues] = await Promise.all([
+    getPhoneLookupValues(phone, targetChatJid),
+    getPhoneLookupValues(messageRecord?.phone, messageChatJid)
+  ]);
+
+  const targetIdentifiers = new Set(targetLookupValues.map((value) => normalizePhone(value)).filter(Boolean));
+
+  for (const identifier of messageLookupValues.map((value) => normalizePhone(value)).filter(Boolean)) {
+    if (targetIdentifiers.has(identifier)) {
+      return true;
+    }
+  }
+
+  const [canonicalPhone, messagePhone] = await Promise.all([
+    resolveWhatsAppPhone(phone, targetChatJid),
+    resolveWhatsAppPhone(messageRecord?.phone, messageChatJid)
+  ]);
+
+  return Boolean(canonicalPhone && messagePhone && canonicalPhone === messagePhone);
+}
+
+async function createCustomerSalesItem({ owner_user_id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity }) {
   const messageRecord = await getOwnedMessageRecord(message_id, owner_user_id);
 
   if (!messageRecord) {
@@ -1119,9 +1579,14 @@ async function createCustomerSalesItem({ owner_user_id, message_id, phone, chat_
   }
 
   const canonicalPhone = await resolveWhatsAppPhone(phone, chat_jid || null);
-  const messagePhone = (await resolveWhatsAppPhone(messageRecord.phone, messageRecord.chat_jid || null)) || messageRecord.phone;
 
-  if ((canonicalPhone || phone) !== messagePhone) {
+  const belongsToConversation = await messageBelongsToCustomerConversation({
+    phone,
+    chat_jid,
+    messageRecord
+  });
+
+  if (!belongsToConversation) {
     const error = new Error("The selected message does not belong to this customer conversation.");
     error.status = 400;
     throw error;
@@ -1132,6 +1597,7 @@ async function createCustomerSalesItem({ owner_user_id, message_id, phone, chat_
     message_id,
     phone: canonicalPhone || phone,
     ...(chat_jid ? { chat_jid } : {}),
+    ...(lead_status ? { lead_status } : {}),
     product_type: String(product_type || "").trim(),
     package_name: String(package_name || "").trim(),
     price: Number(price),
@@ -1142,7 +1608,7 @@ async function createCustomerSalesItem({ owner_user_id, message_id, phone, chat_
   const { data, error } = await supabase
     .from("customer_sales_items")
     .insert(payload)
-    .select("id, message_id, phone, chat_jid, product_type, package_name, price, quantity, created_at, updated_at")
+    .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
     .single();
 
   throwIfSalesItemsSchemaError(error);
@@ -1155,6 +1621,112 @@ async function createCustomerSalesItem({ owner_user_id, message_id, phone, chat_
     ...data,
     phone: (await resolveWhatsAppPhone(data.phone, data.chat_jid || null)) || data.phone
   };
+}
+
+async function updateCustomerSalesItem({ owner_user_id, item_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity }) {
+  const salesItem = await getOwnedCustomerSalesItem(item_id, owner_user_id);
+
+  if (!salesItem) {
+    const error = new Error("The selected sales lead item was not found for this customer conversation.");
+    error.status = 404;
+    throw error;
+  }
+
+  const belongsToConversation = await salesItemBelongsToCustomerConversation({
+    phone,
+    chat_jid,
+    salesItem
+  });
+
+  if (!belongsToConversation) {
+    const error = new Error("The selected sales lead item does not belong to this customer conversation.");
+    error.status = 400;
+    throw error;
+  }
+
+  const canonicalPhone = await resolveWhatsAppPhone(phone, chat_jid || null);
+  const payload = {
+    phone: canonicalPhone || phone,
+    ...(chat_jid ? { chat_jid } : {}),
+    ...(lead_status ? { lead_status } : {}),
+    product_type: String(product_type || "").trim(),
+    package_name: String(package_name || "").trim(),
+    price: Number(price),
+    quantity: Number(quantity),
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabase
+    .from("customer_sales_items")
+    .update(payload)
+    .eq("owner_user_id", owner_user_id)
+    .eq("id", item_id)
+    .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
+    .single();
+
+  throwIfSalesItemsSchemaError(error);
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    ...data,
+    phone: (await resolveWhatsAppPhone(data.phone, data.chat_jid || null)) || data.phone
+  };
+}
+
+async function getActiveDashboardSessionId(userId) {
+  const { data, error } = await supabase
+    .from("active_sessions")
+    .select("session_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  throwIfActiveSessionsSchemaError(error);
+
+  if (error) {
+    throw error;
+  }
+
+  return data?.session_id || null;
+}
+
+async function upsertActiveDashboardSession(userId, sessionId) {
+  const { error } = await supabase.from("active_sessions").upsert(
+    {
+      user_id: userId,
+      session_id: sessionId,
+      updated_at: new Date().toISOString()
+    },
+    {
+      onConflict: "user_id"
+    }
+  );
+
+  throwIfActiveSessionsSchemaError(error);
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function deleteActiveDashboardSession(userId, sessionId) {
+  if (!sessionId) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from("active_sessions")
+    .delete()
+    .eq("user_id", userId)
+    .eq("session_id", sessionId);
+
+  throwIfActiveSessionsSchemaError(error);
+
+  if (error) {
+    throw error;
+  }
 }
 
 module.exports = {
@@ -1174,5 +1746,9 @@ module.exports = {
   upsertWhatsAppProfile,
   getCustomerSalesItems,
   createCustomerSalesItem,
+  updateCustomerSalesItem,
+  getActiveDashboardSessionId,
+  upsertActiveDashboardSession,
+  deleteActiveDashboardSession,
   supabase
 };

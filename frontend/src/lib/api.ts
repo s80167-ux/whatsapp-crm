@@ -12,10 +12,15 @@ export const CUSTOMER_STATUS_LABELS: Record<CustomerStatus, string> = {
 
 export type AuthResponse = {
   token: string;
+  sessionId?: string;
   user: {
     id: string;
     email: string;
   };
+};
+
+export type DashboardSessionResponse = {
+  sessionId: string;
 };
 
 export type Conversation = {
@@ -26,7 +31,8 @@ export type Conversation = {
   lastMessage: string;
   timestamp: string;
   lastDirection: "incoming" | "outgoing";
-  status: CustomerStatus;
+  status: CustomerStatus | null;
+  status_counts?: Record<CustomerStatus, number>;
   unreadCount?: number;
 };
 
@@ -50,6 +56,7 @@ export type Customer = {
   chat_jid?: string | null;
   contact_name?: string | null;
   status: CustomerStatus;
+  status_counts?: Record<CustomerStatus, number>;
   notes: string;
   updated_at?: string;
   profile_picture_url?: string | null;
@@ -67,6 +74,7 @@ export type SalesLeadItem = {
   message_id: string;
   phone: string;
   chat_jid?: string | null;
+  lead_status?: CustomerStatus;
   product_type: string;
   package_name: string;
   price: number;
@@ -149,6 +157,28 @@ const isLocalhost =
   typeof window !== "undefined" &&
   ["localhost", "127.0.0.1"].includes(window.location.hostname);
 const API_URL = isLocalhost ? configuredApiUrl || "http://localhost:4000" : "/api";
+let activeDashboardSessionId = "";
+let unauthorizedHandler: ((error: ApiError) => void | Promise<void>) | null = null;
+
+export class ApiError extends Error {
+  code?: string;
+  status?: number;
+
+  constructor(message: string, options?: { code?: string; status?: number }) {
+    super(message);
+    this.name = "ApiError";
+    this.code = options?.code;
+    this.status = options?.status;
+  }
+}
+
+export function setApiSessionId(sessionId: string) {
+  activeDashboardSessionId = sessionId;
+}
+
+export function setApiUnauthorizedHandler(handler: ((error: ApiError) => void | Promise<void>) | null) {
+  unauthorizedHandler = handler;
+}
 
 function getApiUrl() {
   if (!API_URL) {
@@ -160,7 +190,14 @@ function getApiUrl() {
   return API_URL.replace(/\/$/, "");
 }
 
-async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  token?: string,
+  options?: {
+    skipSession?: boolean;
+  }
+): Promise<T> {
   const headers = new Headers(init.headers);
   const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
 
@@ -170,6 +207,10 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
 
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  if (!options?.skipSession && activeDashboardSessionId) {
+    headers.set("X-Session-Id", activeDashboardSessionId);
   }
 
   let response: Response;
@@ -190,12 +231,20 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-  const payloadError = (data as { error?: string }).error;
-  if (payloadError) {
-    throw new Error(payloadError);
-  }
+    const payload = data as { error?: string; code?: string };
+    const apiError = new ApiError(
+      payload.error || `Request failed (${response.status} ${response.statusText || "Unknown error"}).`,
+      {
+        code: payload.code,
+        status: response.status
+      }
+    );
 
-  throw new Error(`Request failed (${response.status} ${response.statusText || "Unknown error"}).`);
+    if (payload.code === "SESSION_REVOKED" || payload.code === "SESSION_REQUIRED") {
+      void unauthorizedHandler?.(apiError);
+    }
+
+    throw apiError;
   }
 
   return data as T;
@@ -213,6 +262,28 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password })
     });
+  },
+  createDashboardSession(token: string, replaceExisting = false) {
+    return request<DashboardSessionResponse>(
+      "/auth/session",
+      {
+        method: "POST",
+        body: JSON.stringify({ replaceExisting })
+      },
+      token,
+      {
+        skipSession: true
+      }
+    );
+  },
+  deleteDashboardSession(token: string) {
+    return request<{ success: boolean }>(
+      "/auth/session",
+      {
+        method: "DELETE"
+      },
+      token
+    );
   },
   getWhatsAppStatus() {
     return request<WhatsAppStatus>("/whatsapp/status");
@@ -284,11 +355,23 @@ export const api = {
       token
     );
   },
-  getMessages(phone: string, token: string) {
-    return request<Message[]>(`/messages/${phone}`, {}, token);
+  getMessages(phone: string, token: string, chatJid?: string | null) {
+    const params = new URLSearchParams();
+
+    if (chatJid) {
+      params.set("chatJid", chatJid);
+    }
+
+    return request<Message[]>(`/messages/${phone}${params.size ? `?${params.toString()}` : ""}`, {}, token);
   },
-  getCustomer(phone: string, token: string) {
-    return request<Customer>(`/customers/${phone}`, {}, token);
+  getCustomer(phone: string, token: string, chatJid?: string | null) {
+    const params = new URLSearchParams();
+
+    if (chatJid) {
+      params.set("chatJid", chatJid);
+    }
+
+    return request<Customer>(`/customers/${phone}${params.size ? `?${params.toString()}` : ""}`, {}, token);
   },
   getCustomerSalesItems(phone: string, token: string, chatJid?: string | null) {
     const params = new URLSearchParams();
@@ -299,12 +382,16 @@ export const api = {
 
     return request<SalesLeadItem[]>(`/customers/${phone}/sales-items${params.size ? `?${params.toString()}` : ""}`, {}, token);
   },
-  saveCustomer(phone: string, payload: Pick<Customer, "status" | "notes">, token: string) {
+  saveCustomer(phone: string, payload: Pick<Customer, "status" | "notes"> & { chat_jid?: string | null }, token: string) {
     return request<Customer>(
       `/customers/${phone}`,
       {
         method: "PUT",
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          status: payload.status,
+          notes: payload.notes,
+          chatJid: payload.chat_jid || null
+        })
       },
       token
     );
@@ -313,6 +400,7 @@ export const api = {
     phone: string,
     payload: {
       messageId: string;
+      status: CustomerStatus;
       chatJid?: string | null;
       productType: string;
       packageName: string;
@@ -325,6 +413,28 @@ export const api = {
       `/customers/${phone}/sales-items`,
       {
         method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+  updateCustomerSalesItem(
+    phone: string,
+    itemId: string,
+    payload: {
+      status: CustomerStatus;
+      chatJid?: string | null;
+      productType: string;
+      packageName: string;
+      price: number;
+      quantity: number;
+    },
+    token: string
+  ) {
+    return request<SalesLeadItem>(
+      `/customers/${phone}/sales-items/${itemId}`,
+      {
+        method: "PUT",
         body: JSON.stringify(payload)
       },
       token

@@ -15,8 +15,30 @@ function getJidMeta(value: string | null | undefined) {
   };
 }
 
+function normalizeDisplayPhone(phone: string | null | undefined) {
+  const digits = String(phone || "").replace(/\D/g, "");
+
+  if (!digits) {
+    return null;
+  }
+
+  if (digits.startsWith("60")) {
+    return digits;
+  }
+
+  if (digits.startsWith("6")) {
+    return digits;
+  }
+
+  if (digits.startsWith("0")) {
+    return `6${digits}`;
+  }
+
+  return null;
+}
+
 export function hasVerifiedPhone(phone: string | null | undefined, chatJid?: string | null | undefined) {
-  const normalizedPhone = String(phone || "").trim();
+  const normalizedPhone = normalizeDisplayPhone(phone);
 
   if (!normalizedPhone) {
     return false;
@@ -32,7 +54,7 @@ export function hasVerifiedPhone(phone: string | null | undefined, chatJid?: str
 }
 
 export function getResolvedPhone(phone: string | null | undefined, chatJid?: string | null | undefined) {
-  const normalizedPhone = String(phone || "").trim();
+  const normalizedPhone = normalizeDisplayPhone(phone);
 
   if (normalizedPhone) {
     return normalizedPhone;
@@ -53,6 +75,17 @@ export function getResolvedPhone(phone: string | null | undefined, chatJid?: str
   return derivedPhone || null;
 }
 
+export function getConversationIdentifier(phone: string | null | undefined, chatJid?: string | null | undefined): string | null {
+  const resolvedPhone = getResolvedPhone(phone, chatJid);
+
+  if (resolvedPhone) {
+    return resolvedPhone;
+  }
+
+  const normalizedChatJid = String(chatJid || "").trim();
+  return normalizedChatJid || null;
+}
+
 export function getDisplayName(contactName: string | null | undefined, phone: string | null | undefined) {
   const normalizedName = contactName?.trim();
 
@@ -63,16 +96,36 @@ export function getDisplayName(contactName: string | null | undefined, phone: st
   return phone || "Unknown contact";
 }
 
+export function getDisplayWhatsAppId(phone: string | null | undefined, chatJid?: string | null | undefined): string | null {
+  const normalizedChatJid = String(chatJid || "").trim();
+
+  if (normalizedChatJid) {
+    return normalizedChatJid;
+  }
+
+  const resolvedPhone = getResolvedPhone(phone, chatJid);
+
+  if (!resolvedPhone) {
+    return null;
+  }
+
+  return `${resolvedPhone}@s.whatsapp.net`;
+}
+
 export function getDisplayPhone(phone: string | null | undefined, chatJid?: string | null | undefined): string | null {
-  const normalized = String(phone || "").trim();
+  const normalized = normalizeDisplayPhone(phone);
 
   if (!normalized || !hasVerifiedPhone(normalized, chatJid)) {
     return null;
   }
 
-  return normalized.startsWith("+") ? normalized : `+${normalized}`;
+  return `+${normalized}`;
 }
 
 export function formatPhoneDisplay(phone: string | null | undefined, chatJid?: string | null | undefined): string {
   return getDisplayPhone(phone, chatJid) || "Unavailable";
+}
+
+export function formatWhatsAppIdDisplay(phone: string | null | undefined, chatJid?: string | null | undefined): string {
+  return getDisplayWhatsAppId(phone, chatJid) || "Unavailable";
 }

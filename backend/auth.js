@@ -1,4 +1,10 @@
+const crypto = require("crypto");
 const { createClient } = require("@supabase/supabase-js");
+const {
+  deleteActiveDashboardSession,
+  getActiveDashboardSessionId,
+  upsertActiveDashboardSession
+} = require("./supabase");
 
 const authClient = createClient(
   process.env.SUPABASE_URL,
@@ -64,36 +70,116 @@ async function loginUser(email, password) {
   };
 }
 
-async function requireAuth(req, res, next) {
+async function getAuthenticatedUser(token) {
+  const {
+    data: { user },
+    error
+  } = await authClient.auth.getUser(token);
+
+  if (error || !user) {
+    const authError = new Error("Invalid or expired token.");
+    authError.status = 401;
+    throw authError;
+  }
+
+  return user;
+}
+
+async function createDashboardSession(userId, options = {}) {
+  const { replaceExisting = false, currentSessionId = null } = options;
+  const activeSessionId = await getActiveDashboardSessionId(userId);
+
+  if (activeSessionId) {
+    if (currentSessionId && activeSessionId === currentSessionId) {
+      return activeSessionId;
+    }
+
+    if (!replaceExisting) {
+      const conflictError = new Error(
+        "This account is already active in another browser or device. End the active session to continue logging in here."
+      );
+      conflictError.status = 409;
+      conflictError.code = "SESSION_ALREADY_ACTIVE";
+      throw conflictError;
+    }
+  }
+
+  const sessionId = crypto.randomUUID();
+  await upsertActiveDashboardSession(userId, sessionId);
+  return sessionId;
+}
+
+async function revokeDashboardSession(userId, sessionId) {
+  await deleteActiveDashboardSession(userId, sessionId);
+}
+
+async function requireSupabaseAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
 
   if (!token) {
-    return res.status(401).json({ error: "Missing bearer token." });
+    return res.status(401).json({ error: "Missing bearer token.", code: "AUTH_TOKEN_MISSING" });
   }
 
   try {
-    const {
-      data: { user },
-      error
-    } = await authClient.auth.getUser(token);
-
-    if (error || !user) {
-      return res.status(401).json({ error: "Invalid or expired token." });
-    }
+    const user = await getAuthenticatedUser(token);
 
     req.user = {
       sub: user.id,
       email: user.email
     };
     return next();
-  } catch (_error) {
-    return res.status(401).json({ error: "Invalid or expired token." });
+  } catch (error) {
+    return res.status(error.status || 401).json({
+      error: error.message || "Invalid or expired token.",
+      code: error.status && error.status !== 401 ? undefined : "AUTH_TOKEN_INVALID"
+    });
+  }
+}
+
+async function requireAuth(req, res, next) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  const sessionId = String(req.headers["x-session-id"] || "").trim() || null;
+
+  if (!token) {
+    return res.status(401).json({ error: "Missing bearer token.", code: "AUTH_TOKEN_MISSING" });
+  }
+
+  if (!sessionId) {
+    return res.status(401).json({ error: "Missing dashboard session.", code: "SESSION_REQUIRED" });
+  }
+
+  try {
+    const user = await getAuthenticatedUser(token);
+    const activeSessionId = await getActiveDashboardSessionId(user.id);
+
+    if (!activeSessionId || activeSessionId !== sessionId) {
+      return res.status(401).json({
+        error: "Your account was signed in somewhere else. Please log in again.",
+        code: "SESSION_REVOKED"
+      });
+    }
+
+    req.user = {
+      sub: user.id,
+      email: user.email
+    };
+    req.sessionId = sessionId;
+    return next();
+  } catch (error) {
+    return res.status(error.status || 401).json({
+      error: error.message || "Invalid or expired token.",
+      code: error.status && error.status !== 401 ? undefined : "AUTH_TOKEN_INVALID"
+    });
   }
 }
 
 module.exports = {
+  createDashboardSession,
   registerUser,
   loginUser,
-  requireAuth
+  requireAuth,
+  requireSupabaseAuth,
+  revokeDashboardSession
 };

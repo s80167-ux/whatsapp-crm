@@ -1,5 +1,5 @@
 import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type CustomerStatus } from "../lib/api";
-import { formatPhoneDisplay, getDisplayPhone } from "../lib/display";
+import { formatPhoneDisplay, formatWhatsAppIdDisplay, getDisplayPhone } from "../lib/display";
 
 export type CustomerPanelProps = {
   about: string | null;
@@ -39,6 +39,23 @@ function getStatusAccent(status: CustomerStatus) {
       return "bg-rose-500/12 text-rose-700 border-rose-200";
     default:
       return "bg-whatsapp-canvas text-whatsapp-deep border-whatsapp-line";
+  }
+}
+
+function getStatusDotClass(status: CustomerStatus) {
+  switch (status) {
+    case "new_lead":
+      return "chat-status-dot-new-lead";
+    case "interested":
+      return "chat-status-dot-interested";
+    case "processing":
+      return "chat-status-dot-processing";
+    case "closed_won":
+      return "chat-status-dot-closed-won";
+    case "closed_lost":
+      return "chat-status-dot-closed-lost";
+    default:
+      return "";
   }
 }
 
@@ -105,7 +122,8 @@ export function CustomerPanel(props: CustomerPanelProps) {
   const title = contactName || visiblePhone || "No customer selected";
   const initials = getInitials(contactName, phone);
   const activityLabel = lastDirection ? `${lastDirection === "incoming" ? "Incoming" : "Outgoing"} message` : "No synced messages";
-  const usernameLabel = contactName || "Unavailable";
+  const contactNameLabel = contactName || "Unavailable";
+  const whatsappIdLabel = formatWhatsAppIdDisplay(phone, chatJid);
   const phoneLabel = formatPhoneDisplay(phone, chatJid);
   const currentStatusLabel = CUSTOMER_STATUS_LABELS[status];
   const isInline = variant === "inline";
@@ -195,8 +213,21 @@ export function CustomerPanel(props: CustomerPanelProps) {
                     </svg>
                   </DetailIcon>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Username</p>
-                    <p className="mt-1 break-words text-sm font-medium text-ink">{usernameLabel}</p>
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Contact name</p>
+                    <p className="mt-1 break-words text-sm font-medium text-ink">{contactNameLabel}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
+                  <DetailIcon>
+                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                      <path d="M7 7h10v10H7z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                      <path d="M10 10h4v4h-4z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                    </svg>
+                  </DetailIcon>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">WhatsApp ID</p>
+                    <p className="mt-1 break-all text-sm font-medium text-ink">{whatsappIdLabel}</p>
                   </div>
                 </div>
 
@@ -208,7 +239,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
                     </svg>
                   </DetailIcon>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Phone</p>
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Phone number</p>
                     <p className="mt-1 break-all text-sm font-medium text-ink">{phoneLabel}</p>
                   </div>
                 </div>
@@ -264,20 +295,34 @@ export function CustomerPanel(props: CustomerPanelProps) {
 
         <div className="rounded-3xl border border-whatsapp-line bg-white p-4 shadow-soft">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-whatsapp-deep">Lead status by chats</p>
-            <span className="text-xs text-whatsapp-muted">Chat-level counts</span>
+            <p className="text-sm font-medium text-whatsapp-deep">Lead status</p>
+            {loading ? <span className="text-xs text-whatsapp-muted">Loading customer details...</span> : null}
           </div>
-          {loading ? <p className="mt-2 text-xs text-whatsapp-muted">Loading customer details...</p> : null}
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {CUSTOMER_STATUSES.map((item) => (
-              <div key={item} className={`flex items-center justify-between rounded-2xl border px-3 py-3 ${getStatusAccent(item)}`}>
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-current opacity-80" />
-                  <span className="text-sm font-medium">{CUSTOMER_STATUS_LABELS[item]}</span>
+          <div className="mt-3 flex items-center justify-between rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <span className={`chat-status-dot h-3 w-3 shrink-0 ${getStatusDotClass(status)}`} />
+              <span className="text-sm font-medium text-ink">{currentStatusLabel}</span>
+            </div>
+            <span className="text-xs text-whatsapp-muted">Current</span>
+          </div>
+          <div className="mt-3 grid grid-cols-5 gap-2">
+            {CUSTOMER_STATUSES.map((item) => {
+              const isActive = item === status;
+              const count = statusCounts[item] ?? 0;
+
+              return (
+                <div
+                  key={item}
+                  className={`icon-hover-trigger flex items-center justify-between rounded-2xl border px-3 py-2.5 transition ${
+                    isActive ? getStatusAccent(item) : "border-whatsapp-line bg-whatsapp-canvas text-whatsapp-muted"
+                  }`}
+                >
+                  <span className={`chat-status-dot h-3 w-3 shrink-0 ${getStatusDotClass(item)}`} />
+                  <span className="text-sm font-semibold">{count}</span>
+                  <span className="icon-hover-label">{`${CUSTOMER_STATUS_LABELS[item]}: ${count}`}</span>
                 </div>
-                <span className="text-base font-semibold">{statusCounts[item] ?? 0}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

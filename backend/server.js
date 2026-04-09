@@ -4,7 +4,14 @@ const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const VALID_CUSTOMER_STATUSES = ["new_lead", "interested", "processing", "closed_won", "closed_lost"];
-const { registerUser, loginUser, requireAuth } = require("./auth");
+const {
+  createDashboardSession,
+  registerUser,
+  loginUser,
+  requireAuth,
+  requireSupabaseAuth,
+  revokeDashboardSession
+} = require("./auth");
 const {
   getConversations,
   getMessagesByPhone,
@@ -13,6 +20,7 @@ const {
   getCustomerInsights,
   getCustomerSalesItems,
   createCustomerSalesItem,
+  updateCustomerSalesItem,
   clearConversationUnreadCount,
   deleteConversation,
   deleteMessage,
@@ -64,12 +72,21 @@ const upload = multer({
   }
 });
 
+function isStickerAttachment(mimeType, fileName) {
+  const normalizedMimeType = String(mimeType || "").trim().toLowerCase();
+  return normalizedMimeType === "image/webp" || /\.webp$/i.test(String(fileName || "").trim());
+}
+
 function isAllowedLocalDevOrigin(origin) {
   return /^https?:\/\/(localhost|127\.0\.0\.1):(\d+)$/.test(String(origin || "").trim());
 }
 
-function getAttachmentMediaType(mimeType) {
+function getAttachmentMediaType(mimeType, fileName) {
   const normalizedMimeType = String(mimeType || "").trim().toLowerCase();
+
+  if (isStickerAttachment(normalizedMimeType, fileName)) {
+    return "sticker";
+  }
 
   if (normalizedMimeType.startsWith("image/")) {
     return "image";
@@ -83,8 +100,8 @@ function getAttachmentMediaType(mimeType) {
 }
 
 function getAttachmentPreviewText(file, caption) {
-  const mediaType = getAttachmentMediaType(file?.mimetype);
-  const label = mediaType === "image" ? "Image" : mediaType === "video" ? "Video" : "Document";
+  const mediaType = getAttachmentMediaType(file?.mimetype, file?.originalname);
+  const label = mediaType === "image" ? "Image" : mediaType === "video" ? "Video" : mediaType === "sticker" ? "Sticker" : "Document";
   const trimmedCaption = String(caption || "").trim();
 
   return trimmedCaption
@@ -241,10 +258,40 @@ app.post("/login", async (req, res) => {
     }
 
     const result = await loginUser(email, password);
-    return res.json(result);
+    const sessionId = await createDashboardSession(result.user.id);
+    return res.json({
+      ...result,
+      sessionId
+    });
   } catch (error) {
     return res.status(error.status || 500).json({
-      error: error.message || "Failed to log in."
+      error: error.message || "Failed to log in.",
+      code: error.code
+    });
+  }
+});
+
+app.post("/auth/session", requireSupabaseAuth, async (req, res) => {
+  try {
+    const replaceExisting = req.body?.replaceExisting === true;
+    const sessionId = await createDashboardSession(req.user.sub, { replaceExisting });
+    return res.status(201).json({ sessionId });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || "Failed to create dashboard session.",
+      code: error.code
+    });
+  }
+});
+
+app.delete("/auth/session", requireSupabaseAuth, async (req, res) => {
+  try {
+    const sessionId = String(req.headers["x-session-id"] || "").trim() || null;
+    await revokeDashboardSession(req.user.sub, sessionId);
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || "Failed to revoke dashboard session."
     });
   }
 });
@@ -264,8 +311,8 @@ app.post("/conversations/:phone/read", requireAuth, bindAuthenticatedWhatsAppOwn
     const phone = normalizePhone(req.params.phone);
     const chatJid = typeof req.body?.chatJid === "string" ? req.body.chatJid.trim() || null : null;
 
-    if (!phone) {
-      return res.status(400).json({ error: "Phone is required." });
+    if (!phone && !chatJid) {
+      return res.status(400).json({ error: "Phone or chat JID is required." });
     }
 
     await clearConversationUnreadCount({
@@ -286,8 +333,8 @@ app.delete("/conversations/:phone", requireAuth, bindAuthenticatedWhatsAppOwner,
     const phone = normalizePhone(req.params.phone);
     const chatJid = typeof req.body?.chatJid === "string" ? req.body.chatJid.trim() || null : null;
 
-    if (!phone) {
-      return res.status(400).json({ error: "Phone is required." });
+    if (!phone && !chatJid) {
+      return res.status(400).json({ error: "Phone or chat JID is required." });
     }
 
     const result = await deleteConversation({
@@ -340,7 +387,8 @@ app.delete("/messages/:messageId", requireAuth, bindAuthenticatedWhatsAppOwner, 
 app.get("/messages/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const phone = normalizePhone(req.params.phone);
-    const messages = await getMessagesByPhone(phone, req.user.sub);
+    const chatJid = typeof req.query?.chatJid === "string" ? req.query.chatJid.trim() || null : null;
+    const messages = await getMessagesByPhone(phone, req.user.sub, chatJid);
     return res.json(messages);
   } catch (error) {
     console.error("Failed to fetch messages:", error);
@@ -351,14 +399,16 @@ app.get("/messages/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (
 app.get("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const phone = normalizePhone(req.params.phone);
-    const customer = await getCustomerInsights(phone, req.user.sub);
-    const profile = await getContactProfile(phone, customer.chat_jid || null);
+    const chatJid = typeof req.query?.chatJid === "string" ? req.query.chatJid.trim() || null : null;
+    const customer = await getCustomerInsights(phone, req.user.sub, chatJid);
+    const profile = await getContactProfile(phone, customer.chat_jid || chatJid || null);
 
     // Update DB cache if we got live data from WhatsApp
     if (profile.profilePictureUrl || profile.about) {
       await upsertCustomer({
         owner_user_id: req.user.sub,
         phone,
+        chat_jid: customer.chat_jid || chatJid || null,
         profile_picture_url: profile.profilePictureUrl,
         about: profile.about
       }).catch((err) => {
@@ -381,9 +431,10 @@ app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
   try {
     const phone = normalizePhone(req.params.phone);
     const { status, notes } = req.body;
+    const chatJid = typeof req.body?.chatJid === "string" ? req.body.chatJid.trim() || null : null;
 
-    if (!phone) {
-      return res.status(400).json({ error: "Phone is required." });
+    if (!phone && !chatJid) {
+      return res.status(400).json({ error: "Phone or chat JID is required." });
     }
 
     if (!VALID_CUSTOMER_STATUSES.includes(status)) {
@@ -393,12 +444,13 @@ app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
     await upsertCustomer({
       owner_user_id: req.user.sub,
       phone,
+      chat_jid: chatJid,
       status,
       notes: typeof notes === "string" ? notes : ""
     });
 
-    const customer = await getCustomerInsights(phone, req.user.sub);
-    const profile = await getContactProfile(phone, customer.chat_jid || null);
+    const customer = await getCustomerInsights(phone, req.user.sub, chatJid);
+    const profile = await getContactProfile(phone, customer.chat_jid || chatJid || null);
 
     return res.json({
       ...customer,
@@ -416,8 +468,8 @@ app.get("/customers/:phone/sales-items", requireAuth, bindAuthenticatedWhatsAppO
     const phone = normalizePhone(req.params.phone);
     const chatJid = typeof req.query?.chatJid === "string" ? req.query.chatJid.trim() || null : null;
 
-    if (!phone) {
-      return res.status(400).json({ error: "Phone is required." });
+    if (!phone && !chatJid) {
+      return res.status(400).json({ error: "Phone or chat JID is required." });
     }
 
     const items = await getCustomerSalesItems(phone, req.user.sub, chatJid);
@@ -433,17 +485,22 @@ app.post("/customers/:phone/sales-items", requireAuth, bindAuthenticatedWhatsApp
     const phone = normalizePhone(req.params.phone);
     const messageId = String(req.body?.messageId || "").trim();
     const chatJid = typeof req.body?.chatJid === "string" ? req.body.chatJid.trim() || null : null;
+    const leadStatus = String(req.body?.status || "").trim();
     const productType = String(req.body?.productType || "").trim();
     const packageName = String(req.body?.packageName || "").trim();
     const price = Number(req.body?.price);
     const quantity = Number(req.body?.quantity);
 
-    if (!phone) {
-      return res.status(400).json({ error: "Phone is required." });
+    if (!phone && !chatJid) {
+      return res.status(400).json({ error: "Phone or chat JID is required." });
     }
 
     if (!messageId) {
       return res.status(400).json({ error: "Message ID is required." });
+    }
+
+    if (!VALID_CUSTOMER_STATUSES.includes(leadStatus)) {
+      return res.status(400).json({ error: "Status must be one of: new_lead, interested, processing, closed_won, closed_lost." });
     }
 
     if (!productType || !packageName) {
@@ -458,7 +515,7 @@ app.post("/customers/:phone/sales-items", requireAuth, bindAuthenticatedWhatsApp
       return res.status(400).json({ error: "Quantity must be a whole number greater than 0." });
     }
 
-    const customer = await getCustomerByPhone(phone, req.user.sub);
+    const customer = await getCustomerByPhone(phone, req.user.sub, chatJid);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
 
     await upsertCustomer({
@@ -472,6 +529,7 @@ app.post("/customers/:phone/sales-items", requireAuth, bindAuthenticatedWhatsApp
       message_id: messageId,
       phone,
       chat_jid: resolvedChatJid,
+      lead_status: leadStatus,
       product_type: productType,
       package_name: packageName,
       price,
@@ -485,16 +543,73 @@ app.post("/customers/:phone/sales-items", requireAuth, bindAuthenticatedWhatsApp
   }
 });
 
+app.put("/customers/:phone/sales-items/:itemId", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const phone = normalizePhone(req.params.phone);
+    const itemId = String(req.params.itemId || "").trim();
+    const chatJid = typeof req.body?.chatJid === "string" ? req.body.chatJid.trim() || null : null;
+    const leadStatus = String(req.body?.status || "").trim();
+    const productType = String(req.body?.productType || "").trim();
+    const packageName = String(req.body?.packageName || "").trim();
+    const price = Number(req.body?.price);
+    const quantity = Number(req.body?.quantity);
+
+    if (!phone && !chatJid) {
+      return res.status(400).json({ error: "Phone or chat JID is required." });
+    }
+
+    if (!itemId) {
+      return res.status(400).json({ error: "Sales lead item ID is required." });
+    }
+
+    if (!VALID_CUSTOMER_STATUSES.includes(leadStatus)) {
+      return res.status(400).json({ error: "Status must be one of: new_lead, interested, processing, closed_won, closed_lost." });
+    }
+
+    if (!productType || !packageName) {
+      return res.status(400).json({ error: "Product type and package are required." });
+    }
+
+    if (!Number.isFinite(price) || price < 0) {
+      return res.status(400).json({ error: "Price must be a valid non-negative number." });
+    }
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      return res.status(400).json({ error: "Quantity must be a whole number greater than 0." });
+    }
+
+    const customer = await getCustomerByPhone(phone, req.user.sub, chatJid);
+    const resolvedChatJid = chatJid || customer.chat_jid || null;
+
+    const item = await updateCustomerSalesItem({
+      owner_user_id: req.user.sub,
+      item_id: itemId,
+      phone,
+      chat_jid: resolvedChatJid,
+      lead_status: leadStatus,
+      product_type: productType,
+      package_name: packageName,
+      price,
+      quantity
+    });
+
+    return res.json(item);
+  } catch (error) {
+    console.error("Failed to update customer sales item:", error);
+    return res.status(error.status || 500).json({ error: error.message || "Failed to update customer sales item." });
+  }
+});
+
 app.post("/send", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const { phone, message, chatJid } = req.body;
     const normalizedPhone = normalizePhone(phone);
 
-    if (!normalizedPhone || !message) {
-      return res.status(400).json({ error: "Phone and message are required." });
+    if ((!normalizedPhone && !chatJid) || !message) {
+      return res.status(400).json({ error: "Message and a phone or chat JID are required." });
     }
 
-    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub);
+    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub, chatJid || null);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
 
     const result = await sendMessageToPhone(normalizedPhone, message, resolvedChatJid);
@@ -530,11 +645,11 @@ app.post("/send/attachment", requireAuth, bindAuthenticatedWhatsAppOwner, upload
     const { chatJid, caption } = req.body;
     const file = req.file;
 
-    if (!normalizedPhone || !file) {
-      return res.status(400).json({ error: "Phone and file are required." });
+    if ((!normalizedPhone && !chatJid) || !file) {
+      return res.status(400).json({ error: "File and a phone or chat JID are required." });
     }
 
-    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub);
+    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub, chatJid || null);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
     const result = await sendAttachmentToPhone({
       phone: normalizedPhone,
@@ -552,7 +667,7 @@ app.post("/send/attachment", requireAuth, bindAuthenticatedWhatsAppOwner, upload
     });
 
     const previewText = getAttachmentPreviewText(file, caption);
-    const mediaType = getAttachmentMediaType(file.mimetype);
+    const mediaType = getAttachmentMediaType(file.mimetype, file.originalname);
     const mediaDataUrl = `data:${file.mimetype || "application/octet-stream"};base64,${file.buffer.toString("base64")}`;
 
     const savedMessage = await saveMessage({
@@ -583,11 +698,11 @@ app.post("/send/location", requireAuth, bindAuthenticatedWhatsAppOwner, async (r
     const normalizedPhone = normalizePhone(req.body.phone);
     const { chatJid, latitude, longitude, name, address } = req.body;
 
-    if (!normalizedPhone || latitude === undefined || longitude === undefined) {
-      return res.status(400).json({ error: "Phone, latitude, and longitude are required." });
+    if ((!normalizedPhone && !chatJid) || latitude === undefined || longitude === undefined) {
+      return res.status(400).json({ error: "Latitude, longitude, and a phone or chat JID are required." });
     }
 
-    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub);
+    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub, chatJid || null);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
     const result = await sendLocationToPhone({
       phone: normalizedPhone,
@@ -624,10 +739,6 @@ app.post("/send/location", requireAuth, bindAuthenticatedWhatsAppOwner, async (r
   }
 });
 
-initializeWhatsApp().catch((error) => {
-  console.error("Failed to initialize WhatsApp:", error);
-});
-
 console.log(
   "Registered WhatsApp routes:",
   whatsappRouter.stack
@@ -643,8 +754,27 @@ console.log(
     .join(" | ")
 );
 
-const server = app.listen(port, () => {
+const server = app.listen(port, async () => {
   console.log(`Backend listening on http://localhost:${port}`);
+
+  try {
+    await initializeWhatsApp();
+  } catch (error) {
+    console.error("Failed to initialize WhatsApp:", error);
+  }
+});
+
+server.on("error", (error) => {
+  if (error?.code === "EADDRINUSE") {
+    console.error(
+      `Port ${port} is already in use. Stop the existing backend process on port ${port} before running npm run dev again.`
+    );
+    process.exit(1);
+    return;
+  }
+
+  console.error("Backend server failed to start:", error);
+  process.exit(1);
 });
 
 let shuttingDown = false;

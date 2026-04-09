@@ -4,7 +4,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const QRCode = require('qrcode');
 const { saveMessage, updateOutgoingMessageStatus, upsertCustomer, getCustomerOwnerIdsByPhone } = require('./supabase');
-const { normalizePhone, resolveWhatsAppPhone, extractDigits } = require('./wa-identifiers');
+const { normalizePhone, normalizeCustomerPhone, resolveWhatsAppPhone, extractDigits } = require('./wa-identifiers');
 
 let sock = null;
 let qrData = null;
@@ -45,6 +45,14 @@ async function loadBaileys() {
 function bindWhatsAppOwner(ownerUserId) {
 	if (!ownerUserId) return;
 	activeOwnerUserId = ownerUserId;
+}
+
+function isStickerMimeType(mimeType) {
+	return String(mimeType || '').trim().toLowerCase() === 'image/webp';
+}
+
+function isStickerFileName(fileName) {
+	return /\.webp$/i.test(String(fileName || '').trim());
 }
 
 function extractIncomingText(message) {
@@ -161,6 +169,9 @@ async function extractIncomingMedia(message) {
 	} else if (content?.documentMessage) {
 		mediaMessage = content.documentMessage;
 		mediaType = 'document';
+	} else if (content?.stickerMessage) {
+		mediaMessage = content.stickerMessage;
+		mediaType = 'sticker';
 	}
 
 	if (!mediaMessage || !mediaType) {
@@ -184,12 +195,14 @@ async function extractIncomingMedia(message) {
 			? 'image/jpeg'
 			: mediaType === 'video'
 				? 'video/mp4'
+				: mediaType === 'sticker'
+					? 'image/webp'
 				: 'application/octet-stream';
 		const mimeType = String(mediaMessage.mimetype || fallbackMimeType).trim() || fallbackMimeType;
 		return {
 			media_type: mediaType,
 			media_mime_type: mimeType,
-			media_file_name: String(mediaMessage.fileName || '').trim() || null,
+			media_file_name: String(mediaMessage.fileName || '').trim() || (mediaType === 'sticker' ? 'sticker.webp' : null),
 			media_data_url: `data:${mimeType};base64,${buffer.toString('base64')}`
 		};
 	} catch (error) {
@@ -349,6 +362,7 @@ async function initializeWhatsApp() {
 		version,
 		printQRInTerminal: false,
 		auth: state,
+		fireInitQueries: false,
 		syncFullHistory: true,
 		getMessage: async () => undefined
 	});
@@ -616,7 +630,7 @@ function getSelfJid() {
 function extractPhoneFromJid(jid) {
 	const rawValue = String(jid || '').split('@')[0].split(':')[0].trim();
 	const digits = rawValue.replace(/\D+/g, '');
-	return digits ? normalizePhone(digits) : null;
+	return digits ? normalizeCustomerPhone(digits) : null;
 }
 
 function getSelfPhone() {
@@ -625,7 +639,7 @@ function getSelfPhone() {
 
 function isConnectedWhatsAppPhone(phone) {
 	const selfPhone = getSelfPhone();
-	const normalizedPhone = normalizePhone(phone);
+	const normalizedPhone = normalizeCustomerPhone(phone);
 	return Boolean(selfPhone && normalizedPhone && normalizedPhone === selfPhone);
 }
 
@@ -696,12 +710,16 @@ async function sendAttachmentToPhone({ phone, chatJid, buffer, mimeType, fileNam
 	if (!sock || connectionState !== 'open') throw new Error('WhatsApp is not connected.');
 	const jid = chatJid || phone + '@s.whatsapp.net';
 	const normalizedMimeType = String(mimeType || '').trim().toLowerCase();
-	const type = normalizedMimeType.startsWith('image/')
+	const type = isStickerMimeType(normalizedMimeType) || isStickerFileName(fileName)
+		? 'sticker'
+		: normalizedMimeType.startsWith('image/')
 		? 'image'
 		: normalizedMimeType.startsWith('video/')
 			? 'video'
 			: 'document';
-	const msg = type === 'image'
+	const msg = type === 'sticker'
+		? { sticker: buffer, mimetype: normalizedMimeType || 'image/webp' }
+		: type === 'image'
 		? { image: buffer, mimetype: mimeType, fileName, caption }
 		: type === 'video'
 			? { video: buffer, mimetype: mimeType, fileName, caption }
@@ -794,5 +812,5 @@ module.exports = {
 	disconnectWhatsApp,
 	getContactProfile,
 	bindWhatsAppOwner,
-	normalizePhone
+	normalizePhone: normalizeCustomerPhone
 };
