@@ -68,15 +68,29 @@ function extractMessageContent(message) {
 		return null;
 	}
 
-	return (
-		message.ephemeralMessage?.message ||
-		message.viewOnceMessage?.message ||
-		message.viewOnceMessageV2?.message ||
-		message.viewOnceMessageV2Extension?.message ||
-		message.documentWithCaptionMessage?.message ||
-		message.editedMessage?.message ||
-		message
-	);
+	let content = message;
+	let changed = true;
+
+	while (content && changed) {
+		changed = false;
+
+		const unwrappedContent =
+			content.deviceSentMessage?.message ||
+			content.ephemeralMessage?.message ||
+			content.viewOnceMessage?.message ||
+			content.viewOnceMessageV2?.message ||
+			content.viewOnceMessageV2Extension?.message ||
+			content.documentWithCaptionMessage?.message ||
+			content.editedMessage?.message ||
+			null;
+
+		if (unwrappedContent && unwrappedContent !== content) {
+			content = unwrappedContent;
+			changed = true;
+		}
+	}
+
+	return content;
 }
 
 function buildIncomingMessagePreview(message) {
@@ -202,8 +216,8 @@ function extractContactName(msg) {
 	return null;
 }
 
-async function resolveOwnerUserIds(phone) {
-	const ownerUserIds = await getCustomerOwnerIdsByPhone(phone);
+async function resolveOwnerUserIds(phone, chatJid) {
+	const ownerUserIds = await getCustomerOwnerIdsByPhone(phone, chatJid || null);
 	if (ownerUserIds.length > 0) {
 		return ownerUserIds;
 	}
@@ -222,7 +236,7 @@ async function persistIncomingMessage(msg) {
 	if (!phone || !text) return;
 	if (isConnectedWhatsAppPhone(phone)) return;
 
-	const ownerUserIds = await resolveOwnerUserIds(phone);
+	const ownerUserIds = await resolveOwnerUserIds(phone, msg.key.remoteJid);
 	if (!ownerUserIds.length) return;
 
   const tsSecs = Number(typeof msg.messageTimestamp === 'object' ? msg.messageTimestamp.low : msg.messageTimestamp);
@@ -436,6 +450,29 @@ async function initializeWhatsApp() {
 				await persistIncomingMessage(msg);
 			} catch (e) {
 				console.error('Failed to save incoming message:', e.message);
+			}
+		}
+	});
+
+	sock.ev.on('messages.update', async (updates) => {
+		if (!Array.isArray(updates) || updates.length === 0) return;
+
+		for (const update of updates) {
+			const message = update?.update?.message;
+			const key = update?.key;
+
+			if (!message || !key?.remoteJid) {
+				continue;
+			}
+
+			try {
+				await persistIncomingMessage({
+					key,
+					message,
+					messageTimestamp: update?.update?.messageTimestamp
+				});
+			} catch (e) {
+				console.error('Failed to save updated message:', e.message);
 			}
 		}
 	});

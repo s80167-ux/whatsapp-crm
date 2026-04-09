@@ -424,55 +424,7 @@ async function updateOutgoingMessageStatus({ owner_user_id, phone, chat_jid, wa_
     return data;
   }
 
-  if (!chat_jid) {
-    return null;
-  }
-
-  const lookup = await supabase
-    .from("messages")
-    .select("id")
-    .eq("owner_user_id", owner_user_id)
-    .eq("chat_jid", chat_jid)
-    .eq("direction", "outgoing")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  throwIfTenantSchemaError(lookup.error, "messages.owner_user_id");
-
-  if (isMissingColumnError(lookup.error, "messages.chat_jid")) {
-    return null;
-  }
-
-  if (lookup.error) {
-    throw lookup.error;
-  }
-
-  if (!lookup.data?.id) {
-    return null;
-  }
-
-  const fallback = await supabase
-    .from("messages")
-    .update({
-      send_status
-    })
-    .eq("owner_user_id", owner_user_id)
-    .eq("id", lookup.data.id)
-    .select("*")
-    .maybeSingle();
-
-  throwIfTenantSchemaError(fallback.error, "messages.owner_user_id");
-
-  if (isMissingColumnError(fallback.error, "messages.send_status") || isMissingColumnError(fallback.error, "messages.chat_jid")) {
-    return null;
-  }
-
-  if (fallback.error) {
-    throw fallback.error;
-  }
-
-  return fallback.data;
+  return null;
 }
 
 async function getMessagesByPhone(phone, ownerUserId) {
@@ -1002,21 +954,82 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
   return normalizeCustomerRecord(data);
 }
 
-async function getCustomerOwnerIdsByPhone(phone) {
-  const lookupValues = await getPhoneLookupValues(phone);
-  const { data, error } = await supabase
-    .from("customers")
-    .select("owner_user_id")
-    .in("phone", lookupValues)
-    .not("owner_user_id", "is", null);
+async function getCustomerOwnerIdsByPhone(phone, chatJid) {
+  const lookupValues = await getPhoneLookupValues(phone, chatJid || null);
+  const normalizedChatJid = String(chatJid || "").trim() || null;
 
-  throwIfTenantSchemaError(error, "customers.owner_user_id");
+  const customerByPhoneQuery = lookupValues.length
+    ? supabase
+        .from("customers")
+        .select("owner_user_id")
+        .in("phone", lookupValues)
+        .not("owner_user_id", "is", null)
+    : Promise.resolve({ data: [], error: null });
 
-  if (error) {
-    throw error;
+  const customerByChatQuery = normalizedChatJid
+    ? supabase
+        .from("customers")
+        .select("owner_user_id")
+        .eq("chat_jid", normalizedChatJid)
+        .not("owner_user_id", "is", null)
+    : Promise.resolve({ data: [], error: null });
+
+  const messageByPhoneQuery = lookupValues.length
+    ? supabase
+        .from("messages")
+        .select("owner_user_id")
+        .in("phone", lookupValues)
+        .not("owner_user_id", "is", null)
+    : Promise.resolve({ data: [], error: null });
+
+  const messageByChatQuery = normalizedChatJid
+    ? supabase
+        .from("messages")
+        .select("owner_user_id")
+        .eq("chat_jid", normalizedChatJid)
+        .not("owner_user_id", "is", null)
+    : Promise.resolve({ data: [], error: null });
+
+  const [customerByPhone, customerByChat, messageByPhone, messageByChat] = await Promise.all([
+    customerByPhoneQuery,
+    customerByChatQuery,
+    messageByPhoneQuery,
+    messageByChatQuery
+  ]);
+
+  throwIfTenantSchemaError(customerByPhone.error, "customers.owner_user_id");
+  throwIfTenantSchemaError(customerByChat.error, "customers.owner_user_id");
+  throwIfTenantSchemaError(messageByPhone.error, "messages.owner_user_id");
+  throwIfTenantSchemaError(messageByChat.error, "messages.owner_user_id");
+
+  if (customerByPhone.error) {
+    throw customerByPhone.error;
   }
 
-  return (data || []).map((row) => row.owner_user_id).filter(Boolean);
+  if (customerByChat.error) {
+    throw customerByChat.error;
+  }
+
+  if (messageByPhone.error) {
+    throw messageByPhone.error;
+  }
+
+  if (messageByChat.error) {
+    throw messageByChat.error;
+  }
+
+  return Array.from(
+    new Set(
+      [
+        ...(customerByPhone.data || []),
+        ...(customerByChat.data || []),
+        ...(messageByPhone.data || []),
+        ...(messageByChat.data || [])
+      ]
+        .map((row) => row.owner_user_id)
+        .filter(Boolean)
+    )
+  );
 }
 
 async function getWhatsAppSettings(ownerUserId) {
