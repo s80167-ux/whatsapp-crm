@@ -1354,6 +1354,7 @@ function App() {
         status: selectedStatus,
         statusCounts: customerStatusCounts,
         totalMessages: customerDraft?.total_messages,
+        customerId: customerDraft?.id || null,
         onNotesChange: (value) => {
           if (!activeCustomerPhone) {
             return;
@@ -1487,7 +1488,7 @@ function App() {
             />
           </div>
         ) : (
-          <div className="space-y-4 xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(280px,1fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
+          <div className="space-y-4 xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(0,3fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
             <Sidebar
               activeView={activeView}
               activeStatusFilter={activeStatusFilter}
@@ -1498,7 +1499,7 @@ function App() {
             />
 
             <div className="space-y-4 xl:contents">
-              <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(260px,_0.95fr)_minmax(0,_1.55fr)] xl:contents">
+              <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[3fr_2fr] xl:contents">
                 <div className="space-y-4 lg:col-start-1 lg:col-end-2 xl:col-start-2 xl:col-end-3">
                   {activeDashboardTab === "inbox" ? (
                     <ChatList

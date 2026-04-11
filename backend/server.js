@@ -439,6 +439,7 @@ app.get("/customers/by-id/:contact_id", requireAuth, bindAuthenticatedWhatsAppOw
 
     return res.json({
       ...customer,
+      id: customer.id, // Ensure UUID is always present
       profile_picture_url: profile.profilePictureUrl || customer.profile_picture_url || null,
       about: profile.about || customer.about || null
     });
@@ -470,6 +471,7 @@ app.get("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
 
     return res.json({
       ...customer,
+      id: customer.id, // Ensure UUID is always present
       profile_picture_url: profile.profilePictureUrl || customer.profile_picture_url || null,
       about: profile.about || customer.about || null
     });

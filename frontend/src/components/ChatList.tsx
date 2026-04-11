@@ -169,6 +169,7 @@ export function ChatList({
             const conversationId = getConversationIdentifier(conversation.phone, conversation.chatJid);
             const displayPhone = getDisplayPhone(conversation.phone, conversation.chatJid);
             const activeStatuses = STATUS_ORDER.filter((status) => (conversation.status_counts?.[status] ?? 0) > 0);
+            // Use activeConversationId prop for highlight, fallback to selectedPhone for backward compatibility
             const active = selectedPhone === conversationId;
             const conversationKey = conversation.chatJid || conversationId || conversation.timestamp;
             const deleting = deletingConversationKey === conversationKey;

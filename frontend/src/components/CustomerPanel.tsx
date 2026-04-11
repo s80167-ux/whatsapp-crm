@@ -5,6 +5,7 @@ export type CustomerPanelProps = {
   about: string | null;
   contactName: string | null;
   phone: string | null;
+  customerId?: string | null;
   chatJid?: string | null;
   profilePictureUrl: string | null;
   status: CustomerStatus;
@@ -99,6 +100,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
     about,
     contactName,
     phone,
+    customerId,
     chatJid,
     profilePictureUrl,
     status,
@@ -218,6 +220,23 @@ export function CustomerPanel(props: CustomerPanelProps) {
               </div>
 
               <div className="mt-4 grid gap-2">
+                {/* Customer ID */}
+                {customerId && (
+                  <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
+                    <DetailIcon>
+                      <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                        <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8" />
+                        <text x="12" y="16" textAnchor="middle" fontSize="10" fill="currentColor">ID</text>
+                      </svg>
+                    </DetailIcon>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Customer ID</p>
+                      <p className="mt-1 break-all text-sm font-medium text-ink">{customerId}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Contact Name */}
                 <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
                   <DetailIcon>
                     <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
@@ -230,6 +249,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
                   </div>
                 </div>
 
+                {/* WhatsApp ID */}
                 <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
                   <DetailIcon>
                     <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
@@ -243,6 +263,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
                   </div>
                 </div>
 
+                {/* Phone Number */}
                 <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
                   <DetailIcon>
                     <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
@@ -256,6 +277,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
                   </div>
                 </div>
 
+                {/* Last Activity */}
                 <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
                   <DetailIcon>
                     <svg fill="none" height="16" viewBox="0 0 24 24" width="16">

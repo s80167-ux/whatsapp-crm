@@ -174,6 +174,7 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
             const conversationId = getConversationIdentifier(contact.phone, contact.chatJid);
             const displayPhone = getDisplayPhone(contact.phone, contact.chatJid);
             const activeStatuses = STATUS_ORDER.filter((status) => (contact.status_counts?.[status] ?? 0) > 0);
+            // Use selectedPhone for highlight, do not auto-jump
             const active = selectedPhone === conversationId;
 
             return (
@@ -184,6 +185,7 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
                     ? "border-transparent bg-[#e9edef] shadow-none"
                     : "border-transparent bg-white hover:bg-[#f5f6f6] shadow-none"
                 }`}
+                style={{ width: '120%' }}
                 // ...existing code...
               >
                 <div className="flex items-start gap-3">
@@ -204,7 +206,11 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
                       <div className="min-w-0">
                         <p
                           className={`truncate text-sm font-bold leading-5 transition-colors ${active ? "text-whatsapp-deep" : "text-ink group-hover:text-whatsapp-deep"} cursor-pointer`}
-                          onClick={() => conversationId && onSelect(conversationId)}
+                          onClick={() => {
+                            if (conversationId) {
+                              onSelect(conversationId);
+                            }
+                          }}
                         >
                           {getDisplayName(contact.contactName, displayPhone || resolvedPhone)}
                         </p>
@@ -247,7 +253,7 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
                           onClick={e => e.stopPropagation()}
                         >
                           <svg width="24" height="24" fill="none" viewBox="0 0 24 24" className="mb-1"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.86 19.86 0 0 1 3.08 5.18 2 2 0 0 1 5 3h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.68 2.34a2 2 0 0 1-.45 2.11l-1.27 1.27a16 16 0 0 0 6.29 6.29l1.27-1.27a2 2 0 0 1 2.11-.45c.74.32 1.53.55 2.34.68A2 2 0 0 1 22 16.92z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                          <span className="block text-[10px] font-normal text-gray-500 sm:hidden text-[min(3vw,11px)]">Call</span>
+                          <span className="block font-normal text-gray-500 sm:hidden text-[min(3vw,11px)]">Call</span>
                           <span className="icon-hover-label hidden sm:inline">Call</span>
                         </a>
                       )}
@@ -259,7 +265,7 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
                         onClick={e => { e.stopPropagation(); if (conversationId) onSelect(conversationId, { focusChatInput: true }); }}
                       >
                         <svg width="24" height="24" fill="none" viewBox="0 0 24 24" className="mb-1"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                        <span className="block text-[10px] font-normal text-gray-500 sm:hidden text-[min(3vw,11px)]">Message</span>
+                        <span className="block font-normal text-gray-500 sm:hidden text-[min(3vw,11px)]">Message</span>
                         <span className="icon-hover-label hidden sm:inline">Message</span>
                       </button>
                       {/* Edit icon */}
@@ -270,7 +276,7 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
                         onClick={e => { e.stopPropagation(); /* TODO: implement edit action */ }}
                       >
                         <svg width="24" height="24" fill="none" viewBox="0 0 24 24" className="mb-1"><path d="M12 20h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19.5 3 21l1.5-4L16.5 3.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                        <span className="block text-[10px] font-normal text-gray-500 sm:hidden text-[min(3vw,11px)]">Edit</span>
+                        <span className="block font-normal text-gray-500 sm:hidden text-[min(3vw,11px)]">Edit</span>
                         <span className="icon-hover-label hidden sm:inline">Edit</span>
                       </button>
                       {/* Delete icon */}
@@ -281,7 +287,7 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
                         onClick={e => { e.stopPropagation(); /* TODO: implement delete action */ }}
                       >
                         <svg width="24" height="24" fill="none" viewBox="0 0 24 24" className="mb-1"><path d="M3 6h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6h16z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                        <span className="block text-[10px] font-normal text-rose-500 sm:hidden text-[min(3vw,11px)]">Delete</span>
+                        <span className="block font-normal text-rose-500 sm:hidden text-[min(3vw,11px)]">Delete</span>
                         <span className="icon-hover-label hidden sm:inline">Delete</span>
                       </button>
                     </div>

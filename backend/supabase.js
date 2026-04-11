@@ -128,6 +128,7 @@ function normalizeCustomerRecord(customer) {
 
   return {
     ...customer,
+    id: customer.id, // Always include UUID
     status: normalizeCustomerStatus(customer.status, customer.notes),
     ...(Object.prototype.hasOwnProperty.call(customer, "notes") ? { notes: stripStoredStatusMetadata(customer.notes) } : {}),
     ...(Object.prototype.hasOwnProperty.call(customer, "premise_address") ? { premise_address: customer.premise_address } : {}),

@@ -1,14 +1,15 @@
-const crypto = require("crypto");
-const { createClient } = require("@supabase/supabase-js");
-const {
+
+import crypto from "crypto";
+import { createClient } from "@supabase/supabase-js";
+import {
   deleteActiveDashboardSession,
   getActiveDashboardSessionId,
   upsertActiveDashboardSession
-} = require("./supabase");
+} from "./supabase.js";
 
 const authClient = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY,
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY,
   {
     auth: {
       autoRefreshToken: false,
@@ -173,7 +174,7 @@ async function requireAuth(req, res, next) {
   }
 }
 
-module.exports = {
+export {
   createDashboardSession,
   registerUser,
   loginUser,
