@@ -1236,12 +1236,12 @@ function App() {
     }
   }
 
-  async function handleSendAttachment(file: File, caption: string) {
+  async function handleSendAttachment(file: File, caption?: string) {
     if (!selectedPhone || !token) {
       return;
     }
 
-    const previewText = buildAttachmentPreviewText(file, caption);
+    const previewText = buildAttachmentPreviewText(file, caption ?? "");
     const mediaType = getAttachmentMediaType(file);
     const mediaDataUrl = await readFileAsDataUrl(file);
 
@@ -1264,7 +1264,7 @@ function App() {
       () =>
         api.sendAttachment(selectedPhone, file, token, {
           chatJid: activeChatJid,
-          caption: caption.trim()
+          caption: (caption ?? "").trim()
         }),
       previewText
     );

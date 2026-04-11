@@ -204,7 +204,7 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
                       <div className="min-w-0">
                         <p
                           className={`truncate text-sm font-bold leading-5 transition-colors ${active ? "text-whatsapp-deep" : "text-ink group-hover:text-whatsapp-deep"} cursor-pointer`}
-                          onClick={() => onSelect(conversationId)}
+                          onClick={() => conversationId && onSelect(conversationId)}
                         >
                           {getDisplayName(contact.contactName, displayPhone || resolvedPhone)}
                         </p>

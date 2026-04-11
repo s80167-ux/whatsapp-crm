@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type ComponentProps, typ
 import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type CustomerStatus, type Message, type SalesLeadItem } from "../lib/api";
 import { CustomerPanel } from "./CustomerPanel";
 import { getDisplayName, getDisplayPhone, formatPhoneDisplay } from "../lib/display";
+import type { StoredQuickReplyAttachment, AttachmentTab, ChatWindowProps } from "./ChatWindow.types";
 
 type QuickReply = {
   id: string;
