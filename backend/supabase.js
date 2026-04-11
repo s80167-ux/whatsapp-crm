@@ -1,3 +1,42 @@
+// Fetch a customer by contact_id and owner_user_id
+async function getCustomerByContactId(contact_id, owner_user_id) {
+  const { data, error } = await supabase
+    .from("customers")
+    .select("*")
+    .eq("owner_user_id", owner_user_id)
+    .eq("contact_id", contact_id)
+    .maybeSingle();
+  throwIfTenantSchemaError(error, "customers.owner_user_id");
+  if (error) throw error;
+  return data ? normalizeCustomerRecord(data) : null;
+}
+
+// Fetch messages by contact_id and owner_user_id
+async function getMessagesByContactId(contact_id, owner_user_id, chat_jid = null) {
+  // Find the customer by contact_id
+  const { data: customer, error: customerError } = await supabase
+    .from("customers")
+    .select("phone, chat_jid")
+    .eq("owner_user_id", owner_user_id)
+    .eq("contact_id", contact_id)
+    .maybeSingle();
+  throwIfTenantSchemaError(customerError, "customers.owner_user_id");
+  if (customerError) throw customerError;
+  if (!customer) return [];
+
+  // Now fetch messages by phone and owner_user_id (optionally filter by chat_jid)
+  let query = supabase
+    .from("messages")
+    .select("*")
+    .eq("owner_user_id", owner_user_id)
+    .eq("phone", customer.phone)
+    .order("created_at", { ascending: false });
+  if (chat_jid) query = query.eq("chat_jid", chat_jid);
+  const { data: messages, error: msgError } = await query;
+  throwIfTenantSchemaError(msgError, "messages.owner_user_id");
+  if (msgError) throw msgError;
+  return messages || [];
+}
 const { createClient } = require("@supabase/supabase-js");
 const { getPhoneLookupValues, normalizePhone, resolveWhatsAppPhone } = require("./wa-identifiers");
 
@@ -1794,5 +1833,7 @@ module.exports = {
   getActiveDashboardSessionId,
   upsertActiveDashboardSession,
   deleteActiveDashboardSession,
+  getCustomerByContactId,
+  getMessagesByContactId,
   supabase
 };

@@ -385,6 +385,21 @@ app.delete("/messages/:messageId", requireAuth, bindAuthenticatedWhatsAppOwner, 
 });
 
 
+
+// New: Fetch messages by contact_id
+app.get("/messages/by-id/:contact_id", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const contactId = req.params.contact_id;
+    // You need to implement getMessagesByContactId in supabase.js
+    const chatJid = typeof req.query?.chatJid === "string" ? req.query.chatJid.trim() || null : null;
+    const messages = await getMessagesByContactId(contactId, req.user.sub, chatJid);
+    return res.json(messages);
+  } catch (error) {
+    console.error("Failed to fetch messages by contact_id:", error);
+    return res.status(500).json({ error: "Failed to fetch messages by contact_id." });
+  }
+});
+
 app.get("/messages/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const phone = normalizePhone(req.params.phone);
@@ -394,6 +409,42 @@ app.get("/messages/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (
   } catch (error) {
     console.error("Failed to fetch messages:", error);
     return res.status(500).json({ error: "Failed to fetch messages." });
+  }
+});
+
+
+// New: Fetch customer by contact_id
+app.get("/customers/by-id/:contact_id", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const contactId = req.params.contact_id;
+    // You need to implement getCustomerByContactId in supabase.js
+    const customer = await getCustomerByContactId(contactId, req.user.sub);
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found." });
+    }
+    const profile = await getContactProfile(customer.phone, customer.chat_jid || null);
+
+    // Update DB cache if we got live data from WhatsApp
+    if (profile.profilePictureUrl || profile.about) {
+      await upsertCustomer({
+        owner_user_id: req.user.sub,
+        phone: customer.phone,
+        chat_jid: customer.chat_jid || null,
+        profile_picture_url: profile.profilePictureUrl,
+        about: profile.about
+      }).catch((err) => {
+        console.warn(`[PROFILE CACHE] Failed for contact_id ${contactId}. If you haven't run the SQL migration yet, this is expected:`, err.message);
+      });
+    }
+
+    return res.json({
+      ...customer,
+      profile_picture_url: profile.profilePictureUrl || customer.profile_picture_url || null,
+      about: profile.about || customer.about || null
+    });
+  } catch (error) {
+    console.error("Failed to fetch customer by contact_id:", error);
+    return res.status(500).json({ error: "Failed to fetch customer by contact_id." });
   }
 });
 

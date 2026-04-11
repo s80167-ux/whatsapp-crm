@@ -1550,9 +1550,10 @@ function App() {
                       onSelect={(phone, opts) => {
                         setActiveMessageFilterId(null);
                         setSelectedPhone(phone);
-                        setActiveDashboardTab("inbox");
-                        setActiveView("inbox");
+                        // Only switch to inbox if focusChatInput is requested (i.e., message icon click)
                         if (opts && opts.focusChatInput) {
+                          setActiveDashboardTab("inbox");
+                          setActiveView("inbox");
                           setTimeout(() => {
                             const chatInput = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(".chat-input-editor, .chat-input textarea, .chat-input input");
                             if (chatInput) {
