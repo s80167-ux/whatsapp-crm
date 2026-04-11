@@ -168,7 +168,7 @@ export function WhatsAppConnectCard({
   const profileIconButton = canViewProfile ? (
     <button
       aria-label={showProfilePanel ? "Hide WhatsApp profile" : "Show WhatsApp profile"}
-      className={`icon-hover-trigger flex h-10 w-10 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent ${showProfilePanel ? "text-whatsapp-deep" : ""}`}
+      className={`icon-hover-trigger flex ${compact ? "h-8 w-8" : "h-10 w-10"} appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent ${showProfilePanel ? "text-whatsapp-deep" : ""}`}
       onClick={() => setShowProfilePanel((current) => !current)}
       type="button"
     >
@@ -181,14 +181,15 @@ export function WhatsAppConnectCard({
           strokeWidth="2"
         />
       </svg>
-      <span className="icon-hover-label">{showProfilePanel ? "Hide WhatsApp profile" : "Show WhatsApp profile"}</span>
+      <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Profile</span>
+      <span className="icon-hover-label hidden sm:inline">{showProfilePanel ? "Hide WhatsApp profile" : "Show WhatsApp profile"}</span>
     </button>
   ) : null;
 
   const disconnectIconButton = canDisconnect ? (
     <button
       aria-label={disconnectLabel}
-      className="icon-hover-trigger flex h-10 w-10 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-rose-700 focus:bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
+      className={`icon-hover-trigger flex ${compact ? "h-8 w-8" : "h-10 w-10"} appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-rose-700 focus:bg-transparent disabled:cursor-not-allowed disabled:opacity-50`}
       disabled={disconnecting}
       onClick={onDisconnect}
       type="button"
@@ -209,7 +210,8 @@ export function WhatsAppConnectCard({
           strokeWidth="1.8"
         />
       </svg>
-      <span className="icon-hover-label">{disconnectLabel}</span>
+      <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Disconnect</span>
+      <span className="icon-hover-label hidden sm:inline">{disconnectLabel}</span>
     </button>
   ) : null;
 
@@ -230,7 +232,8 @@ export function WhatsAppConnectCard({
           strokeWidth="2"
         />
       </svg>
-      <span className="icon-hover-label">{showAdvanced ? "Hide WhatsApp settings" : "Show WhatsApp settings"}</span>
+      <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Settings</span>
+      <span className="icon-hover-label hidden sm:inline">{showAdvanced ? "Hide WhatsApp settings" : "Show WhatsApp settings"}</span>
     </button>
   );
 
@@ -245,7 +248,8 @@ export function WhatsAppConnectCard({
         <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
         <path d="M14 14h2v2h-2zM18 14h2v6h-6v-2h4zM14 18h2v2h-2z" fill="currentColor" />
       </svg>
-      <span className="icon-hover-label">{showQrOverlay ? "Hide WhatsApp QR code" : "Show WhatsApp QR code"}</span>
+      <span className="block text-[10px] font-normal text-gray-500 sm:hidden">QR</span>
+      <span className="icon-hover-label hidden sm:inline">{showQrOverlay ? "Hide WhatsApp QR code" : "Show WhatsApp QR code"}</span>
     </button>
   ) : null;
 
@@ -509,8 +513,8 @@ export function WhatsAppConnectCard({
               <p className="text-sm font-medium text-rose-950/72">Danger Zone</p>
               <p className="text-xs text-rose-950/50">Wipe all messages & sync fresh</p>
             </div>
-            <button 
-              className="rounded-lg bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-200 disabled:opacity-50"
+            <button
+              className="w-full rounded-xl bg-rose-600 py-3 text-base font-bold text-white shadow transition active:bg-rose-700 disabled:opacity-60 disabled:cursor-not-allowed"
               onClick={handleClearDatabase}
               disabled={clearingDb}
             >

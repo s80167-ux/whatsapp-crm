@@ -23,20 +23,21 @@ export type CustomerPanelProps = {
   onNotesChange: (value: string) => void;
   onClose?: () => void;
   variant?: "panel" | "inline";
+  onLeadStatusFilter?: (status: CustomerStatus) => void;
 };
 
 function getStatusAccent(status: CustomerStatus) {
   switch (status) {
     case "new_lead":
-      return "bg-yellow-500/12 text-yellow-700 border-yellow-200";
+      return "bg-yellow-400/20 text-yellow-700 border-yellow-200";
     case "interested":
-      return "bg-emerald-500/12 text-emerald-700 border-emerald-200";
+      return "bg-emerald-400/20 text-emerald-700 border-emerald-200";
     case "processing":
-      return "bg-blue-500/12 text-blue-700 border-blue-200";
+      return "bg-blue-400/20 text-blue-700 border-blue-200";
     case "closed_won":
-      return "bg-slate-700/12 text-slate-800 border-slate-300";
+      return "bg-slate-700/15 text-slate-800 border-slate-300";
     case "closed_lost":
-      return "bg-rose-500/12 text-rose-700 border-rose-200";
+      return "bg-rose-400/20 text-rose-700 border-rose-200";
     default:
       return "bg-whatsapp-canvas text-whatsapp-deep border-whatsapp-line";
   }
@@ -152,7 +153,8 @@ export function CustomerPanel(props: CustomerPanelProps) {
               <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
                 <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
               </svg>
-              <span className="icon-hover-label">Close profile</span>
+              <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Close</span>
+              <span className="icon-hover-label hidden sm:inline">Close profile</span>
             </button>
           ) : null}
         </div>
@@ -170,9 +172,17 @@ export function CustomerPanel(props: CustomerPanelProps) {
             </div>
             {canCollapse ? (
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-whatsapp-canvas text-whatsapp-muted shadow-soft transition hover:bg-white hover:text-whatsapp-deep">
-                <svg className={`h-4 w-4 transition ${mobileCollapsed ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24">
-                  <path d="m6 9 6 6 6-6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-                </svg>
+                {/* Minimal plus/minus icon for collapse/expand */}
+                {mobileCollapsed ? (
+                  <svg className="h-4 w-4 transition" fill="none" viewBox="0 0 24 24">
+                    <rect x="5" y="11" width="14" height="2" rx="1" fill="currentColor" />
+                  </svg>
+                ) : (
+                  <svg className="h-4 w-4 transition" fill="none" viewBox="0 0 24 24">
+                    <rect x="5" y="11" width="14" height="2" rx="1" fill="currentColor" />
+                    <rect x="11" y="5" width="2" height="14" rx="1" fill="currentColor" />
+                  </svg>
+                )}
               </span>
             ) : null}
           </button>
@@ -180,28 +190,30 @@ export function CustomerPanel(props: CustomerPanelProps) {
       )}
 
       <div className={contentClasses}>
-        <div className="rounded-[28px] border border-whatsapp-line bg-white p-4 shadow-soft">
-          <div className="flex flex-col gap-4">
+        <div className="rounded-[20px] border border-whatsapp-line bg-white p-3 shadow-soft sm:p-4">
+          <div className="flex flex-col gap-3 sm:gap-4">
             {profilePictureUrl ? (
               <img
                 alt={title}
-                className="h-20 w-20 rounded-3xl object-cover shadow-soft"
+                className="h-14 w-14 sm:h-20 sm:w-20 rounded-2xl sm:rounded-3xl object-cover shadow-soft"
                 src={profilePictureUrl}
               />
             ) : (
-              <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-whatsapp-dark text-xl font-semibold text-white shadow-soft">
+              <div className="flex h-14 w-14 sm:h-20 sm:w-20 items-center justify-center rounded-2xl sm:rounded-3xl bg-whatsapp-dark text-lg sm:text-xl font-semibold text-white shadow-soft">
                 {initials}
               </div>
             )}
 
             <div className="min-w-0">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
                 <div className="min-w-0 flex-1">
-                  <h3 className="break-words text-lg font-semibold leading-tight text-ink">{title}</h3>
-                  <p className="mt-1 text-xs uppercase tracking-[0.2em] text-whatsapp-muted">Customer profile</p>
+                  <h3 className="break-words text-base sm:text-lg font-semibold leading-tight text-ink">{title}</h3>
+                  <p className="mt-0.5 text-[10px] sm:text-xs uppercase tracking-[0.2em] text-whatsapp-muted">Customer profile</p>
                 </div>
-                <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${getStatusAccent(status)}`}>
-                  {currentStatusLabel}
+                {/* Slimmer status: just dot and label */}
+                <span className="flex items-center gap-1">
+                  <span className={`chat-status-dot h-3 w-3 shrink-0 ${getStatusDotClass(status)}`}></span>
+                  <span className="text-xs font-semibold text-ink">{currentStatusLabel}</span>
                 </span>
               </div>
 
@@ -293,34 +305,39 @@ export function CustomerPanel(props: CustomerPanelProps) {
           ) : null}
         </div>
 
-        <div className="rounded-3xl border border-whatsapp-line bg-white p-4 shadow-soft">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-whatsapp-deep">Lead status</p>
-            {loading ? <span className="text-xs text-whatsapp-muted">Loading customer details...</span> : null}
+        <div className="rounded-2xl border border-whatsapp-line bg-white p-3 shadow-soft sm:rounded-3xl sm:p-4">
+          <div className="flex items-center justify-between gap-2 sm:gap-3">
+            <p className="text-xs sm:text-sm font-medium text-whatsapp-deep">Lead status</p>
+            {loading ? <span className="text-xs text-whatsapp-muted">Loading...</span> : null}
           </div>
-          <div className="mt-3 flex items-center justify-between rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <span className={`chat-status-dot h-3 w-3 shrink-0 ${getStatusDotClass(status)}`} />
-              <span className="text-sm font-medium text-ink">{currentStatusLabel}</span>
-            </div>
-            <span className="text-xs text-whatsapp-muted">Current</span>
-          </div>
-          <div className="mt-3 grid grid-cols-5 gap-2">
+          <div className="mt-2 grid grid-cols-5 gap-1 sm:gap-2">
             {CUSTOMER_STATUSES.map((item) => {
               const isActive = item === status;
               const count = statusCounts[item] ?? 0;
-
+              // Always use lead status color for button background
+              const statusClass = getStatusAccent(item);
               return (
-                <div
+                <button
                   key={item}
-                  className={`icon-hover-trigger flex items-center justify-between rounded-2xl border px-3 py-2.5 transition ${
-                    isActive ? getStatusAccent(item) : "border-whatsapp-line bg-whatsapp-canvas text-whatsapp-muted"
-                  }`}
+                  className={`icon-hover-trigger flex flex-col items-center justify-center rounded-xl border px-1.5 py-1.5 sm:px-3 sm:py-2.5 transition focus:outline-none ${statusClass}`}
+                  type="button"
+                  onClick={() => props.onLeadStatusFilter && props.onLeadStatusFilter(item)}
+                  style={{ minWidth: 0 }}
                 >
-                  <span className={`chat-status-dot h-3 w-3 shrink-0 ${getStatusDotClass(item)}`} />
-                  <span className="text-sm font-semibold">{count}</span>
-                  <span className="icon-hover-label">{`${CUSTOMER_STATUS_LABELS[item]}: ${count}`}</span>
-                </div>
+                  <span className="text-xs sm:text-sm font-semibold flex-shrink-0">{count}</span>
+                  <span
+                    className="font-normal text-gray-700 text-center leading-tight mt-0.5 w-full"
+                    style={{
+                      fontSize: `clamp(10px, 1.6vw, 13px)`,
+                      lineHeight: 1.15,
+                      whiteSpace: 'normal',
+                      wordBreak: 'break-word',
+                      padding: 0,
+                    }}
+                  >
+                    {CUSTOMER_STATUS_LABELS[item]}
+                  </span>
+                </button>
               );
             })}
           </div>

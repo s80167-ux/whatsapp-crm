@@ -4,5 +4,12 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"chat.tools.terminal.autoApprove": {
+			"/^git add \\. ; git commit -m \"Redesign login Reset/Resend button layout for mobile minimalism and alignment\" ; git push$/": {
+				"approve": true,
+				"matchCommandLine": true
+			}
+		}
+	}
 }

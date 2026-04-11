@@ -195,3 +195,10 @@ textarea {
   background-size: 18px 18px, auto;
   background-position: 0 0, center;
 }
+
+.funnel-label {
+  font-size: 15px;
+  font-weight: 600;
+  text-shadow: 0 1px 2px #0008;
+  dominant-baseline: middle;
+}

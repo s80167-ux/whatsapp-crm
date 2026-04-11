@@ -7,12 +7,13 @@ import type { CustomerPanelProps } from "./components/CustomerPanel";
 import { LoginForm } from "./components/LoginForm";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
+import { SalesDashboard } from "./components/SalesDashboard";
 import { ApiError, api, CUSTOMER_STATUSES, setApiSessionId, setApiUnauthorizedHandler, type Conversation, type Customer, type CustomerStatus, type Message, type SalesLeadItem, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
 import { getConversationIdentifier, getResolvedPhone } from "./lib/display";
 import { clearPasswordRecoveryCallback, getEmailVerificationRedirectUrl, getPasswordRecoveryRedirectUrl, isPasswordRecoveryCallback, supabase } from "./lib/supabase";
 
 type AuthMode = "login" | "register";
-type DashboardTab = "inbox" | "contacts";
+type DashboardTab = "inbox" | "contacts" | "sales";
 type SidebarView = "inbox" | "pipeline" | "broadcast";
 const conversationPollMs = 8000;
 const dashboardSessionStorageKey = "whatsapp-crm-dashboard-session-id";
@@ -81,6 +82,7 @@ function App() {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
+  const [activeMessageFilterId, setActiveMessageFilterId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [loadingChats, setLoadingChats] = useState(false);
@@ -92,9 +94,11 @@ function App() {
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [customerDraft, setCustomerDraft] = useState<Customer | null>(null);
   const [salesLeadItems, setSalesLeadItems] = useState<SalesLeadItem[]>([]);
+  const [allSalesLeadItems, setAllSalesLeadItems] = useState<SalesLeadItem[]>([]);
   const [loadingSalesLeadItems, setLoadingSalesLeadItems] = useState(false);
+  const [loadingAllSalesLeadItems, setLoadingAllSalesLeadItems] = useState(false);
   const [savingSalesLeadItem, setSavingSalesLeadItem] = useState(false);
-  const [customerPanelCollapsed, setCustomerPanelCollapsed] = useState(false);
+  const [customerPanelCollapsed, setCustomerPanelCollapsed] = useState(true);
   const [saveTimer, setSaveTimer] = useState<number | null>(null);
   const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus | null>(null);
   const [whatsAppQr, setWhatsAppQr] = useState<WhatsAppQr | null>(null);
@@ -104,6 +108,7 @@ function App() {
   const [deletingConversationKey, setDeletingConversationKey] = useState<string | null>(null);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const handlingSessionRevocationRef = useRef(false);
+  const isSalesDashboard = activeDashboardTab === "sales";
 
   function resetDashboardState() {
     setToken("");
@@ -112,9 +117,11 @@ function App() {
     setUserEmail("");
     setConversations([]);
     setSelectedPhone(null);
+    setActiveMessageFilterId(null);
     setMessages([]);
     setCustomerDraft(null);
     setSalesLeadItems([]);
+    setAllSalesLeadItems([]);
     setConnectedWhatsAppPhone(null);
   }
 
@@ -175,8 +182,13 @@ function App() {
     persistDashboardSession("");
     resetDashboardState();
     setPasswordRecoveryActive(false);
-    setDashboardError(message);
-    setAuthError(message);
+    const normalizedMessage = String(message || "").trim().toLowerCase();
+    const revocationMessage =
+      normalizedMessage === "invalid or expired token."
+        ? "Your login session expired. Please sign in again."
+        : message || "Your session ended. Please sign in again.";
+    setDashboardError(revocationMessage);
+    setAuthError(revocationMessage);
     setAuthNotice("");
     handlingSessionRevocationRef.current = false;
   }
@@ -305,7 +317,11 @@ function App() {
       const data = await api.getMessages(phone, activeToken, chatJid);
       setMessages(data);
     } catch (error) {
-      setDashboardError(error instanceof Error ? error.message : "Failed to load messages.");
+      if (!silent) {
+        setDashboardError(error instanceof Error ? error.message : "Failed to load messages.");
+      } else {
+        console.warn("Silent message refresh failed:", error);
+      }
     } finally {
       if (!silent) {
         setLoadingMessages(false);
@@ -349,6 +365,23 @@ function App() {
     } finally {
       if (!silent) {
         setLoadingSalesLeadItems(false);
+      }
+    }
+  }
+
+  async function loadAllSalesLeadItems(activeToken: string, silent = false) {
+    if (!silent) {
+      setLoadingAllSalesLeadItems(true);
+    }
+
+    try {
+      const data = await api.getSalesLeadItems(activeToken);
+      setAllSalesLeadItems(data);
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "Failed to load sales dashboard data.");
+    } finally {
+      if (!silent) {
+        setLoadingAllSalesLeadItems(false);
       }
     }
   }
@@ -477,6 +510,7 @@ function App() {
       );
 
       setSalesLeadItems((current) => [item, ...current]);
+      setAllSalesLeadItems((current) => [item, ...current]);
 
       setCustomerDraft((current) =>
         current
@@ -545,6 +579,7 @@ function App() {
       );
 
       setSalesLeadItems((current) => current.map((existingItem) => (existingItem.id === item.id ? item : existingItem)));
+      setAllSalesLeadItems((current) => current.map((existingItem) => (existingItem.id === item.id ? item : existingItem)));
 
       setCustomerDraft((current) =>
         current
@@ -793,6 +828,14 @@ function App() {
     loadCustomer(selectedPhone, token, activeChatJid);
     loadCustomerSalesItems(selectedPhone, token, activeChatJid);
   }, [activeChatJid, dashboardSessionId, selectedPhone, token]);
+
+  useEffect(() => {
+    if (!token || !dashboardSessionId || activeDashboardTab !== "sales") {
+      return;
+    }
+
+    loadAllSalesLeadItems(token, true);
+  }, [activeDashboardTab, dashboardSessionId, token]);
 
   useEffect(() => {
     if (whatsAppStatus?.connected) {
@@ -1371,137 +1414,208 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen bg-app px-4 py-6 text-ink">
-      <div className="mx-auto max-w-[1600px] space-y-4">
-        <TopBar
-          activeTab={activeDashboardTab}
-          disconnectingWhatsApp={disconnectingWhatsApp}
-          loadingWhatsApp={loadingWhatsApp}
-          onChangeTab={setActiveDashboardTab}
-          onDisconnectWhatsApp={handleDisconnectWhatsApp}
-          onLogout={handleLogout}
-          token={token}
-          userEmail={userEmail}
-          whatsAppQr={whatsAppQr}
-          whatsAppStatus={whatsAppStatus}
-        />
-        <div className="space-y-4 xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(280px,1fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
-          <Sidebar
-            activeView={activeView}
-            activeStatusFilter={activeStatusFilter}
-            counts={sidebarCounts}
-            onChangeView={setActiveView}
-            onStatusFilterChange={setActiveStatusFilter}
-            stats={sidebarStats}
+    <main className="min-h-screen bg-app px-4 py-4 text-ink sm:py-5 lg:py-6">
+      <div className="fixed inset-x-0 top-0 z-40 px-4 pt-2 pb-2 sm:pt-3 lg:pt-4">
+        <div className="mx-auto max-w-[1600px]">
+          <TopBar
+            activeTab={activeDashboardTab}
+            disconnectingWhatsApp={disconnectingWhatsApp}
+            loadingWhatsApp={loadingWhatsApp}
+            onChangeTab={setActiveDashboardTab}
+            onDisconnectWhatsApp={handleDisconnectWhatsApp}
+            onLogout={handleLogout}
+            token={token}
+            userEmail={userEmail}
+            whatsAppQr={whatsAppQr}
+            whatsAppStatus={whatsAppStatus}
           />
-
-        <div className="space-y-4 xl:contents">
-          {dashboardError ? (
-            <div className="glass-panel border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 xl:col-start-2 xl:col-end-4">{dashboardError}</div>
-          ) : null}
-
-          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(260px,_0.95fr)_minmax(0,_1.55fr)] xl:contents">
-            <div className="space-y-4 lg:col-start-1 lg:col-end-2 xl:col-start-2 xl:col-end-3">
-              {activeDashboardTab === "inbox" ? (
-                <ChatList
-                  activeView={activeView}
-                  conversations={visibleConversations}
-                  deletingConversationKey={deletingConversationKey}
-                  loading={loadingChats}
-                  onDeleteConversation={handleDeleteConversation}
-                  onRefresh={() => {
-                    if (!token) {
-                      return;
-                    }
-
-                    loadWhatsAppState(true);
-                    loadConversations(token, true);
-
-                    if (selectedPhone) {
-                      loadMessages(selectedPhone, token, activeCustomerChatJid, true);
-                      loadCustomer(selectedPhone, token, activeCustomerChatJid, true);
-                      loadCustomerSalesItems(selectedPhone, token, activeCustomerChatJid, true);
-                    }
-                  }}
-                  onSelect={(phone) => {
-                    setSelectedPhone(phone);
-                  }}
-                  refreshing={refreshingChats}
-                  selectedPhone={selectedPhone}
-                  whatsAppConnected={Boolean(whatsAppStatus?.connected)}
-                />
-              ) : (
-                <ContactList
-                  activeStatusFilter={activeStatusFilter}
-                  contacts={visibleConversations}
-                  loading={loadingChats}
-                  onRefresh={() => {
-                    if (!token) {
-                      return;
-                    }
-
-                    loadWhatsAppState(true);
-                    loadConversations(token, true);
-
-                    if (selectedPhone) {
-                      loadCustomer(selectedPhone, token, activeCustomerChatJid, true);
-                      loadCustomerSalesItems(selectedPhone, token, activeCustomerChatJid, true);
-                    }
-                  }}
-                  onSelect={(phone) => {
-                    setSelectedPhone(phone);
-                  }}
-                  refreshing={refreshingChats}
-                  selectedPhone={selectedPhone}
-                />
-              )}
-            </div>
-
-            <div className="order-2 lg:order-none lg:col-start-2 lg:col-end-3 xl:col-start-3 xl:col-end-4">
-              {activeDashboardTab === "inbox" ? (
-                <ChatWindow
-                  contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
-                  customerPanelProps={customerPanelProps}
-                  chatJid={selectedConversation?.chatJid || customerDraft?.chat_jid || null}
-                  deletingMessageId={deletingMessageId}
-                  loading={loadingMessages}
-                  loadingSalesLeadItems={loadingSalesLeadItems}
-                  messageText={chatInput}
-                  messages={messages}
-                  onChangeMessage={setChatInput}
-                  onCreateSalesLeadItem={handleCreateSalesLeadItem}
-                  onUpdateSalesLeadItem={handleUpdateSalesLeadItem}
-                  onDeleteMessage={handleDeleteMessage}
-                  onSendAttachment={handleSendAttachment}
-                  onSendLocation={handleSendLocation}
-                  onSend={handleSend}
-                  onSendQuickReply={sendTextMessage}
-                  phone={activeCustomerPhone}
-                  profilePictureUrl={customerDraft?.profile_picture_url || null}
-                  salesLeadItems={salesLeadItems}
-                  salesLeadStatus={selectedStatus}
-                  savingSalesLeadItem={savingSalesLeadItem}
-                  sending={sending}
-                />
-              ) : customerPanelProps ? (
-                <CustomerPanel
-                  {...customerPanelProps}
-                  mobileCollapsed={customerPanelCollapsed}
-                  onToggleMobileCollapse={() => setCustomerPanelCollapsed((current) => !current)}
-                />
-              ) : (
-                <section className="glass-panel flex min-h-[420px] flex-col items-center justify-center p-6 text-center">
-                  <p className="text-xs uppercase tracking-[0.25em] text-whatsapp-muted">Contact details</p>
-                  <h3 className="mt-3 text-xl font-semibold text-ink">Select a contact</h3>
-                  <p className="mt-2 max-w-sm text-sm leading-6 text-whatsapp-muted">
-                    Pick a contact from the CRM list to review profile details, update lead status, and manage notes without leaving the dashboard.
-                  </p>
-                </section>
-              )}
-            </div>
-          </div>
         </div>
       </div>
+
+      <div className="mx-auto max-w-[1600px] space-y-4 pt-44 sm:pt-48 lg:pt-28">
+        {dashboardError ? <div className="glass-panel border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">{dashboardError}</div> : null}
+
+        {isSalesDashboard ? (
+          <div className="space-y-4 xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(0,3fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
+            <Sidebar
+              activeView={activeView}
+              activeStatusFilter={activeStatusFilter}
+              counts={sidebarCounts}
+              onChangeView={setActiveView}
+              onStatusFilterChange={setActiveStatusFilter}
+              stats={sidebarStats}
+            />
+            <SalesDashboard
+              activeContact={selectedConversation?.contactName || customerDraft?.contact_name || selectedPhone || "None"}
+              conversations={leadConversations}
+              loading={loadingAllSalesLeadItems}
+              onOpenConversation={({ phone, chatJid, messageId }) => {
+                const exactId = getConversationIdentifier(phone, chatJid);
+                const fallbackConversation =
+                  leadConversations.find((conversation) => {
+                    const conversationId = getConversationIdentifier(conversation.phone, conversation.chatJid);
+                    return exactId ? conversationId === exactId : conversation.phone === phone;
+                  }) ||
+                  leadConversations.find((conversation) => conversation.phone === phone) ||
+                  null;
+
+                const nextConversationId =
+                  getConversationIdentifier(fallbackConversation?.phone, fallbackConversation?.chatJid) ||
+                  exactId ||
+                  getConversationIdentifier(phone, null);
+
+                if (!nextConversationId) {
+                  return;
+                }
+
+                setActiveStatusFilter(null);
+                setActiveView("inbox");
+                setActiveDashboardTab("inbox");
+                setActiveMessageFilterId(messageId || null);
+                setSelectedPhone(nextConversationId);
+              }}
+              onRefresh={() => {
+                if (!token) {
+                  return;
+                }
+
+                loadWhatsAppState(true);
+                loadConversations(token, true);
+                loadAllSalesLeadItems(token, true);
+              }}
+              salesLeadItems={allSalesLeadItems.length ? allSalesLeadItems : salesLeadItems}
+            />
+          </div>
+        ) : (
+          <div className="space-y-4 xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(280px,1fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
+            <Sidebar
+              activeView={activeView}
+              activeStatusFilter={activeStatusFilter}
+              counts={sidebarCounts}
+              onChangeView={setActiveView}
+              onStatusFilterChange={setActiveStatusFilter}
+              stats={sidebarStats}
+            />
+
+            <div className="space-y-4 xl:contents">
+              <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(260px,_0.95fr)_minmax(0,_1.55fr)] xl:contents">
+                <div className="space-y-4 lg:col-start-1 lg:col-end-2 xl:col-start-2 xl:col-end-3">
+                  {activeDashboardTab === "inbox" ? (
+                    <ChatList
+                      activeView={activeView}
+                      conversations={visibleConversations}
+                      deletingConversationKey={deletingConversationKey}
+                      loading={loadingChats}
+                      onDeleteConversation={handleDeleteConversation}
+                      onRefresh={() => {
+                        if (!token) {
+                          return;
+                        }
+
+                        loadWhatsAppState(true);
+                        loadConversations(token, true);
+
+                        if (selectedPhone) {
+                          loadMessages(selectedPhone, token, activeCustomerChatJid, true);
+                          loadCustomer(selectedPhone, token, activeCustomerChatJid, true);
+                          loadCustomerSalesItems(selectedPhone, token, activeCustomerChatJid, true);
+                        }
+                      }}
+                      onSelect={(phone) => {
+                        setActiveMessageFilterId(null);
+                        setSelectedPhone(phone);
+                      }}
+                      refreshing={refreshingChats}
+                      selectedPhone={selectedPhone}
+                      whatsAppConnected={Boolean(whatsAppStatus?.connected)}
+                    />
+                  ) : (
+                    <ContactList
+                      activeStatusFilter={activeStatusFilter}
+                      contacts={visibleConversations}
+                      loading={loadingChats}
+                      onRefresh={() => {
+                        if (!token) {
+                          return;
+                        }
+
+                        loadWhatsAppState(true);
+                        loadConversations(token, true);
+
+                        if (selectedPhone) {
+                          loadCustomer(selectedPhone, token, activeCustomerChatJid, true);
+                          loadCustomerSalesItems(selectedPhone, token, activeCustomerChatJid, true);
+                        }
+                      }}
+                      onSelect={(phone, opts) => {
+                        setActiveMessageFilterId(null);
+                        setSelectedPhone(phone);
+                        setActiveDashboardTab("inbox");
+                        setActiveView("inbox");
+                        if (opts && opts.focusChatInput) {
+                          setTimeout(() => {
+                            const chatInput = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(".chat-input-editor, .chat-input textarea, .chat-input input");
+                            if (chatInput) {
+                              chatInput.scrollIntoView({ behavior: "smooth", block: "end" });
+                              chatInput.focus();
+                            }
+                          }, 300);
+                        }
+                      }}
+                      refreshing={refreshingChats}
+                      selectedPhone={selectedPhone}
+                    />
+                  )}
+                </div>
+
+                <div className="order-2 lg:order-none lg:col-start-2 lg:col-end-3 xl:col-start-3 xl:col-end-4">
+                  {activeDashboardTab === "inbox" ? (
+                    <ChatWindow
+                      contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
+                      customerPanelProps={customerPanelProps}
+                      chatJid={selectedConversation?.chatJid || customerDraft?.chat_jid || null}
+                      deletingMessageId={deletingMessageId}
+                      loading={loadingMessages}
+                      loadingSalesLeadItems={loadingSalesLeadItems}
+                      messageText={chatInput}
+                      messages={messages}
+                      onChangeMessage={setChatInput}
+                      onCreateSalesLeadItem={handleCreateSalesLeadItem}
+                      onUpdateSalesLeadItem={handleUpdateSalesLeadItem}
+                      onDeleteMessage={handleDeleteMessage}
+                      onSendAttachment={handleSendAttachment}
+                      onSendLocation={handleSendLocation}
+                      onSend={handleSend}
+                      onSendQuickReply={sendTextMessage}
+                      messageFilterId={activeMessageFilterId}
+                      onClearMessageFilter={() => setActiveMessageFilterId(null)}
+                      phone={activeCustomerPhone}
+                      profilePictureUrl={customerDraft?.profile_picture_url || null}
+                      salesLeadItems={salesLeadItems}
+                      salesLeadStatus={selectedStatus}
+                      savingSalesLeadItem={savingSalesLeadItem}
+                      sending={sending}
+                    />
+                  ) : activeDashboardTab === "contacts" && customerPanelProps ? (
+                    <CustomerPanel
+                      {...customerPanelProps}
+                      mobileCollapsed={customerPanelCollapsed}
+                      onToggleMobileCollapse={() => setCustomerPanelCollapsed((current) => !current)}
+                    />
+                  ) : (
+                    <section className="glass-panel flex min-h-[420px] flex-col items-center justify-center p-6 text-center">
+                      <p className="text-xs uppercase tracking-[0.25em] text-whatsapp-muted">Contact details</p>
+                      <h3 className="mt-3 text-xl font-semibold text-ink">Select a contact</h3>
+                      <p className="mt-2 max-w-sm text-sm leading-6 text-whatsapp-muted">
+                        Pick a contact from the CRM list to review profile details, update lead status, and manage notes without leaving the dashboard.
+                      </p>
+                    </section>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   </main>
 );

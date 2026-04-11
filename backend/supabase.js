@@ -90,7 +90,11 @@ function normalizeCustomerRecord(customer) {
   return {
     ...customer,
     status: normalizeCustomerStatus(customer.status, customer.notes),
-    ...(Object.prototype.hasOwnProperty.call(customer, "notes") ? { notes: stripStoredStatusMetadata(customer.notes) } : {})
+    ...(Object.prototype.hasOwnProperty.call(customer, "notes") ? { notes: stripStoredStatusMetadata(customer.notes) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(customer, "premise_address") ? { premise_address: customer.premise_address } : {}),
+    ...(Object.prototype.hasOwnProperty.call(customer, "business_type") ? { business_type: customer.business_type } : {}),
+    ...(Object.prototype.hasOwnProperty.call(customer, "age") ? { age: customer.age } : {}),
+    ...(Object.prototype.hasOwnProperty.call(customer, "email_address") ? { email_address: customer.email_address } : {})
   };
 }
 
@@ -556,12 +560,14 @@ async function getMessagesByPhone(phone, ownerUserId, chatJid) {
         .eq("owner_user_id", ownerUserId)
         .eq("chat_jid", chatJid)
         .order("created_at", { ascending: true }),
-      supabase
-        .from("messages")
-        .select("*")
-        .eq("owner_user_id", ownerUserId)
-        .in("phone", lookupValues)
-        .order("created_at", { ascending: true })
+      lookupValues.length
+        ? supabase
+            .from("messages")
+            .select("*")
+            .eq("owner_user_id", ownerUserId)
+            .in("phone", lookupValues)
+            .order("created_at", { ascending: true })
+        : Promise.resolve({ data: [], error: null })
     ]);
 
     if (isMissingColumnError(byChatJid.error, "messages.chat_jid")) {
@@ -576,6 +582,10 @@ async function getMessagesByPhone(phone, ownerUserId, chatJid) {
       error = byChatJid.error || byPhone.error;
     }
   } else {
+    if (!lookupValues.length) {
+      return [];
+    }
+
     ({ data, error } = await supabase
       .from("messages")
       .select("*")
@@ -1110,7 +1120,7 @@ async function deleteConversation({ owner_user_id, phone, chat_jid }) {
   };
 }
 
-async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, status, notes, profile_picture_url, about, unread_count }) {
+async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, status, notes, profile_picture_url, about, unread_count, premise_address, business_type, age, email_address }) {
   const canonicalPhone = await resolveWhatsAppPhone(phone, chat_jid || null);
   const payload = {
     owner_user_id,
@@ -1122,6 +1132,10 @@ async function upsertCustomer({ owner_user_id, phone, chat_jid, contact_name, st
     ...(profile_picture_url !== undefined ? { profile_picture_url } : {}),
     ...(about !== undefined ? { about } : {}),
     ...(unread_count !== undefined ? { unread_count } : {}),
+    ...(premise_address !== undefined ? { premise_address } : {}),
+    ...(business_type !== undefined ? { business_type } : {}),
+    ...(age !== undefined ? { age } : {}),
+    ...(email_address !== undefined ? { email_address } : {}),
     updated_at: new Date().toISOString()
   };
   let writePayload = payload;
@@ -1477,6 +1491,35 @@ async function getCustomerSalesItems(phone, ownerUserId, chatJid) {
   );
 }
 
+async function getAllCustomerSalesItems(ownerUserId) {
+  let { data, error } = await supabase
+    .from("customer_sales_items")
+    .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
+    .eq("owner_user_id", ownerUserId)
+    .order("created_at", { ascending: false });
+
+  if (isMissingColumnError(error, "customer_sales_items.chat_jid")) {
+    ({ data, error } = await supabase
+      .from("customer_sales_items")
+      .select("id, message_id, phone, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
+      .eq("owner_user_id", ownerUserId)
+      .order("created_at", { ascending: false }));
+  }
+
+  throwIfSalesItemsSchemaError(error);
+
+  if (error) {
+    throw error;
+  }
+
+  return Promise.all(
+    (data || []).map(async (item) => ({
+      ...item,
+      phone: (await resolveWhatsAppPhone(item.phone, item.chat_jid || null)) || item.phone
+    }))
+  );
+}
+
 async function getOwnedMessageRecord(messageId, ownerUserId) {
   const { data, error } = await supabase
     .from("messages")
@@ -1745,6 +1788,7 @@ module.exports = {
   getWhatsAppSettings,
   upsertWhatsAppProfile,
   getCustomerSalesItems,
+  getAllCustomerSalesItems,
   createCustomerSalesItem,
   updateCustomerSalesItem,
   getActiveDashboardSessionId,

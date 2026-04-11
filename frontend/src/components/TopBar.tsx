@@ -3,7 +3,7 @@ import { type WhatsAppQr, type WhatsAppStatus } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import { WhatsAppConnectCard } from "./WhatsAppConnectCard";
 
-type DashboardTab = "inbox" | "contacts";
+type DashboardTab = "inbox" | "contacts" | "sales";
 
 type NavigationItem = {
   key: DashboardTab | "analytics" | "settings";
@@ -14,7 +14,7 @@ type NavigationItem = {
 const navItems: NavigationItem[] = [
   { key: "inbox", label: "Inbox" },
   { key: "contacts", label: "Contacts" },
-  { key: "analytics", label: "Sales", disabled: true },
+  { key: "sales", label: "Sales" },
   { key: "settings", label: "Settings", disabled: true }
 ];
 
@@ -87,14 +87,14 @@ export function TopBar({
   }
 
   return (
-    <div className="glass-panel flex flex-col gap-2 p-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:px-4 lg:py-2.5">
-      <div className="flex flex-col gap-2 lg:min-w-0 lg:flex-1">
+    <div className="glass-panel flex flex-col gap-1.5 p-2.5 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:px-4 lg:py-2.5">
+      <div className="flex flex-col gap-1.5 lg:min-w-0 lg:flex-1">
         <nav className="flex flex-wrap items-center gap-1 sm:gap-1.5">
           {navItems.map((item) => (
             <button
               aria-label={item.label}
               key={item.key}
-              className={`icon-hover-trigger flex h-9 w-9 items-center justify-center rounded-lg p-0 text-sm font-semibold transition-all duration-200 sm:h-auto sm:w-auto sm:gap-2 sm:px-3 sm:py-2 lg:px-2.5 lg:py-1.5 ${
+              className={`icon-hover-trigger flex h-8 w-8 items-center justify-center rounded-lg p-0 text-sm font-semibold transition-all duration-200 sm:h-auto sm:w-auto sm:gap-2 sm:px-3 sm:py-2 lg:px-2.5 lg:py-1.5 ${
                 activeTab === item.key
                   ? "bg-[#f0f2f5] text-whatsapp-deep"
                   : item.disabled
@@ -103,8 +103,8 @@ export function TopBar({
               }`}
               disabled={item.disabled}
               onClick={() => {
-                if (item.key === "inbox" || item.key === "contacts") {
-                  onChangeTab(item.key);
+                if (item.key === "inbox" || item.key === "contacts" || item.key === "sales") {
+                  onChangeTab(item.key as DashboardTab);
                 }
               }}
               type="button"
@@ -128,11 +128,11 @@ export function TopBar({
           token={token}
         />
 
-        <div className="px-1 py-2 sm:p-2 lg:min-w-[200px] lg:px-2 lg:py-1.5">
+        <div className="px-1 py-1.5 sm:p-2 lg:min-w-[200px] lg:px-2 lg:py-1.5">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <p className="text-[10px] uppercase tracking-[0.2em] text-whatsapp-muted">Signed in</p>
-              <p className="mt-1 truncate text-sm font-semibold text-ink">{userEmail}</p>
+              <p className="mt-0.5 truncate text-[15px] font-semibold text-ink sm:mt-1 sm:text-sm">{userEmail}</p>
             </div>
             <div className="flex items-center gap-1">
               <button
@@ -154,7 +154,8 @@ export function TopBar({
                     strokeWidth="2"
                   />
                 </svg>
-                <span className="icon-hover-label">Change password</span>
+                <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Change</span>
+                <span className="icon-hover-label hidden sm:inline">Change password</span>
               </button>
 
               <button
@@ -172,7 +173,8 @@ export function TopBar({
                     strokeWidth="2"
                   />
                 </svg>
-                <span className="icon-hover-label">Logout</span>
+                <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Logout</span>
+                <span className="icon-hover-label hidden sm:inline">Logout</span>
               </button>
             </div>
           </div>
@@ -196,7 +198,12 @@ export function TopBar({
               {passwordError ? <p className="text-xs text-rose-500">{passwordError}</p> : null}
               {passwordSuccess ? <p className="text-xs text-whatsapp-dark">{passwordSuccess}</p> : null}
               <div className="flex gap-2">
-                <button className="primary-button px-3 py-2 text-xs" disabled={passwordSaving} onClick={handleChangePassword} type="button">
+                <button
+                  className="w-full rounded-xl bg-whatsapp-deep py-3 text-base font-bold text-white shadow transition active:bg-whatsapp-dark disabled:opacity-60 disabled:cursor-not-allowed"
+                  disabled={passwordSaving}
+                  onClick={handleChangePassword}
+                  type="button"
+                >
                   {passwordSaving ? "Saving..." : "Update"}
                 </button>
                 <button

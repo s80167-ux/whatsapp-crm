@@ -19,6 +19,7 @@ const {
   getCustomerByPhone,
   getCustomerInsights,
   getCustomerSalesItems,
+  getAllCustomerSalesItems,
   createCustomerSalesItem,
   updateCustomerSalesItem,
   clearConversationUnreadCount,
@@ -477,6 +478,16 @@ app.get("/customers/:phone/sales-items", requireAuth, bindAuthenticatedWhatsAppO
   } catch (error) {
     console.error("Failed to fetch customer sales items:", error);
     return res.status(error.status || 500).json({ error: error.message || "Failed to fetch customer sales items." });
+  }
+});
+
+app.get("/sales-items", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const items = await getAllCustomerSalesItems(req.user.sub);
+    return res.json(items);
+  } catch (error) {
+    console.error("Failed to fetch sales items:", error);
+    return res.status(error.status || 500).json({ error: error.message || "Failed to fetch sales items." });
   }
 });
 

@@ -240,7 +240,16 @@ async function request<T>(
       }
     );
 
-    if (payload.code === "SESSION_REVOKED" || payload.code === "SESSION_REQUIRED") {
+    const shouldHandleUnauthorized =
+      response.status === 401 &&
+      Boolean(token) &&
+      (!payload.code ||
+        payload.code === "SESSION_REVOKED" ||
+        payload.code === "SESSION_REQUIRED" ||
+        payload.code === "AUTH_TOKEN_INVALID" ||
+        payload.code === "AUTH_TOKEN_MISSING");
+
+    if (shouldHandleUnauthorized) {
       void unauthorizedHandler?.(apiError);
     }
 
@@ -381,6 +390,9 @@ export const api = {
     }
 
     return request<SalesLeadItem[]>(`/customers/${phone}/sales-items${params.size ? `?${params.toString()}` : ""}`, {}, token);
+  },
+  getSalesLeadItems(token: string) {
+    return request<SalesLeadItem[]>("/sales-items", {}, token);
   },
   saveCustomer(phone: string, payload: Pick<Customer, "status" | "notes"> & { chat_jid?: string | null }, token: string) {
     return request<Customer>(

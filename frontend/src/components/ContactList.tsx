@@ -1,4 +1,9 @@
 import { useMemo, useState } from "react";
+// Utility to detect Android/iOS
+function isMobileDevice() {
+  if (typeof navigator === "undefined") return false;
+  return /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+}
 import { CUSTOMER_STATUS_LABELS, type Conversation, type CustomerStatus } from "../lib/api";
 import { getConversationIdentifier, getDisplayName, getDisplayPhone, getResolvedPhone, formatPhoneDisplay } from "../lib/display";
 
@@ -28,7 +33,7 @@ type ContactListProps = {
   refreshing: boolean;
   activeStatusFilter: CustomerStatus | null;
   onRefresh: () => void;
-  onSelect: (conversationId: string) => void;
+  onSelect: (conversationId: string, opts?: { focusChatInput?: boolean }) => void;
 };
 
 function formatTimestamp(value: string) {
@@ -234,9 +239,55 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
                       </div>
                     ) : null}
 
-                    <p className={`mt-2 line-clamp-2 text-xs leading-5 transition-colors ${active ? "text-ink/80" : "text-whatsapp-muted group-hover:text-ink/80"}`}>
-                      {contact.lastMessage}
-                    </p>
+                    {/* Action icons row */}
+                    <div className="mt-2 mb-4 flex items-center gap-2">
+                      {/* Call icon (mobile only) */}
+                      {isMobileDevice() && contact.phone && (
+                        <a
+                          href={`tel:${getResolvedPhone(contact.phone, contact.chatJid)}`}
+                          className="icon-hover-trigger flex flex-col items-center w-14 px-0 py-1 rounded-xl border border-whatsapp-line bg-white/80 text-whatsapp-deep shadow transition hover:bg-whatsapp-soft"
+                          tabIndex={-1}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <svg width="24" height="24" fill="none" viewBox="0 0 24 24" className="mb-1"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.86 19.86 0 0 1 3.08 5.18 2 2 0 0 1 5 3h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.68 2.34a2 2 0 0 1-.45 2.11l-1.27 1.27a16 16 0 0 0 6.29 6.29l1.27-1.27a2 2 0 0 1 2.11-.45c.74.32 1.53.55 2.34.68A2 2 0 0 1 22 16.92z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          <span className="block text-[10px] font-normal text-gray-500 sm:hidden" style={{fontSize: 'min(3vw, 11px)'}}>Call</span>
+                          <span className="icon-hover-label hidden sm:inline">Call</span>
+                        </a>
+                      )}
+                      {/* Message icon */}
+                      <button
+                        className="icon-hover-trigger flex flex-col items-center w-14 px-0 py-1 rounded-xl border border-whatsapp-line bg-white/80 text-whatsapp-deep shadow transition hover:bg-whatsapp-soft"
+                        type="button"
+                        tabIndex={-1}
+                        onClick={e => { e.stopPropagation(); if (conversationId) onSelect(conversationId, { focusChatInput: true }); }}
+                      >
+                        <svg width="24" height="24" fill="none" viewBox="0 0 24 24" className="mb-1"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        <span className="block text-[10px] font-normal text-gray-500 sm:hidden" style={{fontSize: 'min(3vw, 11px)'}}>Message</span>
+                        <span className="icon-hover-label hidden sm:inline">Message</span>
+                      </button>
+                      {/* Edit icon */}
+                      <button
+                        className="icon-hover-trigger flex flex-col items-center w-14 px-0 py-1 rounded-xl border border-whatsapp-line bg-white/80 text-whatsapp-deep shadow transition hover:bg-whatsapp-soft"
+                        type="button"
+                        tabIndex={-1}
+                        onClick={e => { e.stopPropagation(); /* TODO: implement edit action */ }}
+                      >
+                        <svg width="24" height="24" fill="none" viewBox="0 0 24 24" className="mb-1"><path d="M12 20h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19.5 3 21l1.5-4L16.5 3.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        <span className="block text-[10px] font-normal text-gray-500 sm:hidden" style={{fontSize: 'min(3vw, 11px)'}}>Edit</span>
+                        <span className="icon-hover-label hidden sm:inline">Edit</span>
+                      </button>
+                      {/* Delete icon */}
+                      <button
+                        className="icon-hover-trigger flex flex-col items-center w-14 px-0 py-1 rounded-xl border border-whatsapp-line bg-white/80 text-red-500 shadow transition hover:bg-red-100"
+                        type="button"
+                        tabIndex={-1}
+                        onClick={e => { e.stopPropagation(); /* TODO: implement delete action */ }}
+                      >
+                        <svg width="24" height="24" fill="none" viewBox="0 0 24 24" className="mb-1"><path d="M3 6h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6h16z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        <span className="block text-[10px] font-normal text-rose-500 sm:hidden" style={{fontSize: 'min(3vw, 11px)'}}>Delete</span>
+                        <span className="icon-hover-label hidden sm:inline">Delete</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </button>

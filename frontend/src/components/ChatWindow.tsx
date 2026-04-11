@@ -1,58 +1,8 @@
+
 import { useEffect, useRef, useState, type ChangeEvent, type ComponentProps, type ReactNode } from "react";
 import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type CustomerStatus, type Message, type SalesLeadItem } from "../lib/api";
 import { CustomerPanel } from "./CustomerPanel";
 import { getDisplayName, getDisplayPhone, formatPhoneDisplay } from "../lib/display";
-
-type ChatWindowProps = {
-  contactName: string | null;
-  phone: string | null;
-  chatJid?: string | null;
-  profilePictureUrl?: string | null;
-  messages: Message[];
-  deletingMessageId?: string | null;
-  salesLeadItems?: SalesLeadItem[];
-  salesLeadStatus?: CustomerStatus;
-  loadingSalesLeadItems?: boolean;
-  savingSalesLeadItem?: boolean;
-  messageText: string;
-  loading: boolean;
-  sending: boolean;
-  customerPanelProps?: ComponentProps<typeof CustomerPanel> | null;
-  onChangeMessage: (value: string) => void;
-  onCreateSalesLeadItem?: (payload: {
-    messageId: string;
-    status: CustomerStatus;
-    productType: string;
-    packageName: string;
-    price: number;
-    quantity: number;
-  }) => Promise<void> | void;
-  onUpdateSalesLeadItem?: (payload: {
-    itemId: string;
-    status: CustomerStatus;
-    productType: string;
-    packageName: string;
-    price: number;
-    quantity: number;
-  }) => Promise<void> | void;
-  onDeleteMessage?: (message: Message) => Promise<void> | void;
-  onSend: () => void;
-  onSendQuickReply: (value: string) => Promise<void> | void;
-  onSendAttachment: (file: File, caption: string) => Promise<void> | void;
-  onSendLocation: (payload: {
-    latitude: number;
-    longitude: number;
-    name?: string;
-    address?: string;
-  }) => Promise<void> | void;
-};
-
-type AttachmentTab = "image" | "sticker" | "document" | "location";
-type StoredQuickReplyAttachment = {
-  name: string;
-  type: string;
-  dataUrl: string;
-};
 
 type QuickReply = {
   id: string;
@@ -497,13 +447,39 @@ async function buildStoredQuickReplyAttachment(file: File): Promise<StoredQuickR
   };
 }
 
+function dataUrlToBlob(dataUrl: string) {
+  const match = String(dataUrl || "").match(/^data:([^;,]+)?(?:;charset=[^;,]+)?(;base64)?,([\s\S]*)$/);
+
+  if (!match) {
+    throw new Error("Invalid quick reply attachment data.");
+  }
+
+  const mimeType = match[1] || "application/octet-stream";
+  const isBase64 = Boolean(match[2]);
+  const payload = match[3] || "";
+
+  if (isBase64) {
+    const binaryString = atob(payload.replace(/\s/g, ""));
+    const bytes = new Uint8Array(binaryString.length);
+
+    for (let index = 0; index < binaryString.length; index += 1) {
+      bytes[index] = binaryString.charCodeAt(index);
+    }
+
+    return new Blob([bytes], { type: mimeType });
+  }
+
+  return new Blob([decodeURIComponent(payload)], { type: mimeType });
+}
+
 async function storedAttachmentToFile(attachment: StoredQuickReplyAttachment): Promise<File> {
-  const response = await fetch(attachment.dataUrl);
-  const blob = await response.blob();
+  const blob = dataUrlToBlob(attachment.dataUrl);
   return new File([blob], attachment.name, { type: attachment.type || blob.type || "application/octet-stream" });
 }
 
 export function ChatWindow(props: ChatWindowProps) {
+    // Lead status filter for active conversation block
+    const [activeLeadStatusFilter, setActiveLeadStatusFilter] = useState<CustomerStatus | null>(null);
   const {
     contactName,
     phone,
@@ -513,6 +489,8 @@ export function ChatWindow(props: ChatWindowProps) {
     deletingMessageId = null,
     salesLeadItems = [],
     salesLeadStatus,
+    messageFilterId = null,
+    onClearMessageFilter,
     loadingSalesLeadItems = false,
     savingSalesLeadItem = false,
     messageText,
@@ -538,6 +516,7 @@ export function ChatWindow(props: ChatWindowProps) {
   const lastPhoneRef = useRef<string | null>(null);
   const lastMessageKeyRef = useRef<string>("");
   const quickReplyAttachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const chatInputRef = useRef<HTMLInputElement | null>(null);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [attachmentTab, setAttachmentTab] = useState<AttachmentTab>("image");
@@ -579,8 +558,16 @@ export function ChatWindow(props: ChatWindowProps) {
   const displayPhone = getDisplayPhone(phone, chatJid);
   const title = getDisplayName(contactName, displayPhone);
   const avatarLabel = title.slice(0, 2).toUpperCase();
-  const visibleMessages = showAllMessages ? messages : messages.slice(-6);
-  const hiddenMessageCount = Math.max(messages.length - 6, 0);
+  // Filter messages by active lead status if set
+  let filteredSalesLeadItems = salesLeadItems;
+  if (activeLeadStatusFilter) {
+    filteredSalesLeadItems = salesLeadItems.filter(item => (item.lead_status || salesLeadStatus || "new_lead") === activeLeadStatusFilter);
+  }
+  const baseMessages = messageFilterId ? messages.filter((message) => message.id === messageFilterId) : messages;
+  const latestMessages = baseMessages.slice(-6);
+  const effectiveShowAllMessages = showAllMessages || Boolean(messageFilterId);
+  const visibleMessages = effectiveShowAllMessages ? baseMessages : latestMessages;
+  const hiddenMessageCount = Math.max(baseMessages.length - 6, 0);
   const canRegisterLead = Boolean(phone && onCreateSalesLeadItem);
 
   function resetEditSalesLeadForm() {
@@ -716,6 +703,7 @@ export function ChatWindow(props: ChatWindowProps) {
         quantity
       });
       resetEditSalesLeadForm();
+      setActiveLeadStatusFilter(null); // Reset filter so updated lead is visible
     } catch (error) {
       setEditLeadFormError(error instanceof Error ? error.message : "Failed to update sales lead details.");
     }
@@ -759,10 +747,19 @@ export function ChatWindow(props: ChatWindowProps) {
           </label>
         </div>
         <div className="mt-3 flex items-center gap-3">
-          <button className="primary-button" disabled={savingSalesLeadItem} onClick={() => void handleUpdateSalesLead(itemId)} type="button">
+          <button
+            className="w-full rounded-xl bg-whatsapp-deep py-3 text-base font-bold text-white shadow transition active:bg-whatsapp-dark disabled:opacity-60 disabled:cursor-not-allowed"
+            disabled={savingSalesLeadItem}
+            onClick={() => void handleUpdateSalesLead(itemId)}
+            type="button"
+          >
             {savingSalesLeadItem ? "Saving..." : "Save changes"}
           </button>
-          <button className="secondary-button" onClick={resetEditSalesLeadForm} type="button">
+          <button
+            className="w-full rounded-xl bg-gray-200 py-3 text-base font-semibold text-gray-700 shadow transition active:bg-gray-300 disabled:opacity-60 disabled:cursor-not-allowed mt-2"
+            onClick={resetEditSalesLeadForm}
+            type="button"
+          >
             Cancel
           </button>
         </div>
@@ -786,14 +783,12 @@ export function ChatWindow(props: ChatWindowProps) {
     if (!raw) {
       return;
     }
-
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         const normalized = parsed
           .map((item, index) => normalizeQuickReply(item, index))
           .filter((item): item is QuickReply => Boolean(item));
-
         if (normalized.length > 0) {
           setQuickReplies(normalized);
         }
@@ -802,42 +797,6 @@ export function ChatWindow(props: ChatWindowProps) {
       window.localStorage.removeItem(quickRepliesStorageKey);
     }
   }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(quickRepliesStorageKey, JSON.stringify(quickReplies));
-  }, [quickReplies]);
-
-  useEffect(() => {
-    if (!mediaLightbox) {
-      return;
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setMediaLightbox(null);
-      }
-    };
-
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [mediaLightbox]);
-
-  useEffect(() => {
-    const locationPanelVisible = showAttachmentMenu || Boolean(expandedAttachmentMessageId);
-    const hasCoordinates = Boolean(latitude.trim() && longitude.trim());
-
-    if (attachmentTab !== "location" || !locationPanelVisible || hasCoordinates || resolvingLocation) {
-      return;
-    }
-
-    void handleSendCurrentLocation();
-  }, [attachmentTab, expandedAttachmentMessageId, latitude, longitude, resolvingLocation, showAttachmentMenu]);
 
   useEffect(() => {
     const changedConversation = lastPhoneRef.current !== phone;
@@ -850,34 +809,25 @@ export function ChatWindow(props: ChatWindowProps) {
 
     if (changedConversation) {
       stickToBottomRef.current = true;
-      
       requestAnimationFrame(() => {
         if (listRef.current) {
           listRef.current.scrollTop = listRef.current.scrollHeight;
+        }
+        if (chatInputRef.current) {
+          chatInputRef.current.focus();
+          chatInputRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
         }
       });
 
       setShowQuickReplies(false);
       setShowAttachmentMenu(false);
-      setSelectedFile(null);
-      setAttachmentCaption("");
-      setComposerError("");
-      setShowCustomerProfile(false);
-      setExpandedLeadRegistrationMessageId(null);
-      setLeadProductType("");
-      setLeadPackageName("");
-      setLeadPrice("");
-      setLeadQuantity("1");
-      setLeadStatus(salesLeadStatus || "new_lead");
-      setLeadFormError("");
-      resetEditSalesLeadForm();
-      setShowAllMessages(false);
+      setShowEmojiPicker(false);
       setExpandedQuickReplyMessageId(null);
       setExpandedEmojiMessageId(null);
       setExpandedAttachmentMessageId(null);
-      setShowEmojiPicker(false);
-      setMediaLightbox(null);
-      return;
+      setExpandedLeadRegistrationMessageId(null);
+      setLeadFormError("");
+      setComposerError("");
     }
 
     if (hasNewLastMessage && stickToBottomRef.current) {
@@ -891,6 +841,18 @@ export function ChatWindow(props: ChatWindowProps) {
       });
     }
   }, [messages, phone]);
+
+  useEffect(() => {
+    const locationPanelVisible = showAttachmentMenu || Boolean(expandedAttachmentMessageId);
+    const hasCoordinates = Boolean(latitude.trim() && longitude.trim());
+
+    if (attachmentTab !== "location" || !locationPanelVisible || hasCoordinates || resolvingLocation) {
+      return;
+    }
+
+    void handleSendCurrentLocation();
+  }, [attachmentTab, expandedAttachmentMessageId, latitude, longitude, resolvingLocation, showAttachmentMenu]);
+
 
   function clearQuickReplyDraft() {
     setNewQuickReply("");
@@ -931,9 +893,13 @@ export function ChatWindow(props: ChatWindowProps) {
 
   async function handlePickQuickReply(reply: QuickReply) {
     if (reply.attachment) {
-      const file = await storedAttachmentToFile(reply.attachment);
-      await onSendAttachment(file, reply.text);
-      setShowQuickReplies(false);
+      try {
+        const file = await storedAttachmentToFile(reply.attachment);
+        await onSendAttachment(file, reply.text);
+        setShowQuickReplies(false);
+      } catch (error) {
+        setComposerError(error instanceof Error ? error.message : "Failed to load quick reply attachment.");
+      }
       return;
     }
 
@@ -951,8 +917,12 @@ export function ChatWindow(props: ChatWindowProps) {
     setExpandedAttachmentMessageId(null);
 
     if (reply.attachment) {
-      const file = await storedAttachmentToFile(reply.attachment);
-      await onSendAttachment(file, reply.text);
+      try {
+        const file = await storedAttachmentToFile(reply.attachment);
+        await onSendAttachment(file, reply.text);
+      } catch (error) {
+        setComposerError(error instanceof Error ? error.message : "Failed to load quick reply attachment.");
+      }
       return;
     }
 
@@ -1320,6 +1290,7 @@ export function ChatWindow(props: ChatWindowProps) {
               mobileCollapsed={false}
               onClose={() => setShowCustomerProfile(false)}
               variant="inline"
+              onLeadStatusFilter={setActiveLeadStatusFilter}
             />
           </div>
         </div>
@@ -1330,11 +1301,23 @@ export function ChatWindow(props: ChatWindowProps) {
         className="custom-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto rounded-xl border border-whatsapp-line bg-whatsapp-canvas p-2 sm:space-y-3 sm:p-3"
         onScroll={updateStickToBottom}
       >
+        {messageFilterId ? (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+            <p className="text-xs font-medium text-amber-900">Filtered to the message linked from Sales ID.</p>
+            <button
+              type="button"
+              className="rounded-full border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-900 transition hover:bg-amber-100"
+              onClick={onClearMessageFilter}
+            >
+              Clear filter
+            </button>
+          </div>
+        ) : null}
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-whatsapp-muted">Loading messages...</div>
-        ) : messages.length === 0 ? (
+        ) : baseMessages.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-whatsapp-muted">
-            No messages in this conversation yet.
+            {messageFilterId ? "Linked sales message not found in this conversation." : "No messages in this conversation yet."}
           </div>
         ) : (
           <>
@@ -1345,7 +1328,7 @@ export function ChatWindow(props: ChatWindowProps) {
                   onClick={() => setShowAllMessages((current) => !current)}
                   type="button"
                 >
-                  {showAllMessages ? "Show latest 6 messages" : `View ${hiddenMessageCount} earlier messages`}
+                  {effectiveShowAllMessages ? "Show latest 6 messages" : `View ${hiddenMessageCount} earlier messages`}
                 </button>
               </div>
             ) : null}
@@ -1355,7 +1338,11 @@ export function ChatWindow(props: ChatWindowProps) {
               const canDeleteMessage = Boolean(onDeleteMessage) && !item.id.startsWith("temp-");
               const isDeletingMessage = deletingMessageId === item.id;
               const showIncomingActions = item.direction === "incoming" && quickReplies.length > 0;
-              const linkedSalesLeadItems = salesLeadItems.filter((salesItem) => salesItem.message_id === item.id);
+              // Use filtered sales lead items for this message if filter is active
+              const linkedSalesLeadItems = (activeLeadStatusFilter
+                ? filteredSalesLeadItems
+                : salesLeadItems
+              ).filter((salesItem) => salesItem.message_id === item.id);
               const hasLinkedSalesLead = linkedSalesLeadItems.length > 0;
               const linkedLeadStatus = linkedSalesLeadItems[0]?.lead_status || salesLeadStatus || "new_lead";
               const activeEditingLinkedItem = linkedSalesLeadItems.find((salesItem) => salesItem.id === editingSalesLeadItemId) || null;
@@ -1376,7 +1363,7 @@ export function ChatWindow(props: ChatWindowProps) {
                     className={`flex flex-col ${item.direction === "outgoing" ? "items-end" : "items-start"}`}
                   >
                     <div
-                      className={`max-w-[92%] overflow-hidden px-3 py-2 shadow-soft sm:max-w-[80%] sm:px-4 sm:py-3 ${
+                      className={`max-w-[92%] overflow-hidden px-3 py-2 shadow-soft transition sm:max-w-[80%] sm:px-4 sm:py-3 ${
                         item.direction === "outgoing"
                           ? "chat-bubble-outgoing border border-[#cfe7bb] bg-whatsapp-soft text-ink/90"
                           : "chat-bubble-incoming border border-whatsapp-line bg-white text-ink/90"
@@ -1790,14 +1777,13 @@ export function ChatWindow(props: ChatWindowProps) {
 
                       {loadingSalesLeadItems ? (
                         <p className="mt-3 text-sm text-whatsapp-muted">Loading registered products...</p>
-                      ) : salesLeadItems.length === 0 ? (
+                      ) : filteredSalesLeadItems.length === 0 ? (
                         <p className="mt-3 text-sm text-whatsapp-muted">No products registered for this customer yet.</p>
                       ) : (
                         <div className="mt-3 space-y-2">
-                          {salesLeadItems.map((salesItem) => {
+                          {filteredSalesLeadItems.map((salesItem) => {
                             const total = salesItem.price * salesItem.quantity;
                             const itemLeadStatus = salesItem.lead_status || salesLeadStatus || "new_lead";
-
                             return (
                               <div key={salesItem.id} className="rounded-xl border border-whatsapp-line bg-whatsapp-canvas p-3">
                                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -2101,6 +2087,7 @@ export function ChatWindow(props: ChatWindowProps) {
 
           <input
             className="input-glass"
+            ref={chatInputRef}
             onChange={(event) => onChangeMessage(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
