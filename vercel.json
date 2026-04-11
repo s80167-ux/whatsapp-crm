@@ -1,8 +1,9 @@
 {
-  "experimentalServices": {
-    "backend": {
-      "entrypoint": "backend",
-      "routePrefix": "/"
-    }
-  }
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "cleanUrls": true,
+  "rewrites": [
+    {"source": "/api/(.*)", "destination": "https://whatsapp-crm-production-92cc.up.railway.app/$1"},
+    {"source": "/(.*)", "destination": "/index.html"}
+  ]
 }
