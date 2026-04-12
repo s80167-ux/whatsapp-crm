@@ -72,6 +72,12 @@ export type Customer = {
   last_message_at?: string | null;
   last_message_preview?: string | null;
   last_direction?: "incoming" | "outgoing" | null;
+  // Added fields for extended customer info
+  premise_address?: string | null;
+  business_type?: string | null;
+  age?: number | null;
+  email_address?: string | null;
+  contact_id?: string | null;
 };
 
 export type SalesLeadItem = {

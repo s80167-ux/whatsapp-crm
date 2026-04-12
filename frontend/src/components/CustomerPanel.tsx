@@ -26,6 +26,11 @@ export type CustomerPanelProps = {
   onClose?: () => void;
   variant?: "panel" | "inline";
   onLeadStatusFilter?: (status: CustomerStatus) => void;
+  premiseAddress?: string | null;
+  businessType?: string | null;
+  age?: number | null;
+  emailAddress?: string | null;
+  contactId?: string | null;
 };
 
 function getStatusAccent(status: CustomerStatus) {
@@ -119,7 +124,13 @@ export function CustomerPanel(props: CustomerPanelProps) {
     onToggleMobileCollapse,
     onNotesChange,
     onClose,
-    variant = "panel"
+    variant = "panel",
+    onLeadStatusFilter,
+    premiseAddress,
+    businessType,
+    age,
+    emailAddress,
+    contactId
   } = props;
 
   const visiblePhone = getDisplayPhone(phone, chatJid);
@@ -132,6 +143,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
   const currentStatusLabel = CUSTOMER_STATUS_LABELS[status];
   const isInline = variant === "inline";
   const canCollapse = !isInline && Boolean(onToggleMobileCollapse);
+  // Only declare contentClasses once
   const contentClasses = isInline
     ? "custom-scrollbar mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1"
     : mobileCollapsed
@@ -221,6 +233,70 @@ export function CustomerPanel(props: CustomerPanelProps) {
               </div>
 
               <div className="mt-4 grid gap-2">
+                {/* Premise Address */}
+                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
+                  <DetailIcon>
+                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                      <path d="M4 12h16M4 12l4-4m-4 4l4 4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                    </svg>
+                  </DetailIcon>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Premise address</p>
+                    <p className="mt-1 break-words text-sm font-medium text-ink">{premiseAddress || ""}</p>
+                  </div>
+                </div>
+                {/* Business Type */}
+                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
+                  <DetailIcon>
+                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8" />
+                      <path d="M8 12h8" stroke="currentColor" strokeWidth="1.8" />
+                    </svg>
+                  </DetailIcon>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Business type</p>
+                    <p className="mt-1 break-words text-sm font-medium text-ink">{businessType || ""}</p>
+                  </div>
+                </div>
+                {/* Age */}
+                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
+                  <DetailIcon>
+                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8" />
+                      <text x="12" y="16" textAnchor="middle" fontSize="10" fill="currentColor">Age</text>
+                    </svg>
+                  </DetailIcon>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Age</p>
+                    <p className="mt-1 break-words text-sm font-medium text-ink">{age ?? ""}</p>
+                  </div>
+                </div>
+                {/* Email Address */}
+                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
+                  <DetailIcon>
+                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                      <path d="M4 4h16v16H4z" stroke="currentColor" strokeWidth="1.8" />
+                      <path d="M4 4l8 8 8-8" stroke="currentColor" strokeWidth="1.8" />
+                    </svg>
+                  </DetailIcon>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Email address</p>
+                    <p className="mt-1 break-words text-sm font-medium text-ink">{emailAddress || ""}</p>
+                  </div>
+                </div>
+                {/* Contact ID */}
+                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
+                  <DetailIcon>
+                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8" />
+                      <text x="12" y="16" textAnchor="middle" fontSize="10" fill="currentColor">CID</text>
+                    </svg>
+                  </DetailIcon>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Contact ID</p>
+                    <p className="mt-1 break-all text-sm font-medium text-ink">{contactId || ""}</p>
+                  </div>
+                </div>
                 {/* Customer ID */}
                 {customerId && (
                   <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">

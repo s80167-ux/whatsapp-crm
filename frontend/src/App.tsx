@@ -1486,7 +1486,12 @@ function App() {
         status: selectedStatus,
         statusCounts: customerStatusCounts,
         totalMessages: customerDraft?.total_messages,
-        // customerId removed: Customer type has no id
+        // New fields for customer info window
+        premiseAddress: customerDraft?.premise_address ?? "",
+        businessType: customerDraft?.business_type ?? "",
+        age: customerDraft?.age ?? null,
+        emailAddress: customerDraft?.email_address ?? "",
+        contactId: customerDraft?.contact_id ?? "",
         onNotesChange: (value) => {
           if (!activeCustomerPhone) {
             return;
@@ -1505,7 +1510,13 @@ function App() {
             last_message_preview: customerDraft?.last_message_preview || null,
             last_direction: customerDraft?.last_direction || null,
             status: selectedStatus,
-            notes: value
+            notes: value,
+            // Pass through new fields if present
+            premise_address: customerDraft?.premise_address,
+            business_type: customerDraft?.business_type,
+            age: customerDraft?.age,
+            email_address: customerDraft?.email_address,
+            contact_id: customerDraft?.contact_id,
           };
 
           setCustomerDraft(nextCustomer);
