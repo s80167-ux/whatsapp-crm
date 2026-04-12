@@ -1,6 +1,6 @@
-/* CustomerPanel.css - placeholder file for custom styles. Add your styles below. */
 
-/* Example: Style for the main panel */
-.glass-panel {
-  /* Add your custom styles here */
+/* Ensure status label text wraps and does not overflow */
+.customer-status-label {
+  word-break: break-word;
+  white-space: normal;
 }

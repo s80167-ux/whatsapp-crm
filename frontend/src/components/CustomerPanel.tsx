@@ -333,7 +333,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
             <p className="text-xs sm:text-sm font-medium text-whatsapp-deep">Lead status</p>
             {loading ? <span className="text-xs text-whatsapp-muted">Loading...</span> : null}
           </div>
-          <div className="mt-2 grid grid-cols-5 gap-1 sm:gap-2">
+          <div className="mt-2 grid grid-cols-5 gap-2 sm:gap-3">
             {CUSTOMER_STATUSES.map((item) => {
               const isActive = item === status;
               const count = statusCounts[item] ?? 0;
@@ -342,13 +342,13 @@ export function CustomerPanel(props: CustomerPanelProps) {
               return (
                 <button
                   key={item}
-                  className={`icon-hover-trigger flex flex-col items-center justify-center rounded-xl border px-1.5 py-1.5 sm:px-3 sm:py-2.5 transition focus:outline-none ${statusClass} min-w-0`}
+                  className={`icon-hover-trigger flex flex-col items-center justify-center rounded-xl border px-1.5 py-1.5 sm:px-3 sm:py-2.5 transition focus:outline-none ${statusClass} min-w-[80px]`}
                   type="button"
                   onClick={() => props.onLeadStatusFilter && props.onLeadStatusFilter(item)}
                 >
                   <span className="text-xs sm:text-sm font-semibold flex-shrink-0">{count}</span>
                   <span
-                    className="font-normal text-gray-700 text-center leading-tight mt-0.5 w-full customer-status-label"
+                    className="font-normal text-gray-700 text-center leading-tight mt-0.5 w-full break-words customer-status-label"
                   >
                     {CUSTOMER_STATUS_LABELS[item]}
                   </span>
