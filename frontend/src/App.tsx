@@ -1569,7 +1569,7 @@ function App() {
         {dashboardError ? <div className="glass-panel border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">{dashboardError}</div> : null}
 
         {isSalesDashboard ? (
-          <div className="space-y-4 xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(0,3fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
+          <div className="space-y-4 xl:grid xl:grid-cols-[minmax(320px,1.5fr)_minmax(0,3fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
             <Sidebar
               activeView={activeView}
               activeStatusFilter={activeStatusFilter}
@@ -1620,7 +1620,7 @@ function App() {
             />
           </div>
         ) : (
-          <div className="space-y-4 xl:grid xl:grid-cols-[minmax(240px,1fr)_minmax(0,3fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
+          <div className="space-y-4 xl:grid xl:grid-cols-[minmax(320px,1.5fr)_minmax(0,3fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
             <Sidebar
               activeView={activeView}
               activeStatusFilter={activeStatusFilter}

@@ -134,7 +134,7 @@ export function Sidebar({
   onStatusFilterChange
 }: SidebarProps) {
   return (
-    <aside className="glass-panel flex min-w-0 flex-col gap-4 self-start p-3 xl:sticky xl:top-6">
+    <aside className="glass-panel flex min-w-[320px] max-w-[360px] flex-col gap-4 self-start p-3 xl:sticky xl:top-6">
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 xl:flex-col xl:items-start">
           <img
