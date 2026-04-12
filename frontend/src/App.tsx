@@ -890,17 +890,20 @@ function App() {
 
   // Polling removed: manual refresh only.
 
-  // Supabase Realtime subscription for the active chat
+  // Supabase Realtime subscription for the active chat (INSERT only, no polling)
   useEffect(() => {
+    // Clean up previous subscription if any
     if (realtimeChannelRef.current) {
       supabase.removeChannel(realtimeChannelRef.current);
       realtimeChannelRef.current = null;
     }
 
+    // Only subscribe if user is authenticated and a chat is selected
     if (!token || !dashboardSessionId || !selectedPhone) {
       return;
     }
 
+    // Filter by phone (add org/contact id to filter if needed)
     const filterPhone = selectedConversation?.phone || customerDraft?.phone || selectedPhone;
 
     const channel = supabase
@@ -915,13 +918,13 @@ function App() {
         },
         (payload) => {
           const newMessage = payload.new as Message;
-          // Client-side guard: only append if message belongs to the active conversation
+          // Only append if message belongs to the active conversation
           const msgConversationId = getConversationIdentifier(newMessage.phone, newMessage.chat_jid);
           if (msgConversationId !== selectedPhone && newMessage.phone !== selectedPhone) {
             return;
           }
           setMessages((current) => {
-            // Prevent duplicates (e.g. our own optimistic messages confirmed via realtime)
+            // Prevent duplicates
             if (current.some((m) => m.id === newMessage.id)) {
               return current;
             }
@@ -937,6 +940,7 @@ function App() {
 
     realtimeChannelRef.current = channel;
 
+    // Cleanup on unmount or dependency change
     return () => {
       supabase.removeChannel(channel);
       realtimeChannelRef.current = null;
