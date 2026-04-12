@@ -232,143 +232,32 @@ export function CustomerPanel(props: CustomerPanelProps) {
                 </span>
               </div>
 
-              <div className="mt-4 grid gap-2">
-                {/* Premise Address */}
-                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
-                  <DetailIcon>
-                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
-                      <path d="M4 12h16M4 12l4-4m-4 4l4 4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-                    </svg>
-                  </DetailIcon>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Premise address</p>
-                    <p className="mt-1 break-words text-sm font-medium text-ink">{premiseAddress || ""}</p>
-                  </div>
-                </div>
-                {/* Business Type */}
-                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
-                  <DetailIcon>
-                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
-                      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8" />
-                      <path d="M8 12h8" stroke="currentColor" strokeWidth="1.8" />
-                    </svg>
-                  </DetailIcon>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Business type</p>
-                    <p className="mt-1 break-words text-sm font-medium text-ink">{businessType || ""}</p>
-                  </div>
-                </div>
-                {/* Age */}
-                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
-                  <DetailIcon>
-                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
-                      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8" />
-                      <text x="12" y="16" textAnchor="middle" fontSize="10" fill="currentColor">Age</text>
-                    </svg>
-                  </DetailIcon>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Age</p>
-                    <p className="mt-1 break-words text-sm font-medium text-ink">{age ?? ""}</p>
-                  </div>
-                </div>
-                {/* Email Address */}
-                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
-                  <DetailIcon>
-                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
-                      <path d="M4 4h16v16H4z" stroke="currentColor" strokeWidth="1.8" />
-                      <path d="M4 4l8 8 8-8" stroke="currentColor" strokeWidth="1.8" />
-                    </svg>
-                  </DetailIcon>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Email address</p>
-                    <p className="mt-1 break-words text-sm font-medium text-ink">{emailAddress || ""}</p>
-                  </div>
-                </div>
-                {/* Contact ID */}
-                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
-                  <DetailIcon>
-                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
-                      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8" />
-                      <text x="12" y="16" textAnchor="middle" fontSize="10" fill="currentColor">CID</text>
-                    </svg>
-                  </DetailIcon>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Contact ID</p>
-                    <p className="mt-1 break-all text-sm font-medium text-ink">{contactId || ""}</p>
-                  </div>
-                </div>
-                {/* Customer ID */}
-                {customerId && (
-                  <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
-                    <DetailIcon>
-                      <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
-                        <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8" />
-                        <text x="12" y="16" textAnchor="middle" fontSize="10" fill="currentColor">ID</text>
-                      </svg>
-                    </DetailIcon>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Customer ID</p>
-                      <p className="mt-1 break-all text-sm font-medium text-ink">{customerId}</p>
-                    </div>
-                  </div>
-                )}
+             <div className="mt-3 customer-info-list">
+  <div className="info-item">
+    <span className="info-label">Premise</span>
+    <span className="info-value">{premiseAddress || "-"}</span>
+  </div>
 
-                {/* Contact Name */}
-                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
-                  <DetailIcon>
-                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
-                      <path d="M5 20h14M7 17V8m5 9V4m5 13v-6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-                    </svg>
-                  </DetailIcon>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Contact name</p>
-                    <p className="mt-1 break-words text-sm font-medium text-ink">{contactNameLabel}</p>
-                  </div>
-                </div>
+  <div className="info-item">
+    <span className="info-label">Business</span>
+    <span className="info-value">{businessType || "-"}</span>
+  </div>
 
-                {/* WhatsApp ID */}
-                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
-                  <DetailIcon>
-                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
-                      <path d="M7 7h10v10H7z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-                      <path d="M10 10h4v4h-4z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-                    </svg>
-                  </DetailIcon>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">WhatsApp ID</p>
-                    <p className="mt-1 break-all text-sm font-medium text-ink">{whatsappIdLabel}</p>
-                  </div>
-                </div>
+  <div className="info-item">
+    <span className="info-label">Age</span>
+    <span className="info-value">{age ?? "-"}</span>
+  </div>
 
-                {/* Phone Number */}
-                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
-                  <DetailIcon>
-                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
-                      <path d="M4 7.5C4 6.12 5.12 5 6.5 5h11C18.88 5 20 6.12 20 7.5v9c0 1.38-1.12 2.5-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5v-9Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-                      <path d="M7 9h10M7 13h6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-                    </svg>
-                  </DetailIcon>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Phone number</p>
-                    <p className="mt-1 break-all text-sm font-medium text-ink">{phoneLabel}</p>
-                  </div>
-                </div>
+  <div className="info-item">
+    <span className="info-label">Email</span>
+    <span className="info-value">{emailAddress || "-"}</span>
+  </div>
 
-                {/* Last Activity */}
-                <div className="flex items-start gap-3 rounded-2xl border border-whatsapp-line bg-whatsapp-canvas px-3 py-3">
-                  <DetailIcon>
-                    <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
-                      <path d="M12 7v5l3 3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-                      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8" />
-                    </svg>
-                  </DetailIcon>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-whatsapp-muted">Last activity</p>
-                    <p className="mt-1 text-sm font-medium leading-5 text-ink">{formatTime(lastMessageAt)}</p>
-                    <p className="mt-1 text-xs text-whatsapp-muted">{activityLabel}</p>
-                  </div>
-                </div>
-              </div>
+  <div className="info-item">
+    <span className="info-label">Phone</span>
+    <span className="info-value">{phoneLabel}</span>
+  </div>
+</div>
             </div>
           </div>
 
@@ -380,20 +269,22 @@ export function CustomerPanel(props: CustomerPanelProps) {
           ) : null}
 
           <div className="mt-3 grid gap-2">
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-2xl border border-whatsapp-line bg-whatsapp-canvas p-3 text-center">
-                <p className="text-[11px] uppercase tracking-[0.15em] text-whatsapp-muted">Total</p>
-                <p className="mt-1 text-lg font-semibold text-ink">{totalMessages ?? 0}</p>
-              </div>
-              <div className="rounded-2xl border border-whatsapp-line bg-whatsapp-canvas p-3 text-center">
-                <p className="text-[11px] uppercase tracking-[0.15em] text-whatsapp-muted">In</p>
-                <p className="mt-1 text-lg font-semibold text-ink">{incomingCount ?? 0}</p>
-              </div>
-              <div className="rounded-2xl border border-whatsapp-line bg-whatsapp-canvas p-3 text-center">
-                <p className="text-[11px] uppercase tracking-[0.15em] text-whatsapp-muted">Out</p>
-                <p className="mt-1 text-lg font-semibold text-ink">{outgoingCount ?? 0}</p>
-              </div>
-            </div>
+            <div className="stats-grid">
+  <div className="stat-card">
+    <p className="stat-label">TOTAL</p>
+    <p className="stat-value">{totalMessages ?? 0}</p>
+  </div>
+
+  <div className="stat-card">
+    <p className="stat-label">IN</p>
+    <p className="stat-value">{incomingCount ?? 0}</p>
+  </div>
+
+  <div className="stat-card">
+    <p className="stat-label">OUT</p>
+    <p className="stat-value">{outgoingCount ?? 0}</p>
+  </div>
+</div>
           </div>
 
           {lastMessagePreview ? (
@@ -409,7 +300,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
             <p className="text-xs sm:text-sm font-medium text-whatsapp-deep">Lead status</p>
             {loading ? <span className="text-xs text-whatsapp-muted">Loading...</span> : null}
           </div>
-          <div className="mt-2 grid grid-cols-5 gap-2 sm:gap-3">
+          <div className="mt-2 status-grid">
             {CUSTOMER_STATUSES.map((item) => {
               const isActive = item === status;
               const count = statusCounts[item] ?? 0;
@@ -418,7 +309,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
               return (
                 <button
                   key={item}
-                  className={`icon-hover-trigger flex flex-col items-center justify-center rounded-xl border px-1.5 py-1.5 sm:px-3 sm:py-2.5 transition focus:outline-none ${statusClass} min-w-[80px]`}
+                  className={`icon-hover-trigger flex flex-col items-center justify-center rounded-xl border px-1.5 py-1.5 sm:px-3 sm:py-2.5 transition focus:outline-none ${statusClass} `}
                   type="button"
                   onClick={() => props.onLeadStatusFilter && props.onLeadStatusFilter(item)}
                 >
