@@ -111,39 +111,36 @@ function getStatusLabel(status: CustomerStatus): string {
 export function ContactList({ contacts, selectedPhone, loading, refreshing, activeStatusFilter, page, pageSize, total, onPageChange, query, onQueryChange, onRefresh, onSelect }: ContactListProps) {
   return (
     <section className="flex h-full flex-1 flex-col overflow-y-auto rounded-3xl bg-white p-4 shadow-soft">
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="hidden text-xs uppercase tracking-[0.25em] text-whatsapp-muted md:block">CRM workspace</p>
-          <h3 className="text-sm font-semibold leading-5 text-ink sm:text-xl">Contacts</h3>
-          <p className="mt-1 text-xs text-whatsapp-muted">
-            {activeStatusFilter ? `Filtered by ${getStatusLabel(activeStatusFilter)}` : "Browse and manage synced contacts"}
-          </p>
-        </div>
-        <div className="flex items-center justify-between gap-1 sm:justify-end sm:gap-2">
+      {/* Title and description */}
+      <div className="mb-2">
+        <p className="hidden text-xs uppercase tracking-[0.25em] text-whatsapp-muted md:block">CRM WORKSPACE</p>
+        <h3 className="text-sm font-semibold leading-5 text-ink sm:text-xl">Contacts</h3>
+        <p className="mt-1 text-xs text-whatsapp-muted">
+          {activeStatusFilter ? `Filtered by ${getStatusLabel(activeStatusFilter)}` : "Browse and manage synced contacts"}
+        </p>
+      </div>
+      {/* Controls row: Refresh, count, search */}
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex items-center gap-2">
           <button
-            className="hidden rounded-full border border-whatsapp-line bg-whatsapp-soft px-3 py-1 text-xs font-medium text-whatsapp-deep shadow-soft transition hover:bg-white sm:inline-flex"
+            className="rounded-full border border-whatsapp-line bg-whatsapp-soft px-3 py-1 text-xs font-medium text-whatsapp-deep shadow-soft transition hover:bg-white"
             onClick={onRefresh}
             type="button"
           >
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
-          <button
-            className="inline-flex rounded-full border border-whatsapp-line bg-whatsapp-soft px-2 py-1 text-[10px] font-medium text-whatsapp-deep shadow-soft transition hover:bg-white sm:hidden"
-            onClick={onRefresh}
-            type="button"
-          >
-            Sync
-          </button>
-          <div className="shrink-0 rounded-full border border-whatsapp-line bg-white px-2 py-1 text-[10px] font-medium text-whatsapp-muted shadow-soft sm:px-3 sm:text-xs">
+          <div className="shrink-0 rounded-full border border-whatsapp-line bg-white px-3 py-1 text-xs font-medium text-whatsapp-muted shadow-soft">
             {contacts.length}
           </div>
-                    </div>
-        <input
-          className="input-glass"
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Search name, phone, or activity..."
-          value={query}
-        />
+        </div>
+        <div className="flex-1">
+          <input
+            className="input-glass w-full"
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="Search name, phone, or activity..."
+            value={query}
+          />
+        </div>
       </div>
 
       {loading ? (
