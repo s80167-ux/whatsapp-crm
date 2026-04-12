@@ -108,9 +108,12 @@ function App() {
   const [deletingConversationKey, setDeletingConversationKey] = useState<string | null>(null);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const handlingSessionRevocationRef = useRef(false);
+  const messagesCacheRef = useRef<Record<string, Message[]>>({});
+  const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const isSalesDashboard = activeDashboardTab === "sales";
 
   function resetDashboardState() {
+    messagesCacheRef.current = {};
     setToken("");
     setDashboardSessionId("");
     setSessionConflictMessage("");
@@ -308,13 +311,23 @@ function App() {
     }
   }
 
-  async function loadMessages(phone: string, activeToken: string, chatJid?: string | null, silent = false) {
-    if (!silent) {
+  async function loadMessages(phone: string, activeToken: string, chatJid?: string | null, silent = false, force = false) {
+    const cacheKey = getConversationIdentifier(phone, chatJid) || phone;
+    const cached = messagesCacheRef.current[cacheKey];
+
+    // Always show cached messages instantly if available (unless force)
+    if (cached && !force) {
+      setMessages(cached);
+    }
+
+    // Only show loading spinner if no cache
+    if (!cached && !silent) {
       setLoadingMessages(true);
     }
 
     try {
       const data = await api.getMessages(phone, activeToken, chatJid);
+      messagesCacheRef.current[cacheKey] = data;
       setMessages(data);
     } catch (error) {
       if (!silent) {
@@ -323,7 +336,7 @@ function App() {
         console.warn("Silent message refresh failed:", error);
       }
     } finally {
-      if (!silent) {
+      if ((!cached || force) && !silent) {
         setLoadingMessages(false);
       }
     }
@@ -415,6 +428,7 @@ function App() {
         setMessages([]);
         setCustomerDraft(null);
         setSalesLeadItems([]);
+        delete messagesCacheRef.current[conversationId];
       }
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to delete conversation.");
@@ -437,13 +451,18 @@ function App() {
     try {
       await api.deleteMessage(message.id, token);
 
-      setMessages((current) => current.filter((item) => item.id !== message.id));
+      setMessages((current) => {
+        const next = current.filter((item) => item.id !== message.id);
+        const key = getConversationIdentifier(targetPhone, targetChatJid) || targetPhone;
+        messagesCacheRef.current[key] = next;
+        return next;
+      });
 
       await loadConversations(token, true);
 
       if (selectedPhone && selectedPhone === targetPhone) {
         await Promise.allSettled([
-          loadMessages(targetPhone, token, targetChatJid, true),
+          loadMessages(targetPhone, token, targetChatJid, true, true),
           loadCustomer(targetPhone, token, targetChatJid, true),
           loadCustomerSalesItems(targetPhone, token, targetChatJid, true)
         ]);
@@ -869,26 +888,60 @@ function App() {
     };
   }, [token]);
 
+  // Polling removed: manual refresh only.
+
+  // Supabase Realtime subscription for the active chat
   useEffect(() => {
-    if (!token || !dashboardSessionId) {
+    if (realtimeChannelRef.current) {
+      supabase.removeChannel(realtimeChannelRef.current);
+      realtimeChannelRef.current = null;
+    }
+
+    if (!token || !dashboardSessionId || !selectedPhone) {
       return;
     }
 
-    const interval = window.setInterval(() => {
-      loadWhatsAppState(true);
-      loadConversations(token, true);
+    const filterPhone = selectedConversation?.phone || customerDraft?.phone || selectedPhone;
 
-      if (selectedPhone) {
-        loadMessages(selectedPhone, token, activeChatJid, true);
-        loadCustomer(selectedPhone, token, activeChatJid, true);
-        loadCustomerSalesItems(selectedPhone, token, activeChatJid, true);
-      }
-    }, conversationPollMs);
+    const channel = supabase
+      .channel(`messages:${selectedPhone}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `phone=eq.${filterPhone}`
+        },
+        (payload) => {
+          const newMessage = payload.new as Message;
+          // Client-side guard: only append if message belongs to the active conversation
+          const msgConversationId = getConversationIdentifier(newMessage.phone, newMessage.chat_jid);
+          if (msgConversationId !== selectedPhone && newMessage.phone !== selectedPhone) {
+            return;
+          }
+          setMessages((current) => {
+            // Prevent duplicates (e.g. our own optimistic messages confirmed via realtime)
+            if (current.some((m) => m.id === newMessage.id)) {
+              return current;
+            }
+            const next = [...current, newMessage].sort(
+              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            );
+            messagesCacheRef.current[selectedPhone] = next;
+            return next;
+          });
+        }
+      )
+      .subscribe();
+
+    realtimeChannelRef.current = channel;
 
     return () => {
-      window.clearInterval(interval);
+      supabase.removeChannel(channel);
+      realtimeChannelRef.current = null;
     };
-  }, [activeChatJid, dashboardSessionId, selectedPhone, token]);
+  }, [selectedPhone, token, dashboardSessionId]);
 
   useEffect(() => {
     return () => {
@@ -1159,7 +1212,11 @@ function App() {
 
     setSending(true);
     setDashboardError("");
-    setMessages((current) => [...current, optimisticMessage]);
+    setMessages((current) => {
+      const next = [...current, optimisticMessage];
+      messagesCacheRef.current[selectedPhone] = next;
+      return next;
+    });
 
     if (rawMessage === chatInput) {
       setChatInput("");
@@ -1172,9 +1229,12 @@ function App() {
         token,
         activeChatJid
       );
-      setMessages((current) =>
-        current.map((item) => (item.id === tempId ? sentMessage : item))
-      );
+      setMessages((current) => {
+        const next = current.map((item) => (item.id === tempId ? sentMessage : item));
+        const key = getConversationIdentifier(optimisticMessage.phone, optimisticMessage.chat_jid) || optimisticMessage.phone;
+        messagesCacheRef.current[key] = next;
+        return next;
+      });
       setConversations((current) =>
         current
           .map((item) =>
@@ -1190,9 +1250,12 @@ function App() {
           .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       );
     } catch (error) {
-      setMessages((current) =>
-        current.map((item) => (item.id === tempId ? { ...item, send_status: "failed" } : item))
-      );
+      setMessages((current) => {
+        const next = current.map((item) => (item.id === tempId ? { ...item, send_status: "failed" as const } : item));
+        const key = getConversationIdentifier(optimisticMessage.phone, optimisticMessage.chat_jid) || optimisticMessage.phone;
+        messagesCacheRef.current[key] = next;
+        return next;
+      });
       setDashboardError(error instanceof Error ? error.message : "Failed to send message.");
     } finally {
       setSending(false);
@@ -1206,11 +1269,21 @@ function App() {
   ) {
     setSending(true);
     setDashboardError("");
-    setMessages((current) => [...current, optimisticMessage]);
+    setMessages((current) => {
+      const next = [...current, optimisticMessage];
+      const key = getConversationIdentifier(optimisticMessage.phone, optimisticMessage.chat_jid) || optimisticMessage.phone;
+      messagesCacheRef.current[key] = next;
+      return next;
+    });
 
     try {
       const sentMessage = await sendRequest();
-      setMessages((current) => current.map((item) => (item.id === optimisticMessage.id ? sentMessage : item)));
+      setMessages((current) => {
+        const next = current.map((item) => (item.id === optimisticMessage.id ? sentMessage : item));
+        const key = getConversationIdentifier(optimisticMessage.phone, optimisticMessage.chat_jid) || optimisticMessage.phone;
+        messagesCacheRef.current[key] = next;
+        return next;
+      });
       setConversations((current) =>
         current
           .map((item) =>
@@ -1226,9 +1299,12 @@ function App() {
           .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       );
     } catch (error) {
-      setMessages((current) =>
-        current.map((item) => (item.id === optimisticMessage.id ? { ...item, send_status: "failed" } : item))
-      );
+      setMessages((current) => {
+        const next = current.map((item) => (item.id === optimisticMessage.id ? { ...item, send_status: "failed" as const } : item));
+        const key = getConversationIdentifier(optimisticMessage.phone, optimisticMessage.chat_jid) || optimisticMessage.phone;
+        messagesCacheRef.current[key] = next;
+        return next;
+      });
       setDashboardError(error instanceof Error ? error.message : "Failed to send message.");
       throw error;
     } finally {
@@ -1354,7 +1430,7 @@ function App() {
         status: selectedStatus,
         statusCounts: customerStatusCounts,
         totalMessages: customerDraft?.total_messages,
-        customerId: customerDraft?.id || null,
+        // customerId removed: Customer type has no id
         onNotesChange: (value) => {
           if (!activeCustomerPhone) {
             return;
@@ -1517,7 +1593,7 @@ function App() {
                         loadConversations(token, true);
 
                         if (selectedPhone) {
-                          loadMessages(selectedPhone, token, activeCustomerChatJid, true);
+                          loadMessages(selectedPhone, token, activeCustomerChatJid, true, true);
                           loadCustomer(selectedPhone, token, activeCustomerChatJid, true);
                           loadCustomerSalesItems(selectedPhone, token, activeCustomerChatJid, true);
                         }
@@ -1597,6 +1673,16 @@ function App() {
                       salesLeadStatus={selectedStatus}
                       savingSalesLeadItem={savingSalesLeadItem}
                       sending={sending}
+                      onManualRefresh={() => {
+                        if (!token) return;
+                        loadWhatsAppState(true);
+                        loadConversations(token, true);
+                        if (selectedPhone) {
+                          loadMessages(selectedPhone, token, activeChatJid, true, true);
+                          loadCustomer(selectedPhone, token, activeChatJid, true);
+                          loadCustomerSalesItems(selectedPhone, token, activeChatJid, true);
+                        }
+                      }}
                     />
                   ) : activeDashboardTab === "contacts" && customerPanelProps ? (
                     <CustomerPanel

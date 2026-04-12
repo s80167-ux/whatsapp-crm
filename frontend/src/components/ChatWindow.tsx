@@ -478,9 +478,9 @@ async function storedAttachmentToFile(attachment: StoredQuickReplyAttachment): P
   return new File([blob], attachment.name, { type: attachment.type || blob.type || "application/octet-stream" });
 }
 
-export function ChatWindow(props: ChatWindowProps) {
-    // Lead status filter for active conversation block
-    const [activeLeadStatusFilter, setActiveLeadStatusFilter] = useState<CustomerStatus | null>(null);
+export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => void }) {
+  // Lead status filter for active conversation block
+  const [activeLeadStatusFilter, setActiveLeadStatusFilter] = useState<CustomerStatus | null>(null);
   const {
     contactName,
     phone,
@@ -505,7 +505,8 @@ export function ChatWindow(props: ChatWindowProps) {
     onSend,
     onSendQuickReply,
     onSendAttachment,
-    onSendLocation
+    onSendLocation,
+    onManualRefresh
   } = props;
   const listRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -1314,6 +1315,16 @@ export function ChatWindow(props: ChatWindowProps) {
             </button>
           </div>
         ) : null}
+        {/* Manual Refresh Button */}
+        <div className="flex justify-end mb-2">
+          <button
+            type="button"
+            className="rounded border border-whatsapp-line bg-white px-3 py-1 text-xs font-medium text-whatsapp-deep shadow-soft transition hover:bg-whatsapp-soft"
+            onClick={onManualRefresh}
+          >
+            Refresh Conversation
+          </button>
+        </div>
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-whatsapp-muted">Loading messages...</div>
         ) : baseMessages.length === 0 ? (
