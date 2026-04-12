@@ -1,3 +1,19 @@
+// Fetch customers with optional filters and pagination
+async function getCustomers({ owner_user_id, phone, contact_id, contact_name, limit = 10, offset = 0 }) {
+  // Cannot order by messages.created_at in PostgREST; fallback to updated_at only
+  // If you want to sort by latest message, do it in frontend after fetching
+  let query = supabase
+    .from("customers")
+    .select("*", { count: "exact" })
+    .eq("owner_user_id", owner_user_id)
+    .order("updated_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  const { data, error } = await query;
+  throwIfTenantSchemaError(error, "customers.owner_user_id");
+  if (error) throw error;
+  return (data || []).map(normalizeCustomerRecord);
+}
 // Fetch a customer by contact_id and owner_user_id
 async function getCustomerByContactId(contact_id, owner_user_id) {
   const { data, error } = await supabase
@@ -40,11 +56,12 @@ async function getMessagesByContactId(contact_id, owner_user_id, chat_jid = null
 const { createClient } = require("@supabase/supabase-js");
 const { getPhoneLookupValues, normalizePhone, resolveWhatsAppPhone } = require("./wa-identifiers");
 
-const supabaseUrl = process.env.SUPABASE_URL;
+
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
 const supabaseKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_PUBLISHABLE_KEY ||
-  process.env.SUPABASE_ANON_KEY;
+  process.env.VITE_SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  process.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   throw new Error("Missing Supabase environment variables.");
@@ -1836,5 +1853,6 @@ module.exports = {
   deleteActiveDashboardSession,
   getCustomerByContactId,
   getMessagesByContactId,
+  getCustomers,
   supabase
 };

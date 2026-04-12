@@ -1,5 +1,6 @@
 import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type CustomerStatus } from "../lib/api";
 import { formatPhoneDisplay, formatWhatsAppIdDisplay, getDisplayPhone } from "../lib/display";
+import "./CustomerPanel.css";
 
 export type CustomerPanelProps = {
   about: string | null;
@@ -341,21 +342,13 @@ export function CustomerPanel(props: CustomerPanelProps) {
               return (
                 <button
                   key={item}
-                  className={`icon-hover-trigger flex flex-col items-center justify-center rounded-xl border px-1.5 py-1.5 sm:px-3 sm:py-2.5 transition focus:outline-none ${statusClass}`}
+                  className={`icon-hover-trigger flex flex-col items-center justify-center rounded-xl border px-1.5 py-1.5 sm:px-3 sm:py-2.5 transition focus:outline-none ${statusClass} min-w-0`}
                   type="button"
                   onClick={() => props.onLeadStatusFilter && props.onLeadStatusFilter(item)}
-                  style={{ minWidth: 0 }}
                 >
                   <span className="text-xs sm:text-sm font-semibold flex-shrink-0">{count}</span>
                   <span
-                    className="font-normal text-gray-700 text-center leading-tight mt-0.5 w-full"
-                    style={{
-                      fontSize: `clamp(10px, 1.6vw, 13px)`,
-                      lineHeight: 1.15,
-                      whiteSpace: 'normal',
-                      wordBreak: 'break-word',
-                      padding: 0,
-                    }}
+                    className="font-normal text-gray-700 text-center leading-tight mt-0.5 w-full customer-status-label"
                   >
                     {CUSTOMER_STATUS_LABELS[item]}
                   </span>

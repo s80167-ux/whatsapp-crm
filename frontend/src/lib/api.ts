@@ -1,7 +1,9 @@
+// ...existing code...
+
+// ...existing code above...
+// Remove duplicate export and merge all api methods into a single export below
 export const CUSTOMER_STATUSES = ["new_lead", "interested", "processing", "closed_won", "closed_lost"] as const;
-
 export type CustomerStatus = (typeof CUSTOMER_STATUSES)[number];
-
 export const CUSTOMER_STATUS_LABELS: Record<CustomerStatus, string> = {
   new_lead: "New Lead",
   interested: "Interested",
@@ -9,6 +11,9 @@ export const CUSTOMER_STATUS_LABELS: Record<CustomerStatus, string> = {
   closed_won: "Close Won",
   closed_lost: "Close Lost"
 };
+
+// Explicitly export types/constants for use in other files
+export type { CustomerStatus };
 
 export type AuthResponse = {
   token: string;
@@ -260,6 +265,22 @@ async function request<T>(
 }
 
 export const api = {
+  /**
+   * Fetch paginated customers with optional search/filter.
+   * @param params { page, pageSize, search }
+   * @returns { data: Customer[], total: number }
+   */
+  getCustomers(params: { page?: number; pageSize?: number; search?: string }, token?: string) {
+    const urlParams = new URLSearchParams();
+    if (params.page !== undefined) urlParams.set("page", String(params.page));
+    if (params.pageSize !== undefined) urlParams.set("pageSize", String(params.pageSize));
+    if (params.search) urlParams.set("search", params.search);
+    return request<{ data: Customer[]; total: number }>(
+      `/customers${urlParams.size ? `?${urlParams.toString()}` : ""}`,
+      {},
+      token
+    );
+  },
   login(email: string, password: string) {
     return request<AuthResponse>("/login", {
       method: "POST",
@@ -334,6 +355,22 @@ export const api = {
   },
   getConversations(token: string) {
     return request<Conversation[]>("/conversations", {}, token);
+  },
+  /**
+   * Fetch paginated customers with optional search/filter.
+   * @param params { page, pageSize, search }
+   * @returns { data: Customer[], total: number }
+   */
+  getCustomers(params: { page?: number; pageSize?: number; search?: string }, token?: string) {
+    const urlParams = new URLSearchParams();
+    if (params.page !== undefined) urlParams.set("page", String(params.page));
+    if (params.pageSize !== undefined) urlParams.set("pageSize", String(params.pageSize));
+    if (params.search) urlParams.set("search", params.search);
+    return request<{ data: Customer[]; total: number }>(
+      `/customers${urlParams.size ? `?${urlParams.toString()}` : ""}`,
+      {},
+      token
+    );
   },
   markConversationRead(phone: string, token: string, chatJid?: string | null) {
     return request<{ success: boolean }>(

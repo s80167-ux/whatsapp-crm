@@ -1,6 +1,10 @@
 require("dotenv").config();
-
 const express = require("express");
+const app = express();
+
+const { getCustomers, ...otherSupabaseExports } = require("./supabase");
+// ...existing code...
+
 const cors = require("cors");
 const multer = require("multer");
 const VALID_CUSTOMER_STATUSES = ["new_lead", "interested", "processing", "closed_won", "closed_lost"];
@@ -45,14 +49,14 @@ const {
 } = require("./whatsapp");
 
 if (
-  !process.env.SUPABASE_SERVICE_ROLE_KEY &&
-  !process.env.SUPABASE_PUBLISHABLE_KEY &&
-  !process.env.SUPABASE_ANON_KEY
+  !process.env.VITE_SUPABASE_SERVICE_ROLE_KEY &&
+  !process.env.VITE_SUPABASE_PUBLISHABLE_KEY &&
+  !process.env.VITE_SUPABASE_ANON_KEY
 ) {
   throw new Error("Missing Supabase key in backend/.env");
 }
 
-const app = express();
+// Removed duplicate app initialization
 const whatsappRouter = express.Router();
 const port = process.env.PORT || 4000;
 const allowedOrigins = new Set(
@@ -414,6 +418,31 @@ app.get("/messages/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (
 
 
 // New: Fetch customer by contact_id
+// New: List customers (for contacts dashboard)
+app.get("/customers", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const page = Number(req.query.page) || 1;
+    const pageSize = Number(req.query.pageSize) || 10;
+    const limit = pageSize;
+    const offset = (page - 1) * pageSize;
+    // Get paginated data
+    const data = await getCustomers({
+      owner_user_id: req.user.sub,
+      limit,
+      offset
+    });
+    // Get total count (for pagination)
+    const { count, error: countError } = await require("./supabase").supabase
+      .from("customers")
+      .select("*", { count: "exact", head: true })
+      .eq("owner_user_id", req.user.sub);
+    if (countError) throw countError;
+    res.json({ data, total: count || 0 });
+  } catch (error) {
+    console.error("Failed to fetch customers:", error);
+    res.status(500).json({ error: "Failed to fetch customers." });
+  }
+});
 app.get("/customers/by-id/:contact_id", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const contactId = req.params.contact_id;

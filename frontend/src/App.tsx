@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChatList } from "./components/ChatList";
 import { ChatWindow } from "./components/ChatWindow";
 import { ContactList } from "./components/ContactList";
+
 import { CustomerPanel } from "./components/CustomerPanel";
 import type { CustomerPanelProps } from "./components/CustomerPanel";
 import { LoginForm } from "./components/LoginForm";
@@ -111,6 +112,57 @@ function App() {
   const messagesCacheRef = useRef<Record<string, Message[]>>({});
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const isSalesDashboard = activeDashboardTab === "sales";
+
+  // Contacts dashboard state and logic
+  const CONTACTS_PAGE_SIZE = 10;
+  const [contacts, setContacts] = useState<Customer[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactsRefreshing, setContactsRefreshing] = useState(false);
+  const [contactsPage, setContactsPage] = useState(1);
+  const [contactsTotal, setContactsTotal] = useState(0);
+  const [contactsQuery, setContactsQuery] = useState("");
+
+  // Fetch contacts from backend with pagination and search
+  const fetchContacts = async ({ page = contactsPage, query = contactsQuery, silent = false } = {}) => {
+    if (!token || activeDashboardTab !== "contacts") return;
+    if (!silent) setContactsLoading(true);
+    else setContactsRefreshing(true);
+    try {
+      const { data, total } = await api.getCustomers({
+        page,
+        pageSize: CONTACTS_PAGE_SIZE,
+        search: query,
+      }, token);
+      // Sort: contacts with a name at the top, then by latest message or updated time
+      const sorted = [...data].sort((a, b) => {
+        // 1. Contacts with a name come first
+        const aHasName = !!(a.contact_name && a.contact_name.trim());
+        const bHasName = !!(b.contact_name && b.contact_name.trim());
+        if (aHasName !== bHasName) return bHasName ? 1 : -1;
+        // 2. Then by latest message or updated time
+        const aTime = a.last_message_at || a.updated_at || "";
+        const bTime = b.last_message_at || b.updated_at || "";
+        return bTime.localeCompare(aTime);
+      });
+      setContacts(sorted);
+      setContactsTotal(total);
+      setContactsPage(page);
+    } catch (error) {
+      setContacts([]);
+      setContactsTotal(0);
+    } finally {
+      if (!silent) setContactsLoading(false);
+      else setContactsRefreshing(false);
+    }
+  };
+
+  // Fetch contacts when tab, page, or query changes
+  useEffect(() => {
+    if (activeDashboardTab === "contacts" && token && dashboardSessionId) {
+      fetchContacts({ page: contactsPage, query: contactsQuery });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDashboardTab, contactsPage, contactsQuery, token, dashboardSessionId]);
 
   function resetDashboardState() {
     messagesCacheRef.current = {};
@@ -1613,25 +1665,20 @@ function App() {
                   ) : (
                     <ContactList
                       activeStatusFilter={activeStatusFilter}
-                      contacts={visibleConversations}
-                      loading={loadingChats}
-                      onRefresh={() => {
-                        if (!token) {
-                          return;
-                        }
-
-                        loadWhatsAppState(true);
-                        loadConversations(token, true);
-
-                        if (selectedPhone) {
-                          loadCustomer(selectedPhone, token, activeCustomerChatJid, true);
-                          loadCustomerSalesItems(selectedPhone, token, activeCustomerChatJid, true);
-                        }
-                      }}
+                      contacts={contacts}
+                      loading={contactsLoading}
+                      refreshing={contactsRefreshing}
+                      selectedPhone={selectedPhone}
+                      page={contactsPage}
+                      pageSize={CONTACTS_PAGE_SIZE}
+                      total={contactsTotal}
+                      onPageChange={(page) => fetchContacts({ page })}
+                      onQueryChange={setContactsQuery}
+                      query={contactsQuery}
+                      onRefresh={() => fetchContacts({ page: contactsPage, query: contactsQuery })}
                       onSelect={(phone, opts) => {
                         setActiveMessageFilterId(null);
                         setSelectedPhone(phone);
-                        // Only switch to inbox if focusChatInput is requested (i.e., message icon click)
                         if (opts && opts.focusChatInput) {
                           setActiveDashboardTab("inbox");
                           setActiveView("inbox");
@@ -1644,8 +1691,6 @@ function App() {
                           }, 300);
                         }
                       }}
-                      refreshing={refreshingChats}
-                      selectedPhone={selectedPhone}
                     />
                   )}
                 </div>
