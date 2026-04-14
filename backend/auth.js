@@ -1,11 +1,11 @@
 
-import crypto from "crypto";
-import { createClient } from "@supabase/supabase-js";
-import {
+const crypto = require("crypto");
+const { createClient } = require("@supabase/supabase-js");
+const {
   deleteActiveDashboardSession,
   getActiveDashboardSessionId,
   upsertActiveDashboardSession
-} from "./supabase.js";
+} = require("./supabase");
 
 const authClient = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
@@ -177,7 +177,7 @@ async function requireAuth(req, res, next) {
   }
 }
 
-export {
+module.exports = {
   createDashboardSession,
   registerUser,
   loginUser,
