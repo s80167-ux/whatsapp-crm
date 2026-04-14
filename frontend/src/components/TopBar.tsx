@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { createPortal } from "react-dom";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { type WhatsAppQr, type WhatsAppStatus } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import { WhatsAppConnectCard } from "./WhatsAppConnectCard";
@@ -43,12 +44,15 @@ export function TopBar({
   whatsAppQr,
   whatsAppStatus
 }: TopBarProps) {
+  const passwordPanelRef = useRef<HTMLDivElement | null>(null);
+  const passwordButtonRef = useRef<HTMLButtonElement | null>(null);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [nextPassword, setNextPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [passwordSuccess, setPasswordSuccess] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordPanelPosition, setPasswordPanelPosition] = useState<{ left: number; top: number } | null>(null);
 
   async function handleChangePassword() {
     const trimmedPassword = nextPassword.trim();
@@ -85,6 +89,65 @@ export function TopBar({
       setPasswordSaving(false);
     }
   }
+
+  useEffect(() => {
+    if (!showPasswordForm) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && passwordPanelRef.current && !passwordPanelRef.current.contains(target)) {
+        setShowPasswordForm(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [showPasswordForm]);
+
+  useLayoutEffect(() => {
+    if (!showPasswordForm) {
+      setPasswordPanelPosition(null);
+      return;
+    }
+
+    const gutter = 12;
+    const dropdownGap = 10;
+
+    const updatePosition = () => {
+      if (!passwordButtonRef.current) {
+        return;
+      }
+
+      const rect = passwordButtonRef.current.getBoundingClientRect();
+      const overlayWidth = passwordPanelRef.current?.offsetWidth ?? 360;
+      const overlayHeight = passwordPanelRef.current?.offsetHeight ?? 0;
+
+      const maxLeft = Math.max(gutter, window.innerWidth - overlayWidth - gutter);
+      const desiredLeft = rect.right - overlayWidth;
+      const left = Math.min(Math.max(desiredLeft, gutter), maxLeft);
+
+      const desiredTop = rect.bottom + dropdownGap;
+      const maxTop = overlayHeight ? Math.max(gutter, window.innerHeight - overlayHeight - gutter) : desiredTop;
+      const top = Math.min(Math.max(desiredTop, gutter), maxTop);
+
+      setPasswordPanelPosition({ left, top });
+    };
+
+    updatePosition();
+
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [showPasswordForm]);
 
   return (
     <div className="glass-panel flex flex-col gap-1.5 p-2.5 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:px-4 lg:py-2.5">
@@ -138,6 +201,7 @@ export function TopBar({
               <button
                 aria-label={showPasswordForm ? "Hide change password form" : "Show change password form"}
                 className="icon-hover-trigger flex h-8 w-8 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent"
+                ref={passwordButtonRef}
                 onClick={() => {
                   setShowPasswordForm((current) => !current);
                   setPasswordError("");
@@ -179,51 +243,87 @@ export function TopBar({
             </div>
           </div>
 
-          {showPasswordForm ? (
-            <div className="mt-3 space-y-2 border-t border-whatsapp-line pt-3">
-              <input
-                className="input-glass"
-                onChange={(event) => setNextPassword(event.target.value)}
-                placeholder="New password"
-                type="password"
-                value={nextPassword}
-              />
-              <input
-                className="input-glass"
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                placeholder="Confirm new password"
-                type="password"
-                value={confirmPassword}
-              />
-              {passwordError ? <p className="text-xs text-rose-500">{passwordError}</p> : null}
-              {passwordSuccess ? <p className="text-xs text-whatsapp-dark">{passwordSuccess}</p> : null}
-              <div className="flex gap-2">
-                <button
-                  className="w-full rounded-xl bg-whatsapp-deep py-3 text-base font-bold text-white shadow transition active:bg-whatsapp-dark disabled:opacity-60 disabled:cursor-not-allowed"
-                  disabled={passwordSaving}
-                  onClick={handleChangePassword}
-                  type="button"
-                >
-                  {passwordSaving ? "Saving..." : "Update"}
-                </button>
-                <button
-                  className="secondary-button px-3 py-2 text-xs"
-                  onClick={() => {
-                    setShowPasswordForm(false);
-                    setNextPassword("");
-                    setConfirmPassword("");
-                    setPasswordError("");
-                    setPasswordSuccess("");
-                  }}
-                  type="button"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : passwordSuccess ? (
-            <p className="mt-3 border-t border-whatsapp-line pt-3 text-xs text-whatsapp-dark">{passwordSuccess}</p>
-          ) : null}
+          {showPasswordForm
+            ? createPortal(
+                <>
+                  <div
+                    aria-hidden="true"
+                    className="frost-float-backdrop fixed inset-0 z-[44]"
+                    onClick={() => setShowPasswordForm(false)}
+                  />
+                  <div
+                    ref={passwordPanelRef}
+                    className="whatsapp-popover fixed z-[45] w-[calc(100vw-24px)] max-w-[360px]"
+                    onClick={(event) => event.stopPropagation()}
+                    style={passwordPanelPosition ? { left: passwordPanelPosition.left, top: passwordPanelPosition.top } : undefined}
+                  >
+                    <div className="whatsapp-popover-content space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="whatsapp-popover-kicker">Security</p>
+                          <h4 className="whatsapp-popover-title">Change password</h4>
+                          <p className="whatsapp-popover-subtitle truncate">Update the password for {userEmail}.</p>
+                        </div>
+                        <span className="whatsapp-popover-pill">Protected</span>
+                      </div>
+
+                      <div className="space-y-2">
+                        <input
+                          className="input-glass rounded-[14px] border-white/10 bg-white/85"
+                          onChange={(event) => setNextPassword(event.target.value)}
+                          placeholder="New password"
+                          type="password"
+                          value={nextPassword}
+                        />
+                        <input
+                          className="input-glass rounded-[14px] border-white/10 bg-white/85"
+                          onChange={(event) => setConfirmPassword(event.target.value)}
+                          placeholder="Confirm new password"
+                          type="password"
+                          value={confirmPassword}
+                        />
+                      </div>
+
+                      {passwordError ? (
+                        <p className="whatsapp-popover-card border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">{passwordError}</p>
+                      ) : null}
+
+                      {passwordSuccess ? (
+                        <p className="whatsapp-popover-card px-3 py-2 text-xs leading-5 text-whatsapp-dark">{passwordSuccess}</p>
+                      ) : null}
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          className="primary-button w-full justify-center rounded-[14px] py-3 text-sm font-semibold"
+                          disabled={passwordSaving}
+                          onClick={handleChangePassword}
+                          type="button"
+                        >
+                          {passwordSaving ? "Saving..." : "Update password"}
+                        </button>
+                        <button
+                          className="secondary-button w-full rounded-[14px] px-3 py-3 text-sm font-semibold"
+                          onClick={() => {
+                            setShowPasswordForm(false);
+                            setNextPassword("");
+                            setConfirmPassword("");
+                            setPasswordError("");
+                            setPasswordSuccess("");
+                          }}
+                          type="button"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </>,
+                document.body
+              )
+            : passwordSuccess ? (
+                <p className="whatsapp-popover mt-3 w-full max-w-[360px] px-3 py-2 text-xs text-whatsapp-dark">{passwordSuccess}</p>
+              )
+            : null}
         </div>
       </div>
     </div>

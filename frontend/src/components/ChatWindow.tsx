@@ -2119,33 +2119,33 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
 
       {mediaLightbox ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#10211d]/78 px-4 py-6 backdrop-blur-sm"
+          className="frost-float-backdrop fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
           onClick={() => setMediaLightbox(null)}
           role="dialog"
           aria-modal="true"
           aria-label="Image preview"
         >
           <div
-            className="relative max-h-full w-full max-w-5xl"
+            className="frost-float relative max-h-full w-full max-w-5xl overflow-hidden rounded-[24px] p-3"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
               <button
-                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-whatsapp-deep shadow-soft transition hover:bg-whatsapp-soft"
+                className="rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-whatsapp-deep transition hover:bg-white"
                 onClick={() => openMediaInNewTab(mediaLightbox.src)}
                 type="button"
               >
                 Open in new tab
               </button>
               <a
-                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-whatsapp-deep shadow-soft transition hover:bg-whatsapp-soft"
+                className="rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-whatsapp-deep transition hover:bg-white"
                 download={mediaLightbox.downloadName}
                 href={mediaLightbox.src}
               >
                 Save media
               </a>
               <button
-                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-whatsapp-deep shadow-soft transition hover:bg-whatsapp-soft"
+                className="rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-whatsapp-deep transition hover:bg-white"
                 onClick={() => setMediaLightbox(null)}
                 type="button"
               >
@@ -2154,7 +2154,7 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
             </div>
             <img
               alt={mediaLightbox.alt}
-              className="max-h-[88vh] w-full rounded-[28px] object-contain shadow-soft"
+              className="max-h-[88vh] w-full rounded-[20px] object-contain"
               src={mediaLightbox.src}
             />
           </div>

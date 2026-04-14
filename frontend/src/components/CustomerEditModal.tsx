@@ -41,13 +41,14 @@ export default function CustomerEditModal({ customer, isOpen, onClose, onSave }:
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+    <div className="frost-float-backdrop fixed inset-0 z-50 flex items-center justify-center px-4 py-6" onClick={onClose}>
       <form
-        className="bg-white rounded-lg shadow-lg w-full max-w-sm p-4 flex flex-col gap-3 mx-2"
+        className="frost-float w-full max-w-sm rounded-[18px] p-4"
         style={{ maxWidth: 360 }}
         onSubmit={handleSubmit}
+        onClick={(event) => event.stopPropagation()}
       >
-        <h2 className="text-lg font-semibold mb-2">Edit Customer Profile</h2>
+        <h2 className="mb-2 text-lg font-semibold">Edit Customer Profile</h2>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium">Name</label>
           <input name="contact_name" value={form.contact_name} onChange={handleChange} className="input input-sm" />
@@ -94,7 +95,7 @@ export default function CustomerEditModal({ customer, isOpen, onClose, onSave }:
           <label className="text-xs font-medium">Chat JID</label>
           <input value={customer.chat_jid} disabled className="input input-sm bg-gray-100" />
         </div>
-        <div className="flex flex-row gap-2 mt-4">
+        <div className="mt-4 flex flex-row gap-2">
           <button type="button" className="btn btn-sm flex-1 bg-gray-200" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn btn-sm flex-1 bg-green-500 text-white">Save</button>
         </div>

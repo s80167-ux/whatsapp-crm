@@ -6,3 +6,4 @@ backend/baileys_auth/
 frontend/dist/
 .vscode/
 frontend/.env.local
+.vercel

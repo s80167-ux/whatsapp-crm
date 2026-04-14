@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, type WhatsAppProfile, type WhatsAppQr, type WhatsAppStatus } from "../lib/api";
 
 type WhatsAppConnectCardProps = {
@@ -52,6 +53,12 @@ export function WhatsAppConnectCard({
   onDisconnect,
   disconnecting = false
 }: WhatsAppConnectCardProps) {
+  const qrButtonRef = useRef<HTMLButtonElement | null>(null);
+  const profileButtonRef = useRef<HTMLButtonElement | null>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const qrOverlayRef = useRef<HTMLDivElement | null>(null);
+  const profilePanelRef = useRef<HTMLDivElement | null>(null);
+  const settingsPanelRef = useRef<HTMLDivElement | null>(null);
   const [showProfilePanel, setShowProfilePanel] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -61,6 +68,9 @@ export function WhatsAppConnectCard({
   const [clearingDb, setClearingDb] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showQrOverlay, setShowQrOverlay] = useState(false);
+  const [qrOverlayPosition, setQrOverlayPosition] = useState<{ left: number; top: number } | null>(null);
+  const [profileOverlayPosition, setProfileOverlayPosition] = useState<{ left: number; top: number } | null>(null);
+  const [settingsOverlayPosition, setSettingsOverlayPosition] = useState<{ left: number; top: number } | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -165,10 +175,169 @@ export function WhatsAppConnectCard({
     }
   }, [shouldShowQrPanel]);
 
+  useEffect(() => {
+    if (!showProfilePanel) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && profilePanelRef.current && !profilePanelRef.current.contains(target)) {
+        setShowProfilePanel(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [showProfilePanel]);
+
+  useEffect(() => {
+    if (!showAdvanced) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && settingsPanelRef.current && !settingsPanelRef.current.contains(target)) {
+        setShowAdvanced(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [showAdvanced]);
+
+  useLayoutEffect(() => {
+    if (!compact || !showQrOverlay) {
+      setQrOverlayPosition(null);
+      return;
+    }
+
+    const gutter = 12;
+    const dropdownGap = 10;
+
+    const updatePosition = () => {
+      if (!qrButtonRef.current) {
+        return;
+      }
+
+      const rect = qrButtonRef.current.getBoundingClientRect();
+      const overlayWidth = qrOverlayRef.current?.offsetWidth ?? 240;
+      const overlayHeight = qrOverlayRef.current?.offsetHeight ?? 0;
+
+      const maxLeft = Math.max(gutter, window.innerWidth - overlayWidth - gutter);
+      const desiredLeft = rect.right - overlayWidth;
+      const left = Math.min(Math.max(desiredLeft, gutter), maxLeft);
+
+      const desiredTop = rect.bottom + dropdownGap;
+      const maxTop = overlayHeight ? Math.max(gutter, window.innerHeight - overlayHeight - gutter) : desiredTop;
+      const top = Math.min(Math.max(desiredTop, gutter), maxTop);
+
+      setQrOverlayPosition({ left, top });
+    };
+
+    updatePosition();
+
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [compact, showQrOverlay]);
+
+  useLayoutEffect(() => {
+    if (!compact || !showProfilePanel) {
+      setProfileOverlayPosition(null);
+      return;
+    }
+
+    const gutter = 12;
+    const dropdownGap = 10;
+
+    const updatePosition = () => {
+      if (!profileButtonRef.current) {
+        return;
+      }
+
+      const rect = profileButtonRef.current.getBoundingClientRect();
+      const overlayWidth = profilePanelRef.current?.offsetWidth ?? 420;
+      const overlayHeight = profilePanelRef.current?.offsetHeight ?? 0;
+
+      const maxLeft = Math.max(gutter, window.innerWidth - overlayWidth - gutter);
+      const desiredLeft = rect.right - overlayWidth;
+      const left = Math.min(Math.max(desiredLeft, gutter), maxLeft);
+
+      const desiredTop = rect.bottom + dropdownGap;
+      const maxTop = overlayHeight ? Math.max(gutter, window.innerHeight - overlayHeight - gutter) : desiredTop;
+      const top = Math.min(Math.max(desiredTop, gutter), maxTop);
+
+      setProfileOverlayPosition({ left, top });
+    };
+
+    updatePosition();
+
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [compact, showProfilePanel]);
+
+  useLayoutEffect(() => {
+    if (!compact || !showAdvanced) {
+      setSettingsOverlayPosition(null);
+      return;
+    }
+
+    const gutter = 12;
+    const dropdownGap = 10;
+
+    const updatePosition = () => {
+      if (!settingsButtonRef.current) {
+        return;
+      }
+
+      const rect = settingsButtonRef.current.getBoundingClientRect();
+      const overlayWidth = settingsPanelRef.current?.offsetWidth ?? 320;
+      const overlayHeight = settingsPanelRef.current?.offsetHeight ?? 0;
+
+      const maxLeft = Math.max(gutter, window.innerWidth - overlayWidth - gutter);
+      const desiredLeft = rect.right - overlayWidth;
+      const left = Math.min(Math.max(desiredLeft, gutter), maxLeft);
+
+      const desiredTop = rect.bottom + dropdownGap;
+      const maxTop = overlayHeight ? Math.max(gutter, window.innerHeight - overlayHeight - gutter) : desiredTop;
+      const top = Math.min(Math.max(desiredTop, gutter), maxTop);
+
+      setSettingsOverlayPosition({ left, top });
+    };
+
+    updatePosition();
+
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [compact, showAdvanced]);
+
   const profileIconButton = canViewProfile ? (
     <button
       aria-label={showProfilePanel ? "Hide WhatsApp profile" : "Show WhatsApp profile"}
       className={`icon-hover-trigger flex ${compact ? "h-8 w-8" : "h-10 w-10"} appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent ${showProfilePanel ? "text-whatsapp-deep" : ""}`}
+      ref={profileButtonRef}
       onClick={() => setShowProfilePanel((current) => !current)}
       type="button"
     >
@@ -219,6 +388,7 @@ export function WhatsAppConnectCard({
     <button
       aria-label={showAdvanced ? "Hide WhatsApp settings" : "Show WhatsApp settings"}
       className={`icon-hover-trigger flex h-8 w-8 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent ${showAdvanced ? "text-whatsapp-deep" : ""}`}
+      ref={settingsButtonRef}
       onClick={() => setShowAdvanced((current) => !current)}
       type="button"
     >
@@ -242,6 +412,7 @@ export function WhatsAppConnectCard({
       aria-label={showQrOverlay ? "Hide WhatsApp QR code" : "Show WhatsApp QR code"}
       className={`icon-hover-trigger flex h-8 w-8 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent ${showQrOverlay ? "text-whatsapp-deep" : ""}`}
       onClick={() => setShowQrOverlay((current) => !current)}
+      ref={qrButtonRef}
       type="button"
     >
       <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
@@ -253,111 +424,215 @@ export function WhatsAppConnectCard({
     </button>
   ) : null;
 
-  const profilePanel = showProfilePanel ? (
-    <div className="mt-3 rounded-[24px] border border-whatsapp-line bg-white p-3 shadow-soft">
-      {profileLoading ? (
-        <p className="text-sm text-whatsapp-muted">Loading WhatsApp profile...</p>
-      ) : profileError ? (
-        <p className="text-sm text-rose-500">{profileError}</p>
-      ) : profile ? (
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            {profile.profilePictureUrl ? (
-              <img
-                alt={profile.username || profile.phone || "WhatsApp profile"}
-                className="h-14 w-14 rounded-2xl object-cover shadow-soft"
-                src={profile.profilePictureUrl}
-              />
-            ) : (
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-whatsapp-dark text-lg font-semibold text-white shadow-soft">
-                {(profile.username || profile.phone || "W").slice(0, 1).toUpperCase()}
-              </div>
-            )}
-
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-ink">{profile.username || "WhatsApp account"}</p>
-              <p className="mt-1 break-all text-xs text-whatsapp-muted">{formatPhone(profile.phone)}</p>
-            </div>
+  const profilePanelContent = (
+    <div ref={profilePanelRef} className="whatsapp-popover mt-3 w-full max-w-[420px] max-h-[calc(100dvh-24px)]">
+      <div className="whatsapp-popover-content scrollbar-hidden max-h-[calc(100dvh-24px)] space-y-3 overflow-y-auto overscroll-contain">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="whatsapp-popover-kicker">Profile</p>
+            <h4 className="whatsapp-popover-title">WhatsApp profile</h4>
+            <p className="whatsapp-popover-subtitle truncate">Review the connected account and catalog details.</p>
           </div>
+          <span className="whatsapp-popover-pill">{status?.connected ? "Connected" : "Offline"}</span>
+        </div>
 
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="min-w-0 rounded-[18px] border border-whatsapp-line bg-whatsapp-canvas px-3 py-2">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Username</p>
-              <p className="mt-1 break-words text-sm font-medium text-ink">{profile.username || "Unavailable"}</p>
-            </div>
-            <div className="min-w-0 rounded-[18px] border border-whatsapp-line bg-whatsapp-canvas px-3 py-2">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Number</p>
-              <p className="mt-1 break-all text-sm font-medium text-ink">{formatPhone(profile.phone)}</p>
-            </div>
+        {profileLoading ? (
+          <div className="whatsapp-popover-card px-3 py-3">
+            <p className="text-sm text-whatsapp-muted">Loading WhatsApp profile...</p>
           </div>
+        ) : profileError ? (
+          <div className="whatsapp-popover-card border-rose-200 bg-rose-50 px-3 py-3">
+            <p className="text-sm leading-5 text-rose-700">{profileError}</p>
+          </div>
+        ) : profile ? (
+          <div className="space-y-3">
+            <div className="whatsapp-popover-card flex items-center gap-3 p-3">
+              {profile.profilePictureUrl ? (
+                <img
+                  alt={profile.username || profile.phone || "WhatsApp profile"}
+                  className="h-14 w-14 rounded-[16px] object-cover shadow-[0_10px_22px_rgba(15,23,42,0.1)]"
+                  src={profile.profilePictureUrl}
+                />
+              ) : (
+                <div className="flex h-14 w-14 items-center justify-center rounded-[16px] bg-whatsapp-dark text-lg font-semibold text-white shadow-[0_10px_22px_rgba(15,23,42,0.1)]">
+                  {(profile.username || profile.phone || "W").slice(0, 1).toUpperCase()}
+                </div>
+              )}
 
-          {profile.businessProfile ? (
-            <div className="rounded-[18px] border border-whatsapp-line bg-whatsapp-canvas p-3">
-              <div className="grid gap-2 md:grid-cols-2">
-                <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Category</p>
-                  <p className="mt-1 break-words text-sm font-medium text-ink">{profile.businessProfile.category || "Unavailable"}</p>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Email</p>
-                  <p className="mt-1 break-all text-sm font-medium text-ink">{profile.businessProfile.email || "Unavailable"}</p>
-                </div>
-              </div>
-              <div className="mt-2">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Shop description</p>
-                <p className="mt-1 break-words text-sm text-ink/80">{profile.businessProfile.description || "Unavailable"}</p>
-              </div>
-              <div className="mt-2">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Address</p>
-                <p className="mt-1 break-words text-sm text-ink/80">{profile.businessProfile.address || "Unavailable"}</p>
-              </div>
-              <div className="mt-2">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Website</p>
-                <p className="mt-1 break-all text-sm text-ink/80">
-                  {profile.businessProfile.website.length ? profile.businessProfile.website.join(", ") : "Unavailable"}
-                </p>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-ink">{profile.username || "WhatsApp account"}</p>
+                <p className="mt-1 break-all text-xs text-whatsapp-muted">{formatPhone(profile.phone)}</p>
               </div>
             </div>
-          ) : null}
 
-          <div className="rounded-[18px] border border-whatsapp-line bg-whatsapp-canvas p-3">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Catalogue / Shop</p>
-              <span className="rounded-full border border-whatsapp-line bg-white px-2 py-1 text-[10px] font-semibold text-whatsapp-muted">
-                {profile.catalog?.products.length || 0} items
-              </span>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="whatsapp-popover-card px-3 py-2.5">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Username</p>
+                <p className="mt-1 break-words text-sm font-medium text-ink">{profile.username || "Unavailable"}</p>
+              </div>
+              <div className="whatsapp-popover-card px-3 py-2.5">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Number</p>
+                <p className="mt-1 break-all text-sm font-medium text-ink">{formatPhone(profile.phone)}</p>
+              </div>
             </div>
 
-            {profile.catalog?.products.length ? (
-              <div className="mt-3 space-y-2">
-                {profile.catalog.products.map((product) => (
-                  <div key={product.id} className="flex gap-3 rounded-[18px] border border-whatsapp-line bg-white p-2.5">
-                    {product.imageUrl ? (
-                      <img alt={product.name} className="h-14 w-14 rounded-2xl object-cover" src={product.imageUrl} />
-                    ) : (
-                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-whatsapp-soft text-[10px] font-semibold uppercase text-whatsapp-muted">
-                        Shop
-                      </div>
-                    )}
-
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-ink">{product.name}</p>
-                      <p className="mt-1 text-xs text-whatsapp-muted">{formatPrice(product.price, product.currency)}</p>
-                      {product.description ? <p className="mt-1 line-clamp-2 text-xs text-ink/80">{product.description}</p> : null}
-                    </div>
+            {profile.businessProfile ? (
+              <div className="whatsapp-popover-card space-y-3 p-3">
+                <div className="grid gap-2 md:grid-cols-2">
+                  <div className="whatsapp-popover-card-muted min-w-0 px-3 py-2.5">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Category</p>
+                    <p className="mt-1 break-words text-sm font-medium text-ink">{profile.businessProfile.category || "Unavailable"}</p>
                   </div>
-                ))}
+                  <div className="whatsapp-popover-card-muted min-w-0 px-3 py-2.5">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Email</p>
+                    <p className="mt-1 break-all text-sm font-medium text-ink">{profile.businessProfile.email || "Unavailable"}</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Shop description</p>
+                  <p className="mt-1 break-words text-sm leading-5 text-ink/80">{profile.businessProfile.description || "Unavailable"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Address</p>
+                  <p className="mt-1 break-words text-sm leading-5 text-ink/80">{profile.businessProfile.address || "Unavailable"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Website</p>
+                  <p className="mt-1 break-all text-sm leading-5 text-ink/80">
+                    {profile.businessProfile.website.length ? profile.businessProfile.website.join(", ") : "Unavailable"}
+                  </p>
+                </div>
               </div>
-            ) : (
-              <p className="mt-2 text-sm text-whatsapp-muted">No catalogue or shop items are available for this WhatsApp account.</p>
-            )}
+            ) : null}
+
+            <div className="whatsapp-popover-card space-y-3 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Catalogue / Shop</p>
+                <span className="whatsapp-popover-pill">{profile.catalog?.products.length || 0} items</span>
+              </div>
+
+              {profile.catalog?.products.length ? (
+                <div className="space-y-2">
+                  {profile.catalog.products.map((product) => (
+                    <div key={product.id} className="flex gap-3 rounded-[16px] border border-white/50 bg-white/72 p-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.05)]">
+                      {product.imageUrl ? (
+                        <img alt={product.name} className="h-14 w-14 rounded-[12px] object-cover" src={product.imageUrl} />
+                      ) : (
+                        <div className="flex h-14 w-14 items-center justify-center rounded-[12px] bg-whatsapp-soft text-[10px] font-semibold uppercase text-whatsapp-muted">
+                          Shop
+                        </div>
+                      )}
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-ink">{product.name}</p>
+                        <p className="mt-1 text-xs text-whatsapp-muted">{formatPrice(product.price, product.currency)}</p>
+                        {product.description ? <p className="mt-1 line-clamp-2 text-xs leading-5 text-ink/80">{product.description}</p> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-whatsapp-muted">No catalogue or shop items are available for this WhatsApp account.</p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="whatsapp-popover-card px-3 py-3">
+            <p className="text-sm text-whatsapp-muted">No WhatsApp profile data is available yet.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const settingsPanelContent = (
+    <div ref={settingsPanelRef} className="whatsapp-popover mt-2 w-full max-w-[320px] lg:mt-1.5">
+      <div className="whatsapp-popover-content space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="whatsapp-popover-kicker">Maintenance</p>
+            <h4 className="whatsapp-popover-title">WhatsApp settings</h4>
+            <p className="whatsapp-popover-subtitle">Adjust message sync depth and cleanup options.</p>
+          </div>
+          <span className="whatsapp-popover-pill">Advanced</span>
+        </div>
+
+        <div className="whatsapp-popover-card space-y-2 px-3 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-[10px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted" htmlFor="sync-days-compact">
+              Sync window
+            </label>
+            <select
+              id="sync-days-compact"
+              className="rounded-[12px] border border-whatsapp-line bg-white px-2.5 py-1.5 text-[10px] text-whatsapp-deep outline-none transition-colors focus:border-whatsapp-dark focus:ring-1 focus:ring-whatsapp-green/20"
+              disabled={savingSync}
+              onChange={(e) => handleSyncDaysChange(Number(e.target.value))}
+              value={syncDays}
+            >
+              <option value={1}>1 Day (Yesterday)</option>
+              <option value={7}>1 Week (Recent)</option>
+              <option value={30}>1 Month</option>
+              <option value={90}>3 Months</option>
+              <option value={180}>6 Months</option>
+            </select>
+          </div>
+          <p className="text-[10px] leading-4 text-whatsapp-muted">Timeframe for fetching past messages during handshake.</p>
+        </div>
+
+        <div className="whatsapp-popover-card border-rose-200 bg-rose-50 px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-rose-700">Danger Zone</p>
+              <p className="mt-1 text-[10px] leading-4 text-rose-600">Wipe messages and start fresh.</p>
+            </div>
+            <button
+              className="rounded-[12px] bg-rose-600 px-3 py-2 text-[10px] font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50"
+              onClick={handleClearDatabase}
+              disabled={clearingDb}
+            >
+              {clearingDb ? "Clearing..." : "Clear"}
+            </button>
           </div>
         </div>
-      ) : (
-        <p className="text-sm text-whatsapp-muted">No WhatsApp profile data is available yet.</p>
-      )}
+      </div>
     </div>
-  ) : null;
+  );
+
+  const profilePanel = showProfilePanel
+    ? compact
+      ? createPortal(
+          <>
+            <div aria-hidden="true" className="frost-float-backdrop fixed inset-0 z-[44]" onClick={() => setShowProfilePanel(false)} />
+            <div
+              className="fixed z-[45] w-[calc(100vw-24px)] max-w-[420px]"
+              onClick={(event) => event.stopPropagation()}
+              style={profileOverlayPosition ? { left: profileOverlayPosition.left, top: profileOverlayPosition.top } : undefined}
+            >
+              {profilePanelContent}
+            </div>
+          </>,
+          document.body
+        )
+      : profilePanelContent
+    : null;
+
+  const settingsPanel = showAdvanced
+    ? compact
+      ? createPortal(
+          <>
+            <div aria-hidden="true" className="frost-float-backdrop fixed inset-0 z-[44]" onClick={() => setShowAdvanced(false)} />
+            <div
+              className="fixed z-[45] w-[calc(100vw-24px)] max-w-[320px]"
+              onClick={(event) => event.stopPropagation()}
+              style={settingsOverlayPosition ? { left: settingsOverlayPosition.left, top: settingsOverlayPosition.top } : undefined}
+            >
+              {settingsPanelContent}
+            </div>
+          </>,
+          document.body
+        )
+      : settingsPanelContent
+    : null;
 
   if (compact) {
     return (
@@ -376,77 +651,57 @@ export function WhatsAppConnectCard({
         </div>
 
         {showQrOverlay ? (
-          <div className="absolute right-0 top-0 z-40 w-[220px] rounded-[22px] border border-whatsapp-line bg-white/95 p-3 shadow-soft backdrop-blur sm:w-[240px]">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">WhatsApp QR</p>
-              <button
-                aria-label="Close WhatsApp QR code"
-                className="icon-hover-trigger flex h-7 w-7 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent"
+          createPortal(
+            <>
+              <div
+                aria-hidden="true"
+                className="frost-float-backdrop fixed inset-0 z-[44]"
                 onClick={() => setShowQrOverlay(false)}
-                type="button"
+              />
+              <div
+                ref={qrOverlayRef}
+                className="frost-float qr-float fixed z-[45] w-[220px] overflow-hidden rounded-[18px] p-1 sm:w-[240px]"
+                onClick={(event) => event.stopPropagation()}
+                style={qrOverlayPosition ? { left: qrOverlayPosition.left, top: qrOverlayPosition.top } : undefined}
               >
-                <svg fill="none" height="14" viewBox="0 0 24 24" width="14">
-                  <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-                </svg>
-                <span className="icon-hover-label">Close WhatsApp QR code</span>
-              </button>
-            </div>
-
-            <div className="mt-2 flex justify-center">
-              {qr?.qr ? (
-                <img alt="WhatsApp QR code" className="h-40 w-40 max-w-full rounded-xl bg-white p-2 object-contain" src={qr.qr} />
-              ) : (
-                <div className="flex h-40 w-40 max-w-full items-center justify-center rounded-xl bg-white px-3 text-center text-[11px] leading-4 text-whatsapp-muted">
-                  QR not ready
+                <div className="relative flex items-center justify-between gap-2 px-0.5 pt-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="h-1 w-1 rounded-full bg-whatsapp-green/45 shadow-[0_0_0_4px_rgba(18,140,126,0.03)]" />
+                    <p className="text-[9px] font-medium uppercase tracking-[0.22em] text-whatsapp-muted/60">WhatsApp QR</p>
+                  </div>
+                  <button
+                    aria-label="Close WhatsApp QR code"
+                    className="icon-hover-trigger flex h-7 w-7 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent"
+                    onClick={() => setShowQrOverlay(false)}
+                    type="button"
+                  >
+                    <svg fill="none" height="14" viewBox="0 0 24 24" width="14">
+                      <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                    </svg>
+                    <span className="icon-hover-label">Close WhatsApp QR code</span>
+                  </button>
                 </div>
-              )}
-            </div>
-          </div>
+
+                <div className="relative mt-1.5 flex justify-center">
+                  {qr?.qr ? (
+                    <div className="rounded-[14px] bg-white/14 p-0.5">
+                      <img alt="WhatsApp QR code" className="h-44 w-44 max-w-full rounded-[11px] bg-white/97 p-1 object-contain" src={qr.qr} />
+                    </div>
+                  ) : (
+                    <div className="flex h-44 w-44 max-w-full items-center justify-center rounded-[11px] border border-dashed border-white/15 bg-white/14 px-3 text-center text-[11px] leading-4 text-whatsapp-muted">
+                      QR not ready
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>,
+            document.body
+          )
         ) : null}
 
         {profilePanel}
 
-        {showAdvanced && (
-          <div className="mt-2 border-t border-whatsapp-line pt-2 lg:mt-1.5 lg:border-t-0 lg:pt-1.5">
-            <div className="space-y-3">
-              <div className="border-t border-whatsapp-line pt-2.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-medium text-whatsapp-deep" htmlFor="sync-days-compact">Sync window</label>
-                  <select
-                    id="sync-days-compact"
-                    className="rounded-lg border border-whatsapp-line bg-white px-2 py-1 text-[10px] text-whatsapp-deep shadow-sm outline-none transition-colors focus:border-whatsapp-dark focus:ring-1 focus:ring-whatsapp-green/20"
-                    disabled={savingSync}
-                    onChange={(e) => handleSyncDaysChange(Number(e.target.value))}
-                    value={syncDays}
-                  >
-                    <option value={1}>1 Day (Yesterday)</option>
-                    <option value={7}>1 Week (Recent)</option>
-                    <option value={30}>1 Month</option>
-                    <option value={90}>3 Months</option>
-                    <option value={180}>6 Months</option>
-                  </select>
-                </div>
-                <p className="mt-1.5 text-[9px] text-whatsapp-muted leading-tight">
-                  Timeframe for fetching past messages during handshake.
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between border-t border-rose-900/10 pt-2.5">
-                <div>
-                  <p className="text-[10px] font-medium text-rose-950/72">Danger Zone</p>
-                  <p className="text-[9px] text-rose-950/50">Wipe messages & sync fresh</p>
-                </div>
-                <button
-                  className="rounded-lg bg-rose-100 px-2 py-1 text-[10px] font-semibold text-rose-700 transition hover:bg-rose-200 disabled:opacity-50"
-                  onClick={handleClearDatabase}
-                  disabled={clearingDb}
-                >
-                  {clearingDb ? "Clearing..." : "Clear"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {settingsPanel}
 
       </div>
     );

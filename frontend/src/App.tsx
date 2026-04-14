@@ -17,6 +17,7 @@ type AuthMode = "login" | "register";
 type DashboardTab = "inbox" | "contacts" | "sales";
 type SidebarView = "inbox" | "pipeline" | "broadcast";
 const conversationPollMs = 8000;
+const whatsAppStatePollMs = 5000;
 const dashboardSessionStorageKey = "whatsapp-crm-dashboard-session-id";
 
 function readFileAsDataUrl(file: File) {
@@ -111,6 +112,7 @@ function App() {
   const handlingSessionRevocationRef = useRef(false);
   const messagesCacheRef = useRef<Record<string, Message[]>>({});
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const conversationsRefreshTimerRef = useRef<number | null>(null);
   const isSalesDashboard = activeDashboardTab === "sales";
 
   // Contacts dashboard state and logic
@@ -693,7 +695,14 @@ function App() {
     }
   }
 
-  async function loadWhatsAppState(silent = false) {
+  async function loadWhatsAppState(
+    silent = false,
+    options?: {
+      includeProfile?: boolean;
+    }
+  ) {
+    const includeProfile = options?.includeProfile ?? Boolean(token);
+
     if (!silent) {
       setLoadingWhatsApp(true);
     }
@@ -717,10 +726,10 @@ function App() {
         return qr;
       });
 
-      if (token) {
+      if (includeProfile && token) {
         const profile = await api.getWhatsAppProfile(token).catch(() => null);
         setConnectedWhatsAppPhone(normalizePhoneValue(profile?.phone));
-      } else {
+      } else if (!token) {
         setConnectedWhatsAppPhone(null);
       }
     } catch (error) {
@@ -874,7 +883,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    loadWhatsAppState();
+    loadWhatsAppState(false, { includeProfile: Boolean(token) });
   }, []);
 
   useEffect(() => {
@@ -883,7 +892,7 @@ function App() {
       return;
     }
 
-    loadWhatsAppState(true);
+    loadWhatsAppState(true, { includeProfile: true });
     loadConversations(token);
   }, [dashboardSessionId, token]);
 
@@ -932,17 +941,31 @@ function App() {
     }
 
     const interval = window.setInterval(() => {
-      loadWhatsAppState(true);
-    }, conversationPollMs);
+      loadWhatsAppState(true, { includeProfile: false });
+    }, whatsAppStatePollMs);
 
     return () => {
       window.clearInterval(interval);
     };
   }, [token]);
 
+  useEffect(() => {
+    if (!token || !dashboardSessionId) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      loadWhatsAppState(true, { includeProfile: false });
+    }, whatsAppStatePollMs);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [dashboardSessionId, token]);
+
   // Polling removed: manual refresh only.
 
-  // Supabase Realtime subscription for the active chat (INSERT only, no polling)
+  // Supabase Realtime subscription for inbox activity.
   useEffect(() => {
     // Clean up previous subscription if any
     if (realtimeChannelRef.current) {
@@ -950,42 +973,68 @@ function App() {
       realtimeChannelRef.current = null;
     }
 
-    // Only subscribe if user is authenticated and a chat is selected
-    if (!token || !dashboardSessionId || !selectedPhone) {
+    // Only subscribe if the dashboard is ready.
+    if (!token || !dashboardSessionId) {
       return;
     }
 
-    // Filter by phone (add org/contact id to filter if needed)
-    const filterPhone = selectedConversation?.phone || customerDraft?.phone || selectedPhone;
-
     const channel = supabase
-      .channel(`messages:${selectedPhone}`)
+      .channel("messages:inbox")
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*",
           schema: "public",
-          table: "messages",
-          filter: `phone=eq.${filterPhone}`
+          table: "messages"
         },
         (payload) => {
-          const newMessage = payload.new as Message;
-          // Only append if message belongs to the active conversation
-          const msgConversationId = getConversationIdentifier(newMessage.phone, newMessage.chat_jid);
-          if (msgConversationId !== selectedPhone && newMessage.phone !== selectedPhone) {
-            return;
-          }
-          setMessages((current) => {
-            // Prevent duplicates
-            if (current.some((m) => m.id === newMessage.id)) {
-              return current;
+          const changedMessage = (payload.new || payload.old) as Message | undefined;
+          const changedConversationId = changedMessage ? getConversationIdentifier(changedMessage.phone, changedMessage.chat_jid) : null;
+
+          if (changedConversationId && selectedPhone && changedConversationId === selectedPhone) {
+            if (payload.eventType === "INSERT" && payload.new) {
+              const newMessage = payload.new as Message;
+
+              setMessages((current) => {
+                if (current.some((message) => message.id === newMessage.id)) {
+                  return current;
+                }
+
+                const next = [...current, newMessage].sort(
+                  (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                );
+                const key = getConversationIdentifier(newMessage.phone, newMessage.chat_jid) || newMessage.phone;
+                messagesCacheRef.current[key] = next;
+                return next;
+              });
+            } else if (payload.eventType === "UPDATE" && payload.new) {
+              const updatedMessage = payload.new as Message;
+
+              setMessages((current) => {
+                const next = current.map((message) => (message.id === updatedMessage.id ? updatedMessage : message));
+                const key = getConversationIdentifier(updatedMessage.phone, updatedMessage.chat_jid) || updatedMessage.phone;
+                messagesCacheRef.current[key] = next;
+                return next;
+              });
+            } else if (payload.eventType === "DELETE" && payload.old) {
+              const deletedMessage = payload.old as Message;
+
+              setMessages((current) => {
+                const next = current.filter((message) => message.id !== deletedMessage.id);
+                const key = getConversationIdentifier(deletedMessage.phone, deletedMessage.chat_jid) || deletedMessage.phone;
+                messagesCacheRef.current[key] = next;
+                return next;
+              });
             }
-            const next = [...current, newMessage].sort(
-              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-            );
-            messagesCacheRef.current[selectedPhone] = next;
-            return next;
-          });
+          }
+
+          if (conversationsRefreshTimerRef.current) {
+            window.clearTimeout(conversationsRefreshTimerRef.current);
+          }
+
+          conversationsRefreshTimerRef.current = window.setTimeout(() => {
+            void loadConversations(token, true);
+          }, 150);
         }
       )
       .subscribe();
@@ -996,8 +1045,22 @@ function App() {
     return () => {
       supabase.removeChannel(channel);
       realtimeChannelRef.current = null;
+
+      if (conversationsRefreshTimerRef.current) {
+        window.clearTimeout(conversationsRefreshTimerRef.current);
+        conversationsRefreshTimerRef.current = null;
+      }
     };
   }, [selectedPhone, token, dashboardSessionId]);
+
+  useEffect(() => {
+    return () => {
+      if (conversationsRefreshTimerRef.current) {
+        window.clearTimeout(conversationsRefreshTimerRef.current);
+        conversationsRefreshTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
