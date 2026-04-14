@@ -11,7 +11,7 @@ function isMobileDevice() {
 
 interface ContactListProps {
   contacts: Customer[];
-  selectedPhone: string | null;
+  selectedConversationId: string | null;
   loading: boolean;
   refreshing: boolean;
   activeStatusFilter: CustomerStatus | null;
@@ -108,7 +108,7 @@ function getStatusLabel(status: CustomerStatus): string {
   }
 }
 
-export function ContactList({ contacts, selectedPhone, loading, refreshing, activeStatusFilter, page, pageSize, total, onPageChange, query, onQueryChange, onRefresh, onSelect }: ContactListProps) {
+export function ContactList({ contacts, selectedConversationId, loading, refreshing, activeStatusFilter, page, pageSize, total, onPageChange, query, onQueryChange, onRefresh, onSelect }: ContactListProps) {
   return (
     <section className="flex h-full flex-1 flex-col overflow-y-auto rounded-3xl bg-white p-4 shadow-soft">
       {/* Title and description */}
@@ -159,7 +159,7 @@ export function ContactList({ contacts, selectedPhone, loading, refreshing, acti
               const displayPhone = getDisplayPhone(contact.phone, contact.chat_jid);
               const activeStatuses = STATUS_ORDER.filter((status) => (contact.status_counts?.[status] ?? 0) > 0);
               // Use selectedPhone for highlight, do not auto-jump
-              const active = selectedPhone === conversationId;
+              const active = selectedConversationId === conversationId;
 
               return (
                 <div

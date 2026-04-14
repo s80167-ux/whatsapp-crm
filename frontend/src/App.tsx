@@ -84,6 +84,7 @@ function App() {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
+  const [selectedContactConversationId, setSelectedContactConversationId] = useState<string | null>(null);
   const [activeMessageFilterId, setActiveMessageFilterId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -180,6 +181,7 @@ function App() {
     setSalesLeadItems([]);
     setAllSalesLeadItems([]);
     setConnectedWhatsAppPhone(null);
+    setSelectedContactConversationId(null);
   }
 
   function persistDashboardSession(nextSessionId: string) {
@@ -253,6 +255,18 @@ function App() {
   useEffect(() => {
     setCustomerPanelCollapsed(false);
   }, [selectedPhone, activeDashboardTab]);
+
+  useEffect(() => {
+    if (activeDashboardTab !== "contacts") {
+      return;
+    }
+
+    if (selectedContactConversationId || !selectedPhone) {
+      return;
+    }
+
+    setSelectedContactConversationId(selectedPhone);
+  }, [activeDashboardTab, selectedContactConversationId, selectedPhone]);
 
   useEffect(() => {
     setApiUnauthorizedHandler((error) => handleSessionRevoked(error.message));
@@ -352,6 +366,10 @@ function App() {
           return current;
         }
 
+        if (activeDashboardTab !== "inbox") {
+          return current;
+        }
+
         return getConversationIdentifier(data[0]?.phone, data[0]?.chatJid) || null;
       });
     } catch (error) {
@@ -404,7 +422,9 @@ function App() {
     try {
       const data = await api.getCustomer(phone, activeToken, chatJid);
       setCustomerDraft(data);
-      setSelectedPhone((current) => data.phone || current);
+      if (activeDashboardTab === "inbox") {
+        setSelectedPhone((current) => data.phone || current);
+      }
       updateConversationStatus({
         phone: data.phone,
         chatJid: data.chat_jid,
@@ -780,7 +800,13 @@ function App() {
     () => leadConversations.find((conversation) => getConversationIdentifier(conversation.phone, conversation.chatJid) === selectedPhone) || null,
     [leadConversations, selectedPhone]
   );
+  const selectedContact = useMemo(
+    () => contacts.find((contact) => getConversationIdentifier(contact.phone, contact.chat_jid) === selectedContactConversationId) || null,
+    [contacts, selectedContactConversationId]
+  );
   const activeChatJid = selectedConversation?.chatJid || customerDraft?.chat_jid || null;
+  const activeContactChatJid = selectedContact?.chat_jid || customerDraft?.chat_jid || null;
+  const activeSelectionId = activeDashboardTab === "contacts" ? selectedContactConversationId : selectedPhone;
 
   useEffect(() => {
     let mounted = true;
@@ -897,17 +923,28 @@ function App() {
   }, [dashboardSessionId, token]);
 
   useEffect(() => {
-    if (!token || !dashboardSessionId || !selectedPhone) {
+    if (!token || !dashboardSessionId || !activeSelectionId) {
       setMessages([]);
-      setCustomerDraft(null);
-      setSalesLeadItems([]);
+      if (activeDashboardTab === "contacts") {
+        setCustomerDraft(null);
+        setSalesLeadItems([]);
+      } else {
+        setCustomerDraft(null);
+        setSalesLeadItems([]);
+      }
       return;
     }
 
-    loadMessages(selectedPhone, token, activeChatJid);
-    loadCustomer(selectedPhone, token, activeChatJid);
-    loadCustomerSalesItems(selectedPhone, token, activeChatJid);
-  }, [activeChatJid, dashboardSessionId, selectedPhone, token]);
+    if (activeDashboardTab === "contacts") {
+      loadCustomer(activeSelectionId, token, activeContactChatJid);
+      loadCustomerSalesItems(activeSelectionId, token, activeContactChatJid);
+      return;
+    }
+
+    loadMessages(activeSelectionId, token, activeChatJid);
+    loadCustomer(activeSelectionId, token, activeChatJid);
+    loadCustomerSalesItems(activeSelectionId, token, activeChatJid);
+  }, [activeChatJid, activeContactChatJid, activeDashboardTab, activeSelectionId, dashboardSessionId, token]);
 
   useEffect(() => {
     if (!token || !dashboardSessionId || activeDashboardTab !== "sales") {
@@ -1117,6 +1154,10 @@ function App() {
   );
 
   useEffect(() => {
+    if (activeDashboardTab !== "inbox") {
+      return;
+    }
+
     if (!visibleConversations.length) {
       setSelectedPhone(null);
       return;
@@ -1526,35 +1567,44 @@ function App() {
     setSaveTimer(timeout);
   }
 
-  const activeCustomerPhone = customerDraft?.phone || selectedPhone;
+  const activeCustomerPhone =
+    activeDashboardTab === "contacts"
+      ? selectedContact?.phone || customerDraft?.phone || selectedContactConversationId
+      : customerDraft?.phone || selectedPhone;
   const selectedStatus = selectedConversation?.status || customerDraft?.status || "new_lead";
   const selectedNotes = customerDraft?.notes || "";
-  const activeCustomerChatJid = selectedConversation?.chatJid || customerDraft?.chat_jid || null;
+  const activeCustomerChatJid =
+    activeDashboardTab === "contacts"
+      ? activeContactChatJid
+      : selectedConversation?.chatJid || customerDraft?.chat_jid || null;
 
   const customerPanelProps: CustomerPanelProps | null = activeCustomerPhone
     ? {
-        contactName: selectedConversation?.contactName || customerDraft?.contact_name || null,
-        about: customerDraft?.about || null,
+        contactName:
+          activeDashboardTab === "contacts"
+            ? selectedContact?.contact_name || customerDraft?.contact_name || null
+            : selectedConversation?.contactName || customerDraft?.contact_name || null,
+        about: customerDraft?.about || selectedContact?.about || null,
         chatJid: activeCustomerChatJid,
-        incomingCount: customerDraft?.incoming_count,
-        lastDirection: customerDraft?.last_direction || null,
-        lastMessageAt: customerDraft?.last_message_at || null,
-        lastMessagePreview: customerDraft?.last_message_preview || null,
+        incomingCount: customerDraft?.incoming_count ?? selectedContact?.incoming_count,
+        lastDirection: customerDraft?.last_direction || selectedContact?.last_direction || null,
+        lastMessageAt: customerDraft?.last_message_at || selectedContact?.last_message_at || null,
+        lastMessagePreview: customerDraft?.last_message_preview || selectedContact?.last_message_preview || null,
         loading: loadingCustomer,
         notes: selectedNotes,
-        outgoingCount: customerDraft?.outgoing_count,
+        outgoingCount: customerDraft?.outgoing_count ?? selectedContact?.outgoing_count,
         phone: activeCustomerPhone,
-        profilePictureUrl: customerDraft?.profile_picture_url || null,
+        profilePictureUrl: customerDraft?.profile_picture_url || selectedContact?.profile_picture_url || null,
         saving: savingCustomer,
-        status: selectedStatus,
-        statusCounts: customerStatusCounts,
-        totalMessages: customerDraft?.total_messages,
+        status: activeDashboardTab === "contacts" ? selectedContact?.status || customerDraft?.status || "new_lead" : selectedStatus,
+        statusCounts: activeDashboardTab === "contacts" ? selectedContact?.status_counts || customerStatusCounts : customerStatusCounts,
+        totalMessages: customerDraft?.total_messages ?? selectedContact?.total_messages,
         // New fields for customer info window
-        premiseAddress: customerDraft?.premise_address ?? "",
-        businessType: customerDraft?.business_type ?? "",
-        age: customerDraft?.age ?? null,
-        emailAddress: customerDraft?.email_address ?? "",
-        contactId: customerDraft?.contact_id ?? "",
+        premiseAddress: customerDraft?.premise_address ?? selectedContact?.premise_address ?? "",
+        businessType: customerDraft?.business_type ?? selectedContact?.business_type ?? "",
+        age: customerDraft?.age ?? selectedContact?.age ?? null,
+        emailAddress: customerDraft?.email_address ?? selectedContact?.email_address ?? "",
+        contactId: customerDraft?.contact_id ?? selectedContact?.contact_id ?? "",
         onNotesChange: (value) => {
           if (!activeCustomerPhone) {
             return;
@@ -1563,23 +1613,26 @@ function App() {
           const nextCustomer: Customer = {
             phone: activeCustomerPhone,
             chat_jid: activeCustomerChatJid,
-            contact_name: customerDraft?.contact_name || selectedConversation?.contactName || null,
-            profile_picture_url: customerDraft?.profile_picture_url || null,
-            about: customerDraft?.about || null,
+            contact_name:
+              activeDashboardTab === "contacts"
+                ? customerDraft?.contact_name || selectedContact?.contact_name || null
+                : customerDraft?.contact_name || selectedConversation?.contactName || null,
+            profile_picture_url: customerDraft?.profile_picture_url || selectedContact?.profile_picture_url || null,
+            about: customerDraft?.about || selectedContact?.about || null,
             total_messages: customerDraft?.total_messages,
-            incoming_count: customerDraft?.incoming_count,
-            outgoing_count: customerDraft?.outgoing_count,
-            last_message_at: customerDraft?.last_message_at || null,
-            last_message_preview: customerDraft?.last_message_preview || null,
-            last_direction: customerDraft?.last_direction || null,
+            incoming_count: customerDraft?.incoming_count ?? selectedContact?.incoming_count,
+            outgoing_count: customerDraft?.outgoing_count ?? selectedContact?.outgoing_count,
+            last_message_at: customerDraft?.last_message_at || selectedContact?.last_message_at || null,
+            last_message_preview: customerDraft?.last_message_preview || selectedContact?.last_message_preview || null,
+            last_direction: customerDraft?.last_direction || selectedContact?.last_direction || null,
             status: selectedStatus,
             notes: value,
             // Pass through new fields if present
-            premise_address: customerDraft?.premise_address,
-            business_type: customerDraft?.business_type,
-            age: customerDraft?.age,
-            email_address: customerDraft?.email_address,
-            contact_id: customerDraft?.contact_id,
+            premise_address: customerDraft?.premise_address ?? selectedContact?.premise_address,
+            business_type: customerDraft?.business_type ?? selectedContact?.business_type,
+            age: customerDraft?.age ?? selectedContact?.age,
+            email_address: customerDraft?.email_address ?? selectedContact?.email_address,
+            contact_id: customerDraft?.contact_id ?? selectedContact?.contact_id,
           };
 
           setCustomerDraft(nextCustomer);
@@ -1742,7 +1795,7 @@ function App() {
                       contacts={contacts}
                       loading={contactsLoading}
                       refreshing={contactsRefreshing}
-                      selectedPhone={selectedPhone}
+                      selectedConversationId={selectedContactConversationId}
                       page={contactsPage}
                       pageSize={CONTACTS_PAGE_SIZE}
                       total={contactsTotal}
@@ -1752,10 +1805,11 @@ function App() {
                       onRefresh={() => fetchContacts({ page: contactsPage, query: contactsQuery })}
                       onSelect={(phone, opts) => {
                         setActiveMessageFilterId(null);
-                        setSelectedPhone(phone);
+                        setSelectedContactConversationId(phone);
                         if (opts && opts.focusChatInput) {
                           setActiveDashboardTab("inbox");
                           setActiveView("inbox");
+                          setSelectedPhone(phone);
                           setTimeout(() => {
                             const chatInput = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(".chat-input-editor, .chat-input textarea, .chat-input input");
                             if (chatInput) {
