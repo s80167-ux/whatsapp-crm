@@ -8,7 +8,8 @@
   },
   "scripts": {
     "dev": "node --watch server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "backfill:whatsapp-accounts": "node backfill_whatsapp_accounts.js"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",

@@ -9,7 +9,21 @@ import { LoginForm } from "./components/LoginForm";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { SalesDashboard } from "./components/SalesDashboard";
-import { ApiError, api, CUSTOMER_STATUSES, setApiSessionId, setApiUnauthorizedHandler, type Conversation, type Customer, type CustomerStatus, type Message, type SalesLeadItem, type WhatsAppQr, type WhatsAppStatus } from "./lib/api";
+import {
+  ApiError,
+  api,
+  CUSTOMER_STATUSES,
+  setApiSessionId,
+  setApiUnauthorizedHandler,
+  type Conversation,
+  type Customer,
+  type CustomerStatus,
+  type Message,
+  type SalesLeadItem,
+  type WhatsAppAccount,
+  type WhatsAppQr,
+  type WhatsAppStatus
+} from "./lib/api";
 import { getConversationIdentifier, getResolvedPhone } from "./lib/display";
 import { clearPasswordRecoveryCallback, getEmailVerificationRedirectUrl, getPasswordRecoveryRedirectUrl, isPasswordRecoveryCallback, supabase } from "./lib/supabase";
 
@@ -61,6 +75,11 @@ function normalizePhoneValue(value: string | null | undefined) {
   return String(value || "").replace(/\D/g, "") || null;
 }
 
+function buildAccountScopedCacheKey(phone: string, chatJid?: string | null, whatsappAccountId?: string | null) {
+  const conversationId = getConversationIdentifier(phone, chatJid) || phone;
+  return `${whatsappAccountId || "default"}::${conversationId}`;
+}
+
 function App() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
@@ -105,6 +124,8 @@ function App() {
   const [saveTimer, setSaveTimer] = useState<number | null>(null);
   const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus | null>(null);
   const [whatsAppQr, setWhatsAppQr] = useState<WhatsAppQr | null>(null);
+  const [whatsAppAccounts, setWhatsAppAccounts] = useState<WhatsAppAccount[]>([]);
+  const [selectedWhatsAppAccountId, setSelectedWhatsAppAccountId] = useState<string | null>(null);
   const [connectedWhatsAppPhone, setConnectedWhatsAppPhone] = useState<string | null>(null);
   const [loadingWhatsApp, setLoadingWhatsApp] = useState(true);
   const [disconnectingWhatsApp, setDisconnectingWhatsApp] = useState(false);
@@ -135,6 +156,7 @@ function App() {
         page,
         pageSize: CONTACTS_PAGE_SIZE,
         search: query,
+        whatsappAccountId: selectedWhatsAppAccountId
       }, token);
       // Sort: contacts with a name at the top, then by latest message or updated time
       const sorted = [...data].sort((a, b) => {
@@ -165,7 +187,7 @@ function App() {
       fetchContacts({ page: contactsPage, query: contactsQuery });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDashboardTab, contactsPage, contactsQuery, token, dashboardSessionId]);
+  }, [activeDashboardTab, contactsPage, contactsQuery, selectedWhatsAppAccountId, token, dashboardSessionId]);
 
   function resetDashboardState() {
     messagesCacheRef.current = {};
@@ -180,6 +202,8 @@ function App() {
     setCustomerDraft(null);
     setSalesLeadItems([]);
     setAllSalesLeadItems([]);
+    setWhatsAppAccounts([]);
+    setSelectedWhatsAppAccountId(null);
     setConnectedWhatsAppPhone(null);
     setSelectedContactConversationId(null);
   }
@@ -339,7 +363,7 @@ function App() {
     clearConversationUnread({ phone, chatJid });
 
     try {
-      await api.markConversationRead(phone, token, chatJid);
+      await api.markConversationRead(phone, token, chatJid, selectedWhatsAppAccountId);
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to clear unread count.");
       loadConversations(token, true);
@@ -355,7 +379,7 @@ function App() {
     }
 
     try {
-      const data = await api.getConversations(activeToken);
+      const data = await api.getConversations(activeToken, selectedWhatsAppAccountId);
       setConversations(data);
       setSelectedPhone((current) => {
         if (!data.length) {
@@ -384,7 +408,7 @@ function App() {
   }
 
   async function loadMessages(phone: string, activeToken: string, chatJid?: string | null, silent = false, force = false) {
-    const cacheKey = getConversationIdentifier(phone, chatJid) || phone;
+    const cacheKey = buildAccountScopedCacheKey(phone, chatJid, selectedWhatsAppAccountId);
     const cached = messagesCacheRef.current[cacheKey];
 
     // Always show cached messages instantly if available (unless force)
@@ -398,7 +422,7 @@ function App() {
     }
 
     try {
-      const data = await api.getMessages(phone, activeToken, chatJid);
+      const data = await api.getMessages(phone, activeToken, chatJid, selectedWhatsAppAccountId);
       messagesCacheRef.current[cacheKey] = data;
       setMessages(data);
     } catch (error) {
@@ -420,7 +444,7 @@ function App() {
     }
 
     try {
-      const data = await api.getCustomer(phone, activeToken, chatJid);
+      const data = await api.getCustomer(phone, activeToken, chatJid, selectedWhatsAppAccountId);
       setCustomerDraft(data);
       if (activeDashboardTab === "inbox") {
         setSelectedPhone((current) => data.phone || current);
@@ -445,7 +469,7 @@ function App() {
     }
 
     try {
-      const data = await api.getCustomerSalesItems(phone, activeToken, chatJid);
+      const data = await api.getCustomerSalesItems(phone, activeToken, chatJid, selectedWhatsAppAccountId);
       setSalesLeadItems(data);
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to load customer sales items.");
@@ -462,7 +486,7 @@ function App() {
     }
 
     try {
-      const data = await api.getSalesLeadItems(activeToken);
+      const data = await api.getSalesLeadItems(activeToken, selectedWhatsAppAccountId);
       setAllSalesLeadItems(data);
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to load sales dashboard data.");
@@ -485,7 +509,7 @@ function App() {
     setDashboardError("");
 
     try {
-      await api.deleteConversation(phone, token, chatJid);
+      await api.deleteConversation(phone, token, chatJid, selectedWhatsAppAccountId);
 
       setConversations((current) =>
         current.filter((conversation) => {
@@ -502,7 +526,7 @@ function App() {
         setMessages([]);
         setCustomerDraft(null);
         setSalesLeadItems([]);
-        delete messagesCacheRef.current[conversationId];
+        delete messagesCacheRef.current[buildAccountScopedCacheKey(phone, chatJid, selectedWhatsAppAccountId)];
       }
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to delete conversation.");
@@ -527,7 +551,7 @@ function App() {
 
       setMessages((current) => {
         const next = current.filter((item) => item.id !== message.id);
-        const key = getConversationIdentifier(targetPhone, targetChatJid) || targetPhone;
+        const key = buildAccountScopedCacheKey(targetPhone, targetChatJid, selectedWhatsAppAccountId);
         messagesCacheRef.current[key] = next;
         return next;
       });
@@ -561,7 +585,8 @@ function App() {
         {
           chat_jid: nextCustomer.chat_jid || null,
           status: nextCustomer.status,
-          notes: nextCustomer.notes
+          notes: nextCustomer.notes,
+          whatsappAccountId: selectedWhatsAppAccountId
         },
         token
       );
@@ -597,7 +622,8 @@ function App() {
         selectedPhone,
         {
           ...payload,
-          chatJid: activeCustomerChatJid
+          chatJid: activeCustomerChatJid,
+          whatsappAccountId: selectedWhatsAppAccountId
         },
         token
       );
@@ -626,7 +652,8 @@ function App() {
         {
           chat_jid: activeCustomerChatJid,
           status: payload.status,
-          notes: selectedNotes
+          notes: selectedNotes,
+          whatsappAccountId: selectedWhatsAppAccountId
         },
         token
       );
@@ -666,7 +693,8 @@ function App() {
         payload.itemId,
         {
           ...payload,
-          chatJid: activeCustomerChatJid
+          chatJid: activeCustomerChatJid,
+          whatsappAccountId: selectedWhatsAppAccountId
         },
         token
       );
@@ -695,7 +723,8 @@ function App() {
         {
           chat_jid: activeCustomerChatJid,
           status: payload.status,
-          notes: selectedNotes
+          notes: selectedNotes,
+          whatsappAccountId: selectedWhatsAppAccountId
         },
         token
       );
@@ -761,6 +790,33 @@ function App() {
     }
   }
 
+  async function loadWhatsAppAccounts(activeToken: string, options?: { preserveSelection?: boolean }) {
+    try {
+      const accounts = await api.getWhatsAppAccounts(activeToken);
+      setWhatsAppAccounts(accounts);
+      setSelectedWhatsAppAccountId((current) => {
+        if (options?.preserveSelection && current && accounts.some((account) => account.id === current)) {
+          return current;
+        }
+
+        if (current && accounts.some((account) => account.id === current)) {
+          return current;
+        }
+
+        const connectedAccount =
+          (connectedWhatsAppPhone
+            ? accounts.find((account) => normalizePhoneValue(account.account_phone) === connectedWhatsAppPhone)
+            : null) || null;
+
+        return connectedAccount?.id || accounts[0]?.id || null;
+      });
+    } catch (error) {
+      console.warn("Failed to load WhatsApp accounts:", error);
+      setWhatsAppAccounts([]);
+      setSelectedWhatsAppAccountId(null);
+    }
+  }
+
   async function handleDisconnectWhatsApp() {
     if (!token || disconnectingWhatsApp) {
       return;
@@ -780,6 +836,9 @@ function App() {
 
       window.setTimeout(() => {
         loadWhatsAppState(true);
+        if (token) {
+          loadWhatsAppAccounts(token, { preserveSelection: true });
+        }
       }, 3500);
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to disconnect WhatsApp.");
@@ -789,12 +848,16 @@ function App() {
   }
 
   const leadConversations = useMemo(() => {
-    if (!connectedWhatsAppPhone) {
+    const selectedAccountPhone =
+      whatsAppAccounts.find((account) => account.id === selectedWhatsAppAccountId)?.account_phone || connectedWhatsAppPhone;
+
+    if (!selectedAccountPhone) {
       return conversations;
     }
 
-    return conversations.filter((conversation) => normalizePhoneValue(conversation.phone) !== connectedWhatsAppPhone);
-  }, [connectedWhatsAppPhone, conversations]);
+    const normalizedSelectedAccountPhone = normalizePhoneValue(selectedAccountPhone);
+    return conversations.filter((conversation) => normalizePhoneValue(conversation.phone) !== normalizedSelectedAccountPhone);
+  }, [connectedWhatsAppPhone, conversations, selectedWhatsAppAccountId, whatsAppAccounts]);
 
   const selectedConversation = useMemo(
     () => leadConversations.find((conversation) => getConversationIdentifier(conversation.phone, conversation.chatJid) === selectedPhone) || null,
@@ -915,12 +978,58 @@ function App() {
   useEffect(() => {
     if (!token || !dashboardSessionId) {
       setConnectedWhatsAppPhone(null);
+      setWhatsAppAccounts([]);
+      setSelectedWhatsAppAccountId(null);
       return;
     }
 
     loadWhatsAppState(true, { includeProfile: true });
+    loadWhatsAppAccounts(token);
     loadConversations(token);
   }, [dashboardSessionId, token]);
+
+  useEffect(() => {
+    if (!whatsAppAccounts.length) {
+      return;
+    }
+
+    setSelectedWhatsAppAccountId((current) => {
+      if (current && whatsAppAccounts.some((account) => account.id === current)) {
+        return current;
+      }
+
+      const connectedAccount =
+        (connectedWhatsAppPhone
+          ? whatsAppAccounts.find((account) => normalizePhoneValue(account.account_phone) === connectedWhatsAppPhone)
+          : null) || null;
+
+      return connectedAccount?.id || whatsAppAccounts[0]?.id || null;
+    });
+  }, [connectedWhatsAppPhone, whatsAppAccounts]);
+
+  useEffect(() => {
+    messagesCacheRef.current = {};
+    setMessages([]);
+    setCustomerDraft(null);
+    setSalesLeadItems([]);
+    setAllSalesLeadItems([]);
+    setSelectedPhone(null);
+    setSelectedContactConversationId(null);
+
+    if (!token || !dashboardSessionId) {
+      return;
+    }
+
+    loadConversations(token);
+
+    if (activeDashboardTab === "contacts") {
+      fetchContacts({ page: contactsPage, query: contactsQuery });
+    }
+
+    if (activeDashboardTab === "sales") {
+      loadAllSalesLeadItems(token, true);
+    }
+  }, [dashboardSessionId, selectedWhatsAppAccountId, token]);
 
   useEffect(() => {
     if (!token || !dashboardSessionId || !activeSelectionId) {
@@ -1026,6 +1135,13 @@ function App() {
         },
         (payload) => {
           const changedMessage = (payload.new || payload.old) as Message | undefined;
+          if (
+            selectedWhatsAppAccountId &&
+            changedMessage?.whatsapp_account_id &&
+            changedMessage.whatsapp_account_id !== selectedWhatsAppAccountId
+          ) {
+            return;
+          }
           const changedConversationId = changedMessage ? getConversationIdentifier(changedMessage.phone, changedMessage.chat_jid) : null;
 
           if (changedConversationId && selectedPhone && changedConversationId === selectedPhone) {
@@ -1040,7 +1156,7 @@ function App() {
                 const next = [...current, newMessage].sort(
                   (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
                 );
-                const key = getConversationIdentifier(newMessage.phone, newMessage.chat_jid) || newMessage.phone;
+                const key = buildAccountScopedCacheKey(newMessage.phone, newMessage.chat_jid, selectedWhatsAppAccountId);
                 messagesCacheRef.current[key] = next;
                 return next;
               });
@@ -1049,7 +1165,7 @@ function App() {
 
               setMessages((current) => {
                 const next = current.map((message) => (message.id === updatedMessage.id ? updatedMessage : message));
-                const key = getConversationIdentifier(updatedMessage.phone, updatedMessage.chat_jid) || updatedMessage.phone;
+                const key = buildAccountScopedCacheKey(updatedMessage.phone, updatedMessage.chat_jid, selectedWhatsAppAccountId);
                 messagesCacheRef.current[key] = next;
                 return next;
               });
@@ -1058,7 +1174,7 @@ function App() {
 
               setMessages((current) => {
                 const next = current.filter((message) => message.id !== deletedMessage.id);
-                const key = getConversationIdentifier(deletedMessage.phone, deletedMessage.chat_jid) || deletedMessage.phone;
+                const key = buildAccountScopedCacheKey(deletedMessage.phone, deletedMessage.chat_jid, selectedWhatsAppAccountId);
                 messagesCacheRef.current[key] = next;
                 return next;
               });
@@ -1088,7 +1204,7 @@ function App() {
         conversationsRefreshTimerRef.current = null;
       }
     };
-  }, [selectedPhone, token, dashboardSessionId]);
+  }, [dashboardSessionId, selectedPhone, selectedWhatsAppAccountId, token]);
 
   useEffect(() => {
     return () => {
@@ -1374,7 +1490,7 @@ function App() {
     setDashboardError("");
     setMessages((current) => {
       const next = [...current, optimisticMessage];
-      messagesCacheRef.current[selectedPhone] = next;
+      messagesCacheRef.current[buildAccountScopedCacheKey(selectedPhone, activeChatJid, selectedWhatsAppAccountId)] = next;
       return next;
     });
 
@@ -1387,11 +1503,12 @@ function App() {
         selectedPhone,
         outgoingText,
         token,
-        activeChatJid
+        activeChatJid,
+        selectedWhatsAppAccountId
       );
       setMessages((current) => {
         const next = current.map((item) => (item.id === tempId ? sentMessage : item));
-        const key = getConversationIdentifier(optimisticMessage.phone, optimisticMessage.chat_jid) || optimisticMessage.phone;
+        const key = buildAccountScopedCacheKey(optimisticMessage.phone, optimisticMessage.chat_jid, selectedWhatsAppAccountId);
         messagesCacheRef.current[key] = next;
         return next;
       });
@@ -1412,7 +1529,7 @@ function App() {
     } catch (error) {
       setMessages((current) => {
         const next = current.map((item) => (item.id === tempId ? { ...item, send_status: "failed" as const } : item));
-        const key = getConversationIdentifier(optimisticMessage.phone, optimisticMessage.chat_jid) || optimisticMessage.phone;
+        const key = buildAccountScopedCacheKey(optimisticMessage.phone, optimisticMessage.chat_jid, selectedWhatsAppAccountId);
         messagesCacheRef.current[key] = next;
         return next;
       });
@@ -1431,7 +1548,7 @@ function App() {
     setDashboardError("");
     setMessages((current) => {
       const next = [...current, optimisticMessage];
-      const key = getConversationIdentifier(optimisticMessage.phone, optimisticMessage.chat_jid) || optimisticMessage.phone;
+      const key = buildAccountScopedCacheKey(optimisticMessage.phone, optimisticMessage.chat_jid, selectedWhatsAppAccountId);
       messagesCacheRef.current[key] = next;
       return next;
     });
@@ -1440,7 +1557,7 @@ function App() {
       const sentMessage = await sendRequest();
       setMessages((current) => {
         const next = current.map((item) => (item.id === optimisticMessage.id ? sentMessage : item));
-        const key = getConversationIdentifier(optimisticMessage.phone, optimisticMessage.chat_jid) || optimisticMessage.phone;
+        const key = buildAccountScopedCacheKey(optimisticMessage.phone, optimisticMessage.chat_jid, selectedWhatsAppAccountId);
         messagesCacheRef.current[key] = next;
         return next;
       });
@@ -1461,7 +1578,7 @@ function App() {
     } catch (error) {
       setMessages((current) => {
         const next = current.map((item) => (item.id === optimisticMessage.id ? { ...item, send_status: "failed" as const } : item));
-        const key = getConversationIdentifier(optimisticMessage.phone, optimisticMessage.chat_jid) || optimisticMessage.phone;
+        const key = buildAccountScopedCacheKey(optimisticMessage.phone, optimisticMessage.chat_jid, selectedWhatsAppAccountId);
         messagesCacheRef.current[key] = next;
         return next;
       });
@@ -1500,7 +1617,8 @@ function App() {
       () =>
         api.sendAttachment(selectedPhone, file, token, {
           chatJid: activeChatJid,
-          caption: (caption ?? "").trim()
+          caption: (caption ?? "").trim(),
+          whatsappAccountId: selectedWhatsAppAccountId
         }),
       previewText
     );
@@ -1530,7 +1648,8 @@ function App() {
           selectedPhone,
           {
             ...payload,
-            chatJid: activeChatJid
+            chatJid: activeChatJid,
+            whatsappAccountId: selectedWhatsAppAccountId
           },
           token
         ),
@@ -1586,6 +1705,8 @@ function App() {
             : selectedConversation?.contactName || customerDraft?.contact_name || null,
         about: customerDraft?.about || selectedContact?.about || null,
         chatJid: activeCustomerChatJid,
+        customerId: customerDraft?.id ?? selectedContact?.id ?? null,
+        updatedAt: customerDraft?.updated_at ?? selectedContact?.updated_at ?? null,
         incomingCount: customerDraft?.incoming_count ?? selectedContact?.incoming_count,
         lastDirection: customerDraft?.last_direction || selectedContact?.last_direction || null,
         lastMessageAt: customerDraft?.last_message_at || selectedContact?.last_message_at || null,
@@ -1674,7 +1795,7 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen bg-app px-4 py-4 text-ink sm:py-5 lg:py-6">
+    <main className="flex h-dvh flex-col bg-app px-4 py-4 text-ink sm:py-5 lg:py-6">
       <div className="fixed inset-x-0 top-0 z-40 px-4 pt-2 pb-2 sm:pt-3 lg:pt-4">
         <div className="mx-auto max-w-[1600px]">
           <TopBar
@@ -1692,11 +1813,11 @@ function App() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-[1600px] space-y-4 pt-44 sm:pt-48 lg:pt-28">
+      <div className="mx-auto flex w-full max-w-[1600px] min-h-0 flex-1 flex-col gap-4 pt-44 sm:pt-48 lg:pt-28">
         {dashboardError ? <div className="glass-panel border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">{dashboardError}</div> : null}
 
         {isSalesDashboard ? (
-          <div className="space-y-4 xl:grid xl:grid-cols-[minmax(320px,1.5fr)_minmax(0,3fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
+          <div className="min-h-0 flex-1 space-y-4 xl:grid xl:grid-cols-[minmax(320px,1.5fr)_minmax(0,3fr)] xl:items-stretch xl:gap-4 xl:space-y-0 xl:space-x-0">
             <Sidebar
               activeView={activeView}
               activeStatusFilter={activeStatusFilter}
@@ -1747,7 +1868,7 @@ function App() {
             />
           </div>
         ) : (
-          <div className="space-y-4 xl:grid xl:grid-cols-[minmax(320px,1.5fr)_minmax(0,3fr)_minmax(0,2fr)] xl:items-start xl:gap-4 xl:space-y-0 xl:space-x-0">
+          <div className="min-h-0 flex-1 space-y-4 xl:grid xl:grid-cols-[minmax(320px,1.5fr)_minmax(0,3fr)_minmax(0,2fr)] xl:items-stretch xl:gap-4 xl:space-y-0 xl:space-x-0">
             <Sidebar
               activeView={activeView}
               activeStatusFilter={activeStatusFilter}
@@ -1757,9 +1878,9 @@ function App() {
               stats={sidebarStats}
             />
 
-            <div className="space-y-4 xl:contents">
-              <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[3fr_2fr] xl:contents">
-                <div className="space-y-4 lg:col-start-1 lg:col-end-2 xl:col-start-2 xl:col-end-3">
+            <div className="min-h-0 space-y-4 xl:contents">
+              <div className="grid min-h-0 grid-cols-1 items-start gap-4 lg:grid-cols-[3fr_2fr] lg:items-stretch xl:contents">
+                <div className="space-y-4 lg:col-start-1 lg:col-end-2 xl:col-start-2 xl:col-end-3 xl:min-h-0 xl:h-full">
                   {activeDashboardTab === "inbox" ? (
                     <ChatList
                       activeView={activeView}
@@ -1785,8 +1906,11 @@ function App() {
                         setActiveMessageFilterId(null);
                         setSelectedPhone(phone);
                       }}
+                      onSelectWhatsAppAccount={(accountId) => setSelectedWhatsAppAccountId(accountId || null)}
                       refreshing={refreshingChats}
                       selectedPhone={selectedPhone}
+                      selectedWhatsAppAccountId={selectedWhatsAppAccountId}
+                      whatsAppAccounts={whatsAppAccounts}
                       whatsAppConnected={Boolean(whatsAppStatus?.connected)}
                     />
                   ) : (
@@ -1823,7 +1947,7 @@ function App() {
                   )}
                 </div>
 
-                <div className="order-2 lg:order-none lg:col-start-2 lg:col-end-3 xl:col-start-3 xl:col-end-4">
+                <div className="order-2 lg:order-none lg:col-start-2 lg:col-end-3 xl:col-start-3 xl:col-end-4 xl:min-h-0 xl:h-full">
                   {activeDashboardTab === "inbox" ? (
                     <ChatWindow
                       contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}

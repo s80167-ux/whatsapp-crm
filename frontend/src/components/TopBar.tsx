@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { type WhatsAppQr, type WhatsAppStatus } from "../lib/api";
+import { api, type UserProfile, type WhatsAppQr, type WhatsAppStatus } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import { WhatsAppConnectCard } from "./WhatsAppConnectCard";
 
@@ -46,13 +46,20 @@ export function TopBar({
 }: TopBarProps) {
   const passwordPanelRef = useRef<HTMLDivElement | null>(null);
   const passwordButtonRef = useRef<HTMLButtonElement | null>(null);
+  const profilePanelRef = useRef<HTMLDivElement | null>(null);
+  const profileButtonRef = useRef<HTMLButtonElement | null>(null);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [showProfilePanel, setShowProfilePanel] = useState(false);
   const [nextPassword, setNextPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [passwordSuccess, setPasswordSuccess] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [passwordPanelPosition, setPasswordPanelPosition] = useState<{ left: number; top: number } | null>(null);
+  const [profilePanelPosition, setProfilePanelPosition] = useState<{ left: number; top: number } | null>(null);
 
   async function handleChangePassword() {
     const trimmedPassword = nextPassword.trim();
@@ -109,6 +116,25 @@ export function TopBar({
     };
   }, [showPasswordForm]);
 
+  useEffect(() => {
+    if (!showProfilePanel) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && profilePanelRef.current && !profilePanelRef.current.contains(target)) {
+        setShowProfilePanel(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [showProfilePanel]);
+
   useLayoutEffect(() => {
     if (!showPasswordForm) {
       setPasswordPanelPosition(null);
@@ -149,6 +175,92 @@ export function TopBar({
     };
   }, [showPasswordForm]);
 
+  useLayoutEffect(() => {
+    if (!showProfilePanel) {
+      setProfilePanelPosition(null);
+      return;
+    }
+
+    const gutter = 12;
+    const dropdownGap = 10;
+
+    const updatePosition = () => {
+      if (!profileButtonRef.current) {
+        return;
+      }
+
+      const rect = profileButtonRef.current.getBoundingClientRect();
+      const overlayWidth = profilePanelRef.current?.offsetWidth ?? 360;
+      const overlayHeight = profilePanelRef.current?.offsetHeight ?? 0;
+
+      const maxLeft = Math.max(gutter, window.innerWidth - overlayWidth - gutter);
+      const desiredLeft = rect.right - overlayWidth;
+      const left = Math.min(Math.max(desiredLeft, gutter), maxLeft);
+
+      const desiredTop = rect.bottom + dropdownGap;
+      const maxTop = overlayHeight ? Math.max(gutter, window.innerHeight - overlayHeight - gutter) : desiredTop;
+      const top = Math.min(Math.max(desiredTop, gutter), maxTop);
+
+      setProfilePanelPosition({ left, top });
+    };
+
+    updatePosition();
+
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [showProfilePanel]);
+
+  useEffect(() => {
+    if (!showProfilePanel) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadProfile() {
+      setProfileLoading(true);
+      setProfileError("");
+
+      try {
+        const nextProfile = await api.getMyProfile(token);
+        if (!cancelled) {
+          setProfile(nextProfile);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setProfileError(error instanceof Error ? error.message : "Failed to load profile.");
+        }
+      } finally {
+        if (!cancelled) {
+          setProfileLoading(false);
+        }
+      }
+    }
+
+    void loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showProfilePanel, token]);
+
+  const profileDisplayName = profile?.full_name?.trim() || userEmail.split("@")[0] || "User";
+  const profileInitial = profileDisplayName.slice(0, 1).toUpperCase();
+  const profileLastSeen = profile?.last_sign_in_at
+    ? new Date(profile.last_sign_in_at).toLocaleString([], {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      })
+    : "Unavailable";
+
   return (
     <div className="glass-panel flex flex-col gap-1.5 p-2.5 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:px-4 lg:py-2.5">
       <div className="flex flex-col gap-1.5 lg:min-w-0 lg:flex-1">
@@ -161,8 +273,8 @@ export function TopBar({
                 activeTab === item.key
                   ? "bg-[#f0f2f5] text-whatsapp-deep"
                   : item.disabled
-                  ? "cursor-not-allowed text-whatsapp-muted/60"
-                  : "text-whatsapp-muted hover:bg-[#f5f6f6] hover:text-whatsapp-deep"
+                    ? "cursor-not-allowed text-whatsapp-muted/60"
+                    : "text-whatsapp-muted hover:bg-[#f5f6f6] hover:text-whatsapp-deep"
               }`}
               disabled={item.disabled}
               onClick={() => {
@@ -180,30 +292,58 @@ export function TopBar({
         </nav>
       </div>
 
-      <div className="w-full divide-y divide-whatsapp-line/70 sm:grid sm:grid-cols-2 sm:gap-2 sm:divide-y-0 lg:w-auto lg:min-w-[420px] lg:shrink-0">
-        <WhatsAppConnectCard
-          compact
-          disconnecting={disconnectingWhatsApp}
-          loading={loadingWhatsApp}
-          onDisconnect={onDisconnectWhatsApp}
-          qr={whatsAppQr}
-          status={whatsAppStatus}
-          token={token}
-        />
+      <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-2 lg:w-auto lg:shrink-0">
+        <div className="flex items-center gap-1.5">
+          <WhatsAppConnectCard
+            compact
+            disconnecting={disconnectingWhatsApp}
+            loading={loadingWhatsApp}
+            onDisconnect={onDisconnectWhatsApp}
+            qr={whatsAppQr}
+            status={whatsAppStatus}
+            token={token}
+          />
+        </div>
 
-        <div className="px-1 py-1.5 sm:p-2 lg:min-w-[200px] lg:px-2 lg:py-1.5">
+        <div className="lg:min-w-[200px]">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <p className="text-[10px] uppercase tracking-[0.2em] text-whatsapp-muted">Signed in</p>
-              <p className="mt-0.5 truncate text-[15px] font-semibold text-ink sm:mt-1 sm:text-sm">{userEmail}</p>
+              <p className="mt-0.5 truncate text-[15px] font-semibold text-ink sm:mt-1 sm:text-sm">{profile?.full_name || userEmail}</p>
+              {profile?.full_name ? <p className="truncate text-[11px] text-whatsapp-muted">{userEmail}</p> : null}
             </div>
             <div className="flex items-center gap-1">
+              <button
+                aria-label={showProfilePanel ? "Hide profile" : "Show profile"}
+                className="icon-hover-trigger flex h-8 w-8 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent"
+                ref={profileButtonRef}
+                onClick={() => {
+                  setShowProfilePanel((current) => !current);
+                  setShowPasswordForm(false);
+                  setProfileError("");
+                }}
+                type="button"
+              >
+                <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
+                  <path
+                    d="M20 21a8 8 0 1 0-16 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                  />
+                </svg>
+                <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Profile</span>
+                <span className="icon-hover-label hidden sm:inline">Profile</span>
+              </button>
+
               <button
                 aria-label={showPasswordForm ? "Hide change password form" : "Show change password form"}
                 className="icon-hover-trigger flex h-8 w-8 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent"
                 ref={passwordButtonRef}
                 onClick={() => {
                   setShowPasswordForm((current) => !current);
+                  setShowProfilePanel(false);
                   setPasswordError("");
                   setPasswordSuccess("");
                 }}
@@ -243,14 +383,69 @@ export function TopBar({
             </div>
           </div>
 
-          {showPasswordForm
+          {(showProfilePanel || showPasswordForm)
             ? createPortal(
                 <>
                   <div
                     aria-hidden="true"
                     className="frost-float-backdrop fixed inset-0 z-[44]"
-                    onClick={() => setShowPasswordForm(false)}
+                    onClick={() => {
+                      setShowPasswordForm(false);
+                      setShowProfilePanel(false);
+                    }}
                   />
+                  {showProfilePanel ? (
+                    <div
+                      ref={profilePanelRef}
+                      className="whatsapp-popover fixed z-[45] w-[calc(100vw-24px)] max-w-[360px]"
+                      onClick={(event) => event.stopPropagation()}
+                      style={profilePanelPosition ? { left: profilePanelPosition.left, top: profilePanelPosition.top } : undefined}
+                    >
+                      <div className="whatsapp-popover-content space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="whatsapp-popover-kicker">Account profile</p>
+                            <h4 className="whatsapp-popover-title">Dashboard account</h4>
+                            <p className="whatsapp-popover-subtitle truncate">Loaded from public.profiles.</p>
+                          </div>
+                          <span className="whatsapp-popover-pill">Synced</span>
+                        </div>
+
+                        {profileLoading ? (
+                          <p className="text-sm text-whatsapp-muted">Loading profile...</p>
+                        ) : profileError ? (
+                          <p className="whatsapp-popover-card border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">{profileError}</p>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-3 rounded-[18px] border border-white/70 bg-white/80 p-3">
+                              {profile?.avatar_url ? (
+                                <img alt={profileDisplayName} className="h-12 w-12 rounded-2xl object-cover" src={profile.avatar_url} />
+                              ) : (
+                                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e7f5ee] text-base font-semibold text-whatsapp-deep">
+                                  {profileInitial}
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-ink">{profileDisplayName}</p>
+                                <p className="truncate text-xs text-whatsapp-muted">{profile?.email || userEmail}</p>
+                              </div>
+                            </div>
+
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <div className="whatsapp-popover-card">
+                                <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Profile ID</p>
+                                <p className="mt-1 break-all text-sm font-medium text-ink">{profile?.id || "Unavailable"}</p>
+                              </div>
+                              <div className="whatsapp-popover-card">
+                                <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Last sign in</p>
+                                <p className="mt-1 text-sm font-medium text-ink">{profileLastSeen}</p>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
                   <div
                     ref={passwordPanelRef}
                     className="whatsapp-popover fixed z-[45] w-[calc(100vw-24px)] max-w-[360px]"

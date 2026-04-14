@@ -8,6 +8,7 @@ export type CustomerPanelProps = {
   phone: string | null;
   customerId?: string | null;
   chatJid?: string | null;
+  updatedAt?: string | null;
   profilePictureUrl: string | null;
   status: CustomerStatus;
   statusCounts: Record<CustomerStatus, number>;
@@ -108,6 +109,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
     phone,
     customerId,
     chatJid,
+    updatedAt,
     profilePictureUrl,
     status,
     statusCounts,
@@ -143,6 +145,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
   const currentStatusLabel = CUSTOMER_STATUS_LABELS[status];
   const isInline = variant === "inline";
   const canCollapse = !isInline && Boolean(onToggleMobileCollapse);
+  const containerClassName = `glass-panel flex flex-col overflow-hidden p-4 ${isInline ? "h-full shadow-soft" : "h-full min-h-0"}`;
   // Only declare contentClasses once
   const contentClasses = isInline
     ? "custom-scrollbar mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1"
@@ -151,7 +154,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
       : "custom-scrollbar mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1";
 
   return (
-    <aside className={`glass-panel flex flex-col overflow-hidden p-4 ${isInline ? "h-full shadow-soft" : ""}`}>
+    <aside className={containerClassName}>
       {isInline ? (
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -251,6 +254,26 @@ export function CustomerPanel(props: CustomerPanelProps) {
   <div className="info-item">
     <span className="info-label">Email</span>
     <span className="info-value">{emailAddress || "-"}</span>
+  </div>
+
+  <div className="info-item">
+    <span className="info-label">WhatsApp ID</span>
+    <span className="info-value">{whatsappIdLabel || "-"}</span>
+  </div>
+
+  <div className="info-item">
+    <span className="info-label">Contact ID</span>
+    <span className="info-value">{contactId || "-"}</span>
+  </div>
+
+  <div className="info-item">
+    <span className="info-label">Customer ID</span>
+    <span className="info-value">{customerId || "-"}</span>
+  </div>
+
+  <div className="info-item">
+    <span className="info-label">Updated</span>
+    <span className="info-value">{formatTime(updatedAt)}</span>
   </div>
 
   <div className="info-item">

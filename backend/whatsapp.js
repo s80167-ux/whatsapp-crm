@@ -3,7 +3,14 @@ const { Boom } = require('@hapi/boom');
 const fs = require('fs/promises');
 const path = require('path');
 const QRCode = require('qrcode');
-const { saveMessage, updateOutgoingMessageStatus, upsertCustomer, getCustomerOwnerIdsByPhone } = require('./supabase');
+const {
+	saveMessage,
+	updateOutgoingMessageStatus,
+	upsertCustomer,
+	getCustomerOwnerIdsByPhone,
+	upsertWhatsAppAccount,
+	getLatestWhatsAppAccount
+} = require('./supabase');
 const { normalizePhone, normalizeCustomerPhone, resolveWhatsAppPhone, extractDigits } = require('./wa-identifiers');
 
 let sock = null;
@@ -13,7 +20,10 @@ let baileysModulePromise = null;
 let reconnectTimer = null;
 let resetAuthPromise = null;
 let activeOwnerUserId = null;
+let activeWhatsAppAccountId = null;
 let manualDisconnectRequested = false;
+let historySyncObserved = false;
+let fallbackSyncTimer = null;
 
 function withTimeout(promise, timeoutMs, fallbackValue) {
 	return Promise.race([
@@ -35,7 +45,8 @@ async function loadBaileys() {
 			useMultiFileAuthState: module.useMultiFileAuthState,
 			fetchLatestBaileysVersion: module.fetchLatestBaileysVersion,
 			downloadMediaMessage: module.downloadMediaMessage,
-			DisconnectReason: module.DisconnectReason
+			DisconnectReason: module.DisconnectReason,
+			ALL_WA_PATCH_NAMES: module.ALL_WA_PATCH_NAMES
 		}));
 	}
 
@@ -45,6 +56,53 @@ async function loadBaileys() {
 function bindWhatsAppOwner(ownerUserId) {
 	if (!ownerUserId) return;
 	activeOwnerUserId = ownerUserId;
+}
+
+async function ensureActiveWhatsAppAccount() {
+	if (!activeOwnerUserId) {
+		return null;
+	}
+
+	const profile = await getWhatsAppProfile();
+	const account = await upsertWhatsAppAccount({
+		owner_user_id: activeOwnerUserId,
+		account_phone: profile.connected ? profile.phone : getSelfPhone(),
+		account_jid: getSelfJid(),
+		display_name: profile.connected ? profile.username : null,
+		profile_picture_url: profile.connected ? profile.profilePictureUrl : null,
+		auth_dir: authDir,
+		connection_state: connectionState,
+		is_active: true,
+		...(profile.connected ? { last_connected_at: new Date().toISOString() } : {})
+	});
+
+	activeWhatsAppAccountId = account?.id || activeWhatsAppAccountId;
+	return activeWhatsAppAccountId;
+}
+
+async function getCurrentWhatsAppAccountContext(ownerUserId = activeOwnerUserId) {
+	if (activeWhatsAppAccountId) {
+		return {
+			id: activeWhatsAppAccountId,
+			phone: getSelfPhone(),
+			jid: getSelfJid()
+		};
+	}
+
+	if (!ownerUserId) {
+		return {
+			id: null,
+			phone: getSelfPhone(),
+			jid: getSelfJid()
+		};
+	}
+
+	const latestAccount = await getLatestWhatsAppAccount(ownerUserId);
+	return {
+		id: latestAccount?.id || null,
+		phone: latestAccount?.account_phone || getSelfPhone(),
+		jid: latestAccount?.account_jid || getSelfJid()
+	};
 }
 
 function isStickerMimeType(mimeType) {
@@ -229,6 +287,56 @@ function extractContactName(msg) {
 	return null;
 }
 
+function extractMessageTimestampSeconds(value) {
+	if (typeof value === 'number') {
+		return Number.isFinite(value) ? value : 0;
+	}
+
+	if (typeof value === 'string') {
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? parsed : 0;
+	}
+
+	if (value && typeof value === 'object') {
+		if (typeof value.toNumber === 'function') {
+			const parsed = value.toNumber();
+			return Number.isFinite(parsed) ? parsed : 0;
+		}
+
+		if (typeof value.low === 'number') {
+			return Number.isFinite(value.low) ? value.low : 0;
+		}
+	}
+
+	return 0;
+}
+
+async function upsertHistoryCustomer({
+	ownerUserId,
+	whatsappAccountId,
+	phone,
+	chatJid,
+	contactName,
+	unreadCount,
+	profilePictureUrl,
+	about
+}) {
+	if (!phone || isConnectedWhatsAppPhone(phone)) {
+		return;
+	}
+
+	await require('./supabase').upsertCustomer({
+		owner_user_id: ownerUserId,
+		whatsapp_account_id: whatsappAccountId,
+		phone,
+		chat_jid: chatJid,
+		contact_name: contactName || undefined,
+		unread_count: unreadCount,
+		profile_picture_url: profilePictureUrl || undefined,
+		about: about || undefined
+	}).catch(err => console.warn('Failed to upsert history customer', err.message));
+}
+
 async function resolveOwnerUserIds(phone, chatJid) {
 	const ownerUserIds = await getCustomerOwnerIdsByPhone(phone, chatJid || null);
 	if (ownerUserIds.length > 0) {
@@ -251,8 +359,9 @@ async function persistIncomingMessage(msg) {
 
 	const ownerUserIds = await resolveOwnerUserIds(phone, msg.key.remoteJid);
 	if (!ownerUserIds.length) return;
+	const whatsappAccountId = await ensureActiveWhatsAppAccount();
 
-  const tsSecs = Number(typeof msg.messageTimestamp === 'object' ? msg.messageTimestamp.low : msg.messageTimestamp);
+  const tsSecs = extractMessageTimestampSeconds(msg.messageTimestamp);
   const created_at = tsSecs && !isNaN(tsSecs) ? new Date(tsSecs * 1000).toISOString() : undefined;
 
   // Proactively fetch profile info for new messages
@@ -268,6 +377,7 @@ async function persistIncomingMessage(msg) {
   for (const ownerUserId of ownerUserIds) {
     await upsertCustomer({
       owner_user_id: ownerUserId,
+      whatsapp_account_id: whatsappAccountId,
       phone,
       chat_jid: msg.key.remoteJid,
       contact_name: contactName && !msg.key.fromMe ? contactName : undefined,
@@ -278,6 +388,7 @@ async function persistIncomingMessage(msg) {
 		if (msg.key.fromMe) {
 			const updatedMessage = await updateOutgoingMessageStatus({
 				owner_user_id: ownerUserId,
+				whatsapp_account_id: whatsappAccountId,
 				phone,
 				chat_jid: msg.key.remoteJid,
 				wa_message_id: msg.key.id,
@@ -291,6 +402,7 @@ async function persistIncomingMessage(msg) {
 
 		await saveMessage({
 			owner_user_id: ownerUserId,
+			whatsapp_account_id: whatsappAccountId,
 			phone,
 			chat_jid: msg.key.remoteJid,
 			wa_message_id: msg.key.id,
@@ -323,6 +435,13 @@ function clearReconnectTimer() {
 	}
 }
 
+function clearFallbackSyncTimer() {
+	if (fallbackSyncTimer) {
+		clearTimeout(fallbackSyncTimer);
+		fallbackSyncTimer = null;
+	}
+}
+
 function scheduleReconnect({ resetAuth = false } = {}) {
 	clearReconnectTimer();
 
@@ -351,12 +470,15 @@ async function initializeWhatsApp() {
 		makeWASocket,
 		useMultiFileAuthState,
 		fetchLatestBaileysVersion,
-		DisconnectReason
+		DisconnectReason,
+		ALL_WA_PATCH_NAMES
 	} = await loadBaileys();
 
 	await fs.mkdir(authDir, { recursive: true });
 	const { state, saveCreds } = await useMultiFileAuthState(authDir);
 	const { version } = await fetchLatestBaileysVersion();
+	historySyncObserved = false;
+	clearFallbackSyncTimer();
 
 	sock = makeWASocket({
 		version,
@@ -383,6 +505,21 @@ async function initializeWhatsApp() {
 			qrData = null;
 			console.log('WhatsApp (Baileys) is ready.');
 
+			clearFallbackSyncTimer();
+			fallbackSyncTimer = setTimeout(async () => {
+				if (!sock || connectionState !== 'open' || historySyncObserved) {
+					return;
+				}
+
+				try {
+					console.log('History sync not received yet. Triggering fallback app-state resync.');
+					await sock.resyncAppState(ALL_WA_PATCH_NAMES, true);
+					console.log('Fallback app-state resync finished.');
+				} catch (error) {
+					console.error('Fallback app-state resync failed:', error?.message || error);
+				}
+			}, 8000);
+
 			setTimeout(async () => {
 				if (!activeOwnerUserId) return;
 				try {
@@ -394,6 +531,7 @@ async function initializeWhatsApp() {
 							username: profile.username,
 							profile_picture_url: profile.profilePictureUrl
 						});
+						activeWhatsAppAccountId = await ensureActiveWhatsAppAccount();
 					}
 				} catch (e) {
 					console.error('Failed to save WhatsApp profile to database:', e.message);
@@ -405,6 +543,9 @@ async function initializeWhatsApp() {
 				: undefined;
 			qrData = null;
 			sock = null;
+			activeWhatsAppAccountId = null;
+			historySyncObserved = false;
+			clearFallbackSyncTimer();
 			if (manualDisconnectRequested) {
 				connectionState = 'disconnected';
 				return;
@@ -424,12 +565,15 @@ async function initializeWhatsApp() {
 
 	sock.ev.on('chats.set', async ({ chats }) => {
 		if (!activeOwnerUserId) return;
+		console.log(`Received chats.set with ${Array.isArray(chats) ? chats.length : 0} chats.`);
+		const whatsappAccountId = await ensureActiveWhatsAppAccount();
 		for (const chat of chats) {
 			if (chat.id && chat.unreadCount !== undefined && !chat.id.endsWith('@g.us') && chat.id !== 'status@broadcast') {
 				const phone = await resolveWhatsAppPhone(chat.id, chat.id);
 				if (phone && !isConnectedWhatsAppPhone(phone)) {
 					await require('./supabase').upsertCustomer({
 						owner_user_id: activeOwnerUserId,
+						whatsapp_account_id: whatsappAccountId,
 						phone,
 						chat_jid: chat.id,
 						unread_count: chat.unreadCount
@@ -441,12 +585,14 @@ async function initializeWhatsApp() {
 
 	sock.ev.on('chats.update', async (updates) => {
 		if (!activeOwnerUserId) return;
+		const whatsappAccountId = await ensureActiveWhatsAppAccount();
 		for (const update of updates) {
 			if (update.id && update.unreadCount !== undefined && !update.id.endsWith('@g.us') && update.id !== 'status@broadcast') {
 				const phone = await resolveWhatsAppPhone(update.id, update.id);
 				if (phone && !isConnectedWhatsAppPhone(phone)) {
 					await require('./supabase').upsertCustomer({
 						owner_user_id: activeOwnerUserId,
+						whatsapp_account_id: whatsappAccountId,
 						phone,
 						chat_jid: update.id,
 						unread_count: update.unreadCount
@@ -493,6 +639,7 @@ async function initializeWhatsApp() {
 
 	sock.ev.on('contacts.upsert', async (contacts) => {
 		if (!Array.isArray(contacts)) return;
+		console.log(`Received contacts.upsert with ${contacts.length} contacts.`);
 		for (const contact of contacts) {
 			if (contact.id && contact.lid && !contact.id.endsWith('@g.us') && contact.id !== 'status@broadcast') {
 				const phone = extractDigits(contact.id);
@@ -509,10 +656,22 @@ async function initializeWhatsApp() {
 
 	sock.ev.on('messaging-history.set', async ({ chats, contacts, messages, isLatest }) => {
 		if (!activeOwnerUserId) return;
+		historySyncObserved = true;
+		clearFallbackSyncTimer();
 		try {
+			const whatsappAccountId = await ensureActiveWhatsAppAccount();
 			const settings = await require('./supabase').getWhatsAppSettings(activeOwnerUserId);
 			const days = settings.history_sync_days || 7;
 			const cutoffSecs = Math.floor(Date.now() / 1000) - (days * 24 * 60 * 60);
+			const contactsByJid = new Map();
+
+			if (Array.isArray(contacts)) {
+				for (const contact of contacts) {
+					if (contact?.id) {
+						contactsByJid.set(contact.id, contact);
+					}
+				}
+			}
 
 			if (Array.isArray(contacts)) {
 				fs.writeFile(path.join(authDir, 'hist_contacts.json'), JSON.stringify(contacts, null, 2)).catch(() => {});
@@ -546,29 +705,55 @@ async function initializeWhatsApp() {
 								// Ignore sync errors for individual profiles
 							}
 
-							await require('./supabase').upsertCustomer({
-								owner_user_id: activeOwnerUserId,
+							await upsertHistoryCustomer({
+								ownerUserId: activeOwnerUserId,
+								whatsappAccountId,
 								phone,
-								chat_jid: contact.id,
-								contact_name: contactName || undefined,
-								profile_picture_url: profileInfo.profilePictureUrl || undefined,
-								about: profileInfo.about || undefined
-							}).catch(err => console.warn('Failed to upsert history contact', err.message));
+								chatJid: contact.id,
+								contactName,
+								profilePictureUrl: profileInfo.profilePictureUrl,
+								about: profileInfo.about
+							});
 						}
 					}
 				}
 			}
 
-			const recentMessages = messages.filter(m => {
-				const ts = typeof m.messageTimestamp === 'object' ? m.messageTimestamp.low : m.messageTimestamp;
-				return Number(ts) >= cutoffSecs;
-			});
+			if (Array.isArray(chats)) {
+				for (const chat of chats) {
+					if (!chat?.id || chat.id.endsWith('@g.us') || chat.id === 'status@broadcast') {
+						continue;
+					}
 
-			console.log(`History sync chunk received: ${messages.length} total messages, keeping ${recentMessages.length} recent (last ${days} days).`);
+					const phone = await resolveWhatsAppPhone(chat.id, chat.id);
+					const linkedContact = contactsByJid.get(chat.id);
+					const contactName = String(
+						linkedContact?.name ||
+						linkedContact?.notify ||
+						linkedContact?.verifiedName ||
+						chat.name ||
+						''
+					).trim();
+
+					await upsertHistoryCustomer({
+						ownerUserId: activeOwnerUserId,
+						whatsappAccountId,
+						phone,
+						chatJid: chat.id,
+						contactName,
+						unreadCount: typeof chat.unreadCount === 'number' ? chat.unreadCount : undefined
+					});
+				}
+			}
+
+			const safeMessages = Array.isArray(messages) ? messages : [];
+			const recentMessages = safeMessages.filter((m) => extractMessageTimestampSeconds(m?.messageTimestamp) >= cutoffSecs);
+
+			console.log(`History sync chunk received: ${safeMessages.length} total messages, keeping ${recentMessages.length} recent (last ${days} days).`);
 
 			for (const msg of recentMessages) {
 				try {
-					await persistIncomingMessage(msg);
+						await persistIncomingMessage(msg);
 				} catch (e) {
 					console.error('Failed to save history message:', e.message);
 				}
@@ -811,6 +996,7 @@ module.exports = {
 	getSelfPhone,
 	disconnectWhatsApp,
 	getContactProfile,
+	getCurrentWhatsAppAccountContext,
 	bindWhatsAppOwner,
 	normalizePhone: normalizeCustomerPhone
 };

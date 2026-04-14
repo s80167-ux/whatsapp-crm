@@ -43,6 +43,7 @@ export type Conversation = {
 export type Message = {
   id: string;
   phone: string;
+  whatsapp_account_id?: string | null;
   chat_jid?: string | null;
   wa_message_id?: string | null;
   message: string;
@@ -56,7 +57,9 @@ export type Message = {
 };
 
 export type Customer = {
+  id?: string;
   phone: string;
+  whatsapp_account_id?: string | null;
   chat_jid?: string | null;
   contact_name?: string | null;
   status: CustomerStatus;
@@ -83,6 +86,7 @@ export type SalesLeadItem = {
   id: string;
   message_id: string;
   phone: string;
+  whatsapp_account_id?: string | null;
   chat_jid?: string | null;
   lead_status?: CustomerStatus;
   product_type: string;
@@ -148,6 +152,31 @@ export type WhatsAppProfile = {
 
 export type WhatsAppSettings = {
   history_sync_days: number;
+};
+
+export type WhatsAppAccount = {
+  id: string;
+  owner_user_id: string;
+  account_phone: string | null;
+  account_jid: string | null;
+  display_name: string | null;
+  profile_picture_url: string | null;
+  auth_dir: string | null;
+  connection_state: string;
+  is_active: boolean;
+  last_connected_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UserProfile = {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
+  last_sign_in_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 export type DeleteMessageResponse = {
@@ -269,17 +298,30 @@ async function request<T>(
   return data as T;
 }
 
+function withWhatsAppAccountParam(path: string, whatsappAccountId?: string | null) {
+  if (!whatsappAccountId) {
+    return path;
+  }
+
+  const [basePath, existingQuery = ""] = path.split("?");
+  const params = new URLSearchParams(existingQuery);
+  params.set("whatsappAccountId", whatsappAccountId);
+  const queryString = params.toString();
+  return `${basePath}${queryString ? `?${queryString}` : ""}`;
+}
+
 export const api = {
   /**
    * Fetch paginated customers with optional search/filter.
    * @param params { page, pageSize, search }
    * @returns { data: Customer[], total: number }
    */
-  getCustomers(params: { page?: number; pageSize?: number; search?: string }, token?: string) {
+  getCustomers(params: { page?: number; pageSize?: number; search?: string; whatsappAccountId?: string | null }, token?: string) {
     const urlParams = new URLSearchParams();
     if (params.page !== undefined) urlParams.set("page", String(params.page));
     if (params.pageSize !== undefined) urlParams.set("pageSize", String(params.pageSize));
     if (params.search) urlParams.set("search", params.search);
+    if (params.whatsappAccountId) urlParams.set("whatsappAccountId", params.whatsappAccountId);
     return request<{ data: Customer[]; total: number }>(
       `/customers${urlParams.size ? `?${urlParams.toString()}` : ""}`,
       {},
@@ -329,6 +371,12 @@ export const api = {
   getWhatsAppProfile(token: string) {
     return request<WhatsAppProfile>("/whatsapp/profile", {}, token);
   },
+  getWhatsAppAccounts(token: string) {
+    return request<WhatsAppAccount[]>("/whatsapp/accounts", {}, token);
+  },
+  getMyProfile(token: string) {
+    return request<UserProfile>("/profiles/me", {}, token);
+  },
   clearDatabase(token: string) {
     return request<{ success: boolean; message: string }>(
       "/whatsapp/clear",
@@ -358,8 +406,8 @@ export const api = {
       token
     );
   },
-  getConversations(token: string) {
-    return request<Conversation[]>("/conversations", {}, token);
+  getConversations(token: string, whatsappAccountId?: string | null) {
+    return request<Conversation[]>(withWhatsAppAccountParam("/conversations", whatsappAccountId), {}, token);
   },
   /**
    * Fetch paginated customers with optional search/filter.
@@ -368,22 +416,22 @@ export const api = {
    */
   
   
-  markConversationRead(phone: string, token: string, chatJid?: string | null) {
+  markConversationRead(phone: string, token: string, chatJid?: string | null, whatsappAccountId?: string | null) {
     return request<{ success: boolean }>(
-      `/conversations/${phone}/read`,
+      withWhatsAppAccountParam(`/conversations/${phone}/read`, whatsappAccountId),
       {
         method: "POST",
-        body: JSON.stringify({ chatJid: chatJid || null })
+        body: JSON.stringify({ chatJid: chatJid || null, whatsappAccountId: whatsappAccountId || null })
       },
       token
     );
   },
-  deleteConversation(phone: string, token: string, chatJid?: string | null) {
+  deleteConversation(phone: string, token: string, chatJid?: string | null, whatsappAccountId?: string | null) {
     return request<{ success: boolean; deletedMessages: number; deletedCustomers: number }>(
-      `/conversations/${phone}`,
+      withWhatsAppAccountParam(`/conversations/${phone}`, whatsappAccountId),
       {
         method: "DELETE",
-        body: JSON.stringify({ chatJid: chatJid || null })
+        body: JSON.stringify({ chatJid: chatJid || null, whatsappAccountId: whatsappAccountId || null })
       },
       token
     );
@@ -397,37 +445,53 @@ export const api = {
       token
     );
   },
-  getMessages(phone: string, token: string, chatJid?: string | null) {
+  getMessages(phone: string, token: string, chatJid?: string | null, whatsappAccountId?: string | null) {
     const params = new URLSearchParams();
 
     if (chatJid) {
       params.set("chatJid", chatJid);
+    }
+
+    if (whatsappAccountId) {
+      params.set("whatsappAccountId", whatsappAccountId);
     }
 
     return request<Message[]>(`/messages/${phone}${params.size ? `?${params.toString()}` : ""}`, {}, token);
   },
-  getCustomer(phone: string, token: string, chatJid?: string | null) {
+  getCustomer(phone: string, token: string, chatJid?: string | null, whatsappAccountId?: string | null) {
     const params = new URLSearchParams();
 
     if (chatJid) {
       params.set("chatJid", chatJid);
+    }
+
+    if (whatsappAccountId) {
+      params.set("whatsappAccountId", whatsappAccountId);
     }
 
     return request<Customer>(`/customers/${phone}${params.size ? `?${params.toString()}` : ""}`, {}, token);
   },
-  getCustomerSalesItems(phone: string, token: string, chatJid?: string | null) {
+  getCustomerSalesItems(phone: string, token: string, chatJid?: string | null, whatsappAccountId?: string | null) {
     const params = new URLSearchParams();
 
     if (chatJid) {
       params.set("chatJid", chatJid);
     }
 
+    if (whatsappAccountId) {
+      params.set("whatsappAccountId", whatsappAccountId);
+    }
+
     return request<SalesLeadItem[]>(`/customers/${phone}/sales-items${params.size ? `?${params.toString()}` : ""}`, {}, token);
   },
-  getSalesLeadItems(token: string) {
-    return request<SalesLeadItem[]>("/sales-items", {}, token);
+  getSalesLeadItems(token: string, whatsappAccountId?: string | null) {
+    return request<SalesLeadItem[]>(withWhatsAppAccountParam("/sales-items", whatsappAccountId), {}, token);
   },
-  saveCustomer(phone: string, payload: Pick<Customer, "status" | "notes"> & { chat_jid?: string | null }, token: string) {
+  saveCustomer(
+    phone: string,
+    payload: Pick<Customer, "status" | "notes"> & { chat_jid?: string | null; whatsappAccountId?: string | null },
+    token: string
+  ) {
     return request<Customer>(
       `/customers/${phone}`,
       {
@@ -435,7 +499,8 @@ export const api = {
         body: JSON.stringify({
           status: payload.status,
           notes: payload.notes,
-          chatJid: payload.chat_jid || null
+          chatJid: payload.chat_jid || null,
+          whatsappAccountId: payload.whatsappAccountId || null
         })
       },
       token
@@ -451,6 +516,7 @@ export const api = {
       packageName: string;
       price: number;
       quantity: number;
+      whatsappAccountId?: string | null;
     },
     token: string
   ) {
@@ -473,6 +539,7 @@ export const api = {
       packageName: string;
       price: number;
       quantity: number;
+      whatsappAccountId?: string | null;
     },
     token: string
   ) {
@@ -485,12 +552,12 @@ export const api = {
       token
     );
   },
-  sendMessage(phone: string, message: string, token: string, chatJid?: string | null) {
+  sendMessage(phone: string, message: string, token: string, chatJid?: string | null, whatsappAccountId?: string | null) {
     return request<Message>(
       "/send",
       {
         method: "POST",
-        body: JSON.stringify({ phone, message, chatJid })
+        body: JSON.stringify({ phone, message, chatJid, whatsappAccountId: whatsappAccountId || null })
       },
       token
     );
@@ -502,6 +569,7 @@ export const api = {
     options?: {
       chatJid?: string | null;
       caption?: string;
+      whatsappAccountId?: string | null;
     }
   ) {
     const formData = new FormData();
@@ -514,6 +582,10 @@ export const api = {
 
     if (options?.caption) {
       formData.append("caption", options.caption);
+    }
+
+    if (options?.whatsappAccountId) {
+      formData.append("whatsappAccountId", options.whatsappAccountId);
     }
 
     return request<Message>(
@@ -533,6 +605,7 @@ export const api = {
       name?: string;
       address?: string;
       chatJid?: string | null;
+      whatsappAccountId?: string | null;
     },
     token: string
   ) {
@@ -546,7 +619,8 @@ export const api = {
           longitude: payload.longitude,
           name: payload.name,
           address: payload.address,
-          chatJid: payload.chatJid
+          chatJid: payload.chatJid,
+          whatsappAccountId: payload.whatsappAccountId || null
         })
       },
       token

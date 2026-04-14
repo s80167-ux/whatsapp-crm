@@ -1,0 +1,44 @@
+
+> whatsapp-crm-backend@1.0.0 dev
+> node --watch server.js
+
+Registered WhatsApp routes: GET /whatsapp/status | GET /whatsapp/qr | GET /whatsapp/profile | GET /whatsapp/accounts | GET /whatsapp/settings | PUT /whatsapp/settings | POST /whatsapp/disconnect | DELETE /whatsapp/clear
+Backend listening on http://localhost:4000
+{"level":30,"time":"2026-04-14T15:38:04.808Z","pid":10880,"hostname":"DESKTOP-SKR814I","class":"baileys","browser":["Mac OS","Chrome","14.4.1"],"helloMsg":{"clientHello":{"ephemeral":"cEbFTOf2Dh75AnYgazHOrFNxH6y1CXv2MBDio99nKDE="}},"msg":"connected to WA"}
+{"level":30,"time":"2026-04-14T15:38:05.120Z","pid":10880,"hostname":"DESKTOP-SKR814I","class":"baileys","node":{"username":"601127231780","passive":true,"userAgent":{"platform":"WEB","appVersion":{"primary":2,"secondary":3000,"tertiary":1035194821},"mcc":"000","mnc":"000","osVersion":"0.1","device":"Desktop","osBuildNumber":"0.1","releaseChannel":"RELEASE","localeLanguageIso6391":"en","localeCountryIso31661Alpha2":"US"},"webInfo":{"webSubPlatform":"WEB_BROWSER"},"connectType":"WIFI_UNKNOWN","connectReason":"USER_ACTIVATED","device":27,"pull":true,"lidDbMigrated":false},"msg":"logging in..."}
+{"level":30,"time":"2026-04-14T15:38:05.812Z","pid":10880,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"812 pre-keys found on server"}
+{"level":30,"time":"2026-04-14T15:38:05.812Z","pid":10880,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"Current prekey ID: 812, exists in storage: true"}
+{"level":30,"time":"2026-04-14T15:38:05.812Z","pid":10880,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"PreKey validation passed - Server: 812, Current prekey 812 exists"}
+{"level":30,"time":"2026-04-14T15:38:06.047Z","pid":10880,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"handled 0 offline messages/notifications"}
+{"level":30,"time":"2026-04-14T15:38:06.047Z","pid":10880,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"Connection is now AwaitingInitialSync, buffering events"}
+{"level":30,"time":"2026-04-14T15:38:06.048Z","pid":10880,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"History sync is enabled, awaiting notification with a 20s timeout."}
+WhatsApp (Baileys) is ready.
+{"level":30,"time":"2026-04-14T15:38:06.351Z","pid":10880,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"opened connection to WA"}
+{"level":30,"time":"2026-04-14T15:38:06.443Z","pid":10880,"hostname":"DESKTOP-SKR814I","class":"baileys","myPN":"601127231780:27@s.whatsapp.net","myLID":"56097171845164:27@lid","msg":"Own LID session created successfully"}
+{"level":50,"time":"2026-04-14T15:38:06.534Z","pid":10880,"hostname":"DESKTOP-SKR814I","class":"baileys","err":{"type":"Error","message":"bad-request","stack":"Error: bad-request\n    at assertNodeErrorFree (file:///C:/Users/SYed%20Mohd%20Hatta/whatsapp-crm/backend/node_modules/@whiskeysockets/baileys/lib/WABinary/generic-utils.js:46:15)\n    at query (file:///C:/Users/SYed%20Mohd%20Hatta/whatsapp-crm/backend/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js:127:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async fetchProps (file:///C:/Users/SYed%20Mohd%20Hatta/whatsapp-crm/backend/node_modules/@whiskeysockets/baileys/lib/Socket/chats.js:640:28)\n    at async Promise.all (index 0)\n    at async executeInitQueries (file:///C:/Users/SYed%20Mohd%20Hatta/whatsapp-crm/backend/node_modules/@whiskeysockets/baileys/lib/Socket/chats.js:787:9)","data":400,"isBoom":true,"isServer":true,"output":{"statusCode":500,"payload":{"statusCode":500,"error":"Internal Server Error","message":"An internal server error occurred"},"headers":{}}},"msg":"unexpected error in 'init queries'"}
+{"level":40,"time":"2026-04-14T15:38:26.061Z","pid":10880,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"Timeout in AwaitingInitialSync, forcing state to Online and flushing buffer"}
+Restarting 'server.js'
+Registered WhatsApp routes: GET /whatsapp/status | GET /whatsapp/qr | GET /whatsapp/profile | GET /whatsapp/accounts | GET /whatsapp/settings | PUT /whatsapp/settings | POST /whatsapp/disconnect | DELETE /whatsapp/clear
+Backend listening on http://localhost:4000
+{"level":30,"time":"2026-04-14T15:40:26.115Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","browser":["Mac OS","Chrome","14.4.1"],"helloMsg":{"clientHello":{"ephemeral":"bARW7wHodXnenV1wWByjrsS5ALBJtxqotNlNQQhYwH4="}},"msg":"connected to WA"}
+{"level":30,"time":"2026-04-14T15:40:26.473Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","node":{"username":"601127231780","passive":true,"userAgent":{"platform":"WEB","appVersion":{"primary":2,"secondary":3000,"tertiary":1035194821},"mcc":"000","mnc":"000","osVersion":"0.1","device":"Desktop","osBuildNumber":"0.1","releaseChannel":"RELEASE","localeLanguageIso6391":"en","localeCountryIso31661Alpha2":"US"},"webInfo":{"webSubPlatform":"WEB_BROWSER"},"connectType":"WIFI_UNKNOWN","connectReason":"USER_ACTIVATED","device":27,"pull":true,"lidDbMigrated":false},"msg":"logging in..."}
+{"level":30,"time":"2026-04-14T15:40:27.581Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"812 pre-keys found on server"}
+{"level":30,"time":"2026-04-14T15:40:27.581Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"Current prekey ID: 812, exists in storage: true"}
+{"level":30,"time":"2026-04-14T15:40:27.581Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"PreKey validation passed - Server: 812, Current prekey 812 exists"}
+{"level":30,"time":"2026-04-14T15:40:28.070Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"handled 0 offline messages/notifications"}
+{"level":30,"time":"2026-04-14T15:40:28.072Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"Connection is now AwaitingInitialSync, buffering events"}
+{"level":30,"time":"2026-04-14T15:40:28.072Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"History sync is enabled, awaiting notification with a 20s timeout."}
+{"level":30,"time":"2026-04-14T15:40:28.445Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"opened connection to WA"}
+WhatsApp (Baileys) is ready.
+{"level":30,"time":"2026-04-14T15:40:28.463Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","myPN":"601127231780:27@s.whatsapp.net","myLID":"56097171845164:27@lid","msg":"Own LID session created successfully"}
+History sync not received yet. Triggering fallback app-state resync.
+{"level":30,"time":"2026-04-14T15:40:36.454Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"resyncing critical_block from v1"}
+{"level":30,"time":"2026-04-14T15:40:36.478Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"resyncing critical_unblock_low from v2"}
+{"level":30,"time":"2026-04-14T15:40:36.479Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"resyncing regular_high from v0"}
+{"level":30,"time":"2026-04-14T15:40:36.479Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"resyncing regular_low from v0"}
+{"level":30,"time":"2026-04-14T15:40:36.484Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"resyncing regular from v2"}
+{"level":30,"time":"2026-04-14T15:40:37.068Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"synced regular_high to v1"}
+{"level":30,"time":"2026-04-14T15:40:37.084Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"synced regular_low to v1"}
+{"level":30,"time":"2026-04-14T15:40:37.093Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"archive setting updated => 'false'"}
+Fallback app-state resync finished.
+{"level":40,"time":"2026-04-14T15:40:48.082Z","pid":17356,"hostname":"DESKTOP-SKR814I","class":"baileys","msg":"Timeout in AwaitingInitialSync, forcing state to Online and flushing buffer"}

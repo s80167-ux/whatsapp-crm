@@ -2,10 +2,23 @@
 const crypto = require("crypto");
 const { createClient } = require("@supabase/supabase-js");
 const {
+  upsertProfileFromAuthUser,
   deleteActiveDashboardSession,
   getActiveDashboardSessionId,
   upsertActiveDashboardSession
 } = require("./supabase");
+
+async function syncProfileBestEffort(user) {
+  if (!user) {
+    return;
+  }
+
+  try {
+    await upsertProfileFromAuthUser(user);
+  } catch (error) {
+    console.warn("Profile sync skipped:", error?.message || error);
+  }
+}
 
 const authClient = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
@@ -31,6 +44,8 @@ async function registerUser(email, password) {
   if (error) {
     throw error;
   }
+
+  await syncProfileBestEffort(data.user);
 
   const token = data.session?.access_token || null;
 
@@ -62,6 +77,8 @@ async function loginUser(email, password) {
     errorWithoutSession.status = 401;
     throw errorWithoutSession;
   }
+
+  await syncProfileBestEffort(data.user);
 
   return {
     user: {

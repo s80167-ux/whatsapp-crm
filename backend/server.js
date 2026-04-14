@@ -19,7 +19,9 @@ const {
 const {
   getConversations,
   getMessagesByPhone,
+  getMessagesByContactId,
   saveMessage,
+  getCustomerByContactId,
   getCustomerByPhone,
   getCustomerInsights,
   getCustomerSalesItems,
@@ -30,8 +32,10 @@ const {
   deleteConversation,
   deleteMessage,
   upsertCustomer,
+  getWhatsAppAccounts,
   getWhatsAppSettings,
-  upsertWhatsAppProfile
+  upsertWhatsAppProfile,
+  getProfileByUserId
 } = require("./supabase");
 const {
   initializeWhatsApp,
@@ -45,6 +49,7 @@ const {
   disconnectWhatsApp,
   getContactProfile,
   bindWhatsAppOwner,
+  getCurrentWhatsAppAccountContext,
   normalizePhone
 } = require("./whatsapp");
 
@@ -136,6 +141,22 @@ function bindAuthenticatedWhatsAppOwner(req, _res, next) {
   next();
 }
 
+async function resolveRequestWhatsAppAccountId(req, { fallbackToActive = true } = {}) {
+  const rawAccountId =
+    String(req.query?.whatsappAccountId || req.body?.whatsappAccountId || req.headers["x-whatsapp-account-id"] || "").trim() || null;
+
+  if (rawAccountId) {
+    return rawAccountId;
+  }
+
+  if (!fallbackToActive) {
+    return null;
+  }
+
+  const context = await getCurrentWhatsAppAccountContext(req.user?.sub || null);
+  return context.id || null;
+}
+
 app.get("/", (_req, res) => {
   res.json({
     name: "whatsapp-crm-backend",
@@ -177,6 +198,16 @@ whatsappRouter.get("/profile", requireAuth, bindAuthenticatedWhatsAppOwner, asyn
   } catch (error) {
     console.error("Failed to fetch WhatsApp profile:", error);
     return res.status(500).json({ error: "Failed to fetch WhatsApp profile." });
+  }
+});
+
+whatsappRouter.get("/accounts", requireAuth, async (req, res) => {
+  try {
+    const accounts = await getWhatsAppAccounts(req.user.sub);
+    return res.json(accounts);
+  } catch (error) {
+    console.error("Failed to fetch WhatsApp accounts:", error);
+    return res.status(500).json({ error: "Failed to fetch WhatsApp accounts." });
   }
 });
 
@@ -304,9 +335,30 @@ app.delete("/auth/session", requireSupabaseAuth, async (req, res) => {
   }
 });
 
+app.get("/profiles/me", requireAuth, async (req, res) => {
+  try {
+    const profile = await getProfileByUserId(req.user.sub);
+    return res.json(
+      profile || {
+        id: req.user.sub,
+        email: req.user.email || null,
+        full_name: null,
+        avatar_url: null,
+        last_sign_in_at: null,
+        created_at: null,
+        updated_at: null
+      }
+    );
+  } catch (error) {
+    console.error("Failed to fetch profile:", error);
+    return res.status(500).json({ error: "Failed to fetch profile." });
+  }
+});
+
 app.get("/conversations", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
-    const conversations = await getConversations(req.user.sub);
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
+    const conversations = await getConversations(req.user.sub, whatsappAccountId);
     return res.json(conversations);
   } catch (error) {
     console.error("Failed to fetch conversations:", error);
@@ -318,6 +370,7 @@ app.post("/conversations/:phone/read", requireAuth, bindAuthenticatedWhatsAppOwn
   try {
     const phone = normalizePhone(req.params.phone);
     const chatJid = typeof req.body?.chatJid === "string" ? req.body.chatJid.trim() || null : null;
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
 
     if (!phone && !chatJid) {
       return res.status(400).json({ error: "Phone or chat JID is required." });
@@ -325,6 +378,7 @@ app.post("/conversations/:phone/read", requireAuth, bindAuthenticatedWhatsAppOwn
 
     await clearConversationUnreadCount({
       owner_user_id: req.user.sub,
+      whatsapp_account_id: whatsappAccountId,
       phone,
       chat_jid: chatJid
     });
@@ -340,6 +394,7 @@ app.delete("/conversations/:phone", requireAuth, bindAuthenticatedWhatsAppOwner,
   try {
     const phone = normalizePhone(req.params.phone);
     const chatJid = typeof req.body?.chatJid === "string" ? req.body.chatJid.trim() || null : null;
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
 
     if (!phone && !chatJid) {
       return res.status(400).json({ error: "Phone or chat JID is required." });
@@ -347,6 +402,7 @@ app.delete("/conversations/:phone", requireAuth, bindAuthenticatedWhatsAppOwner,
 
     const result = await deleteConversation({
       owner_user_id: req.user.sub,
+      whatsapp_account_id: whatsappAccountId,
       phone,
       chat_jid: chatJid
     });
@@ -397,9 +453,9 @@ app.delete("/messages/:messageId", requireAuth, bindAuthenticatedWhatsAppOwner, 
 app.get("/messages/by-id/:contact_id", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const contactId = req.params.contact_id;
-    // You need to implement getMessagesByContactId in supabase.js
     const chatJid = typeof req.query?.chatJid === "string" ? req.query.chatJid.trim() || null : null;
-    const messages = await getMessagesByContactId(contactId, req.user.sub, chatJid);
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
+    const messages = await getMessagesByContactId(contactId, req.user.sub, chatJid, whatsappAccountId);
     return res.json(messages);
   } catch (error) {
     console.error("Failed to fetch messages by contact_id:", error);
@@ -411,7 +467,8 @@ app.get("/messages/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (
   try {
     const phone = normalizePhone(req.params.phone);
     const chatJid = typeof req.query?.chatJid === "string" ? req.query.chatJid.trim() || null : null;
-    const messages = await getMessagesByPhone(phone, req.user.sub, chatJid);
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
+    const messages = await getMessagesByPhone(phone, req.user.sub, chatJid, whatsappAccountId);
     return res.json(messages);
   } catch (error) {
     console.error("Failed to fetch messages:", error);
@@ -428,17 +485,23 @@ app.get("/customers", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, r
     const pageSize = Number(req.query.pageSize) || 10;
     const limit = pageSize;
     const offset = (page - 1) * pageSize;
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
     // Get paginated data
     const data = await getCustomers({
       owner_user_id: req.user.sub,
+      whatsapp_account_id: whatsappAccountId,
       limit,
       offset
     });
     // Get total count (for pagination)
-    const { count, error: countError } = await require("./supabase").supabase
+    let countQuery = require("./supabase").supabase
       .from("customers")
       .select("*", { count: "exact", head: true })
       .eq("owner_user_id", req.user.sub);
+    if (whatsappAccountId) {
+      countQuery = countQuery.eq("whatsapp_account_id", whatsappAccountId);
+    }
+    const { count, error: countError } = await countQuery;
     if (countError) throw countError;
     res.json({ data, total: count || 0 });
   } catch (error) {
@@ -449,8 +512,8 @@ app.get("/customers", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, r
 app.get("/customers/by-id/:contact_id", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const contactId = req.params.contact_id;
-    // You need to implement getCustomerByContactId in supabase.js
-    const customer = await getCustomerByContactId(contactId, req.user.sub);
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
+    const customer = await getCustomerByContactId(contactId, req.user.sub, whatsappAccountId);
     if (!customer) {
       return res.status(404).json({ error: "Customer not found." });
     }
@@ -460,6 +523,7 @@ app.get("/customers/by-id/:contact_id", requireAuth, bindAuthenticatedWhatsAppOw
     if (profile.profilePictureUrl || profile.about) {
       await upsertCustomer({
         owner_user_id: req.user.sub,
+        whatsapp_account_id: whatsappAccountId,
         phone: customer.phone,
         chat_jid: customer.chat_jid || null,
         profile_picture_url: profile.profilePictureUrl,
@@ -485,13 +549,15 @@ app.get("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
   try {
     const phone = normalizePhone(req.params.phone);
     const chatJid = typeof req.query?.chatJid === "string" ? req.query.chatJid.trim() || null : null;
-    const customer = await getCustomerInsights(phone, req.user.sub, chatJid);
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
+    const customer = await getCustomerInsights(phone, req.user.sub, chatJid, whatsappAccountId);
     const profile = await getContactProfile(phone, customer.chat_jid || chatJid || null);
 
     // Update DB cache if we got live data from WhatsApp
     if (profile.profilePictureUrl || profile.about) {
       await upsertCustomer({
         owner_user_id: req.user.sub,
+        whatsapp_account_id: whatsappAccountId,
         phone,
         chat_jid: customer.chat_jid || chatJid || null,
         profile_picture_url: profile.profilePictureUrl,
@@ -518,6 +584,7 @@ app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
     const phone = normalizePhone(req.params.phone);
     const { status, notes } = req.body;
     const chatJid = typeof req.body?.chatJid === "string" ? req.body.chatJid.trim() || null : null;
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
 
     if (!phone && !chatJid) {
       return res.status(400).json({ error: "Phone or chat JID is required." });
@@ -529,13 +596,14 @@ app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
 
     await upsertCustomer({
       owner_user_id: req.user.sub,
+      whatsapp_account_id: whatsappAccountId,
       phone,
       chat_jid: chatJid,
       status,
       notes: typeof notes === "string" ? notes : ""
     });
 
-    const customer = await getCustomerInsights(phone, req.user.sub, chatJid);
+    const customer = await getCustomerInsights(phone, req.user.sub, chatJid, whatsappAccountId);
     const profile = await getContactProfile(phone, customer.chat_jid || chatJid || null);
 
     return res.json({
@@ -553,12 +621,13 @@ app.get("/customers/:phone/sales-items", requireAuth, bindAuthenticatedWhatsAppO
   try {
     const phone = normalizePhone(req.params.phone);
     const chatJid = typeof req.query?.chatJid === "string" ? req.query.chatJid.trim() || null : null;
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
 
     if (!phone && !chatJid) {
       return res.status(400).json({ error: "Phone or chat JID is required." });
     }
 
-    const items = await getCustomerSalesItems(phone, req.user.sub, chatJid);
+    const items = await getCustomerSalesItems(phone, req.user.sub, chatJid, whatsappAccountId);
     return res.json(items);
   } catch (error) {
     console.error("Failed to fetch customer sales items:", error);
@@ -568,7 +637,8 @@ app.get("/customers/:phone/sales-items", requireAuth, bindAuthenticatedWhatsAppO
 
 app.get("/sales-items", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
-    const items = await getAllCustomerSalesItems(req.user.sub);
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
+    const items = await getAllCustomerSalesItems(req.user.sub, whatsappAccountId);
     return res.json(items);
   } catch (error) {
     console.error("Failed to fetch sales items:", error);
@@ -586,6 +656,7 @@ app.post("/customers/:phone/sales-items", requireAuth, bindAuthenticatedWhatsApp
     const packageName = String(req.body?.packageName || "").trim();
     const price = Number(req.body?.price);
     const quantity = Number(req.body?.quantity);
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
 
     if (!phone && !chatJid) {
       return res.status(400).json({ error: "Phone or chat JID is required." });
@@ -611,17 +682,19 @@ app.post("/customers/:phone/sales-items", requireAuth, bindAuthenticatedWhatsApp
       return res.status(400).json({ error: "Quantity must be a whole number greater than 0." });
     }
 
-    const customer = await getCustomerByPhone(phone, req.user.sub, chatJid);
+    const customer = await getCustomerByPhone(phone, req.user.sub, chatJid, whatsappAccountId);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
 
     await upsertCustomer({
       owner_user_id: req.user.sub,
+      whatsapp_account_id: whatsappAccountId,
       phone,
       chat_jid: resolvedChatJid
     });
 
     const item = await createCustomerSalesItem({
       owner_user_id: req.user.sub,
+      whatsapp_account_id: whatsappAccountId,
       message_id: messageId,
       phone,
       chat_jid: resolvedChatJid,
@@ -649,6 +722,7 @@ app.put("/customers/:phone/sales-items/:itemId", requireAuth, bindAuthenticatedW
     const packageName = String(req.body?.packageName || "").trim();
     const price = Number(req.body?.price);
     const quantity = Number(req.body?.quantity);
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
 
     if (!phone && !chatJid) {
       return res.status(400).json({ error: "Phone or chat JID is required." });
@@ -674,11 +748,12 @@ app.put("/customers/:phone/sales-items/:itemId", requireAuth, bindAuthenticatedW
       return res.status(400).json({ error: "Quantity must be a whole number greater than 0." });
     }
 
-    const customer = await getCustomerByPhone(phone, req.user.sub, chatJid);
+    const customer = await getCustomerByPhone(phone, req.user.sub, chatJid, whatsappAccountId);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
 
     const item = await updateCustomerSalesItem({
       owner_user_id: req.user.sub,
+      whatsapp_account_id: whatsappAccountId,
       item_id: itemId,
       phone,
       chat_jid: resolvedChatJid,
@@ -700,24 +775,27 @@ app.post("/send", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) 
   try {
     const { phone, message, chatJid } = req.body;
     const normalizedPhone = normalizePhone(phone);
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
 
     if ((!normalizedPhone && !chatJid) || !message) {
       return res.status(400).json({ error: "Message and a phone or chat JID are required." });
     }
 
-    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub, chatJid || null);
+    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub, chatJid || null, whatsappAccountId);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
 
     const result = await sendMessageToPhone(normalizedPhone, message, resolvedChatJid);
 
     await upsertCustomer({
       owner_user_id: req.user.sub,
+      whatsapp_account_id: whatsappAccountId,
       phone: normalizedPhone,
       chat_jid: resolvedChatJid
     });
 
     const savedMessage = await saveMessage({
       owner_user_id: req.user.sub,
+      whatsapp_account_id: whatsappAccountId,
       phone: normalizedPhone,
       chat_jid: resolvedChatJid,
       wa_message_id: result?.key?.id || null,
@@ -740,12 +818,13 @@ app.post("/send/attachment", requireAuth, bindAuthenticatedWhatsAppOwner, upload
     const normalizedPhone = normalizePhone(req.body.phone);
     const { chatJid, caption } = req.body;
     const file = req.file;
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
 
     if ((!normalizedPhone && !chatJid) || !file) {
       return res.status(400).json({ error: "File and a phone or chat JID are required." });
     }
 
-    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub, chatJid || null);
+    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub, chatJid || null, whatsappAccountId);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
     const result = await sendAttachmentToPhone({
       phone: normalizedPhone,
@@ -758,6 +837,7 @@ app.post("/send/attachment", requireAuth, bindAuthenticatedWhatsAppOwner, upload
 
     await upsertCustomer({
       owner_user_id: req.user.sub,
+      whatsapp_account_id: whatsappAccountId,
       phone: normalizedPhone,
       chat_jid: resolvedChatJid
     });
@@ -768,6 +848,7 @@ app.post("/send/attachment", requireAuth, bindAuthenticatedWhatsAppOwner, upload
 
     const savedMessage = await saveMessage({
       owner_user_id: req.user.sub,
+      whatsapp_account_id: whatsappAccountId,
       phone: normalizedPhone,
       chat_jid: resolvedChatJid,
       wa_message_id: result?.key?.id || null,
@@ -793,12 +874,13 @@ app.post("/send/location", requireAuth, bindAuthenticatedWhatsAppOwner, async (r
   try {
     const normalizedPhone = normalizePhone(req.body.phone);
     const { chatJid, latitude, longitude, name, address } = req.body;
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
 
     if ((!normalizedPhone && !chatJid) || latitude === undefined || longitude === undefined) {
       return res.status(400).json({ error: "Latitude, longitude, and a phone or chat JID are required." });
     }
 
-    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub, chatJid || null);
+    const customer = await getCustomerByPhone(normalizedPhone, req.user.sub, chatJid || null, whatsappAccountId);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
     const result = await sendLocationToPhone({
       phone: normalizedPhone,
@@ -811,6 +893,7 @@ app.post("/send/location", requireAuth, bindAuthenticatedWhatsAppOwner, async (r
 
     await upsertCustomer({
       owner_user_id: req.user.sub,
+      whatsapp_account_id: whatsappAccountId,
       phone: normalizedPhone,
       chat_jid: resolvedChatJid
     });
@@ -818,6 +901,7 @@ app.post("/send/location", requireAuth, bindAuthenticatedWhatsAppOwner, async (r
     const locationName = String(name || address || `${latitude}, ${longitude}`).trim();
     const savedMessage = await saveMessage({
       owner_user_id: req.user.sub,
+      whatsapp_account_id: whatsappAccountId,
       phone: normalizedPhone,
       chat_jid: resolvedChatJid,
       wa_message_id: result?.key?.id || null,
