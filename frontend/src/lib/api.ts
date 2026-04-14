@@ -12,8 +12,7 @@ export const CUSTOMER_STATUS_LABELS: Record<CustomerStatus, string> = {
   closed_lost: "Close Lost"
 };
 
-// Explicitly export types/constants for use in other files
-export type { CustomerStatus };
+
 
 export type AuthResponse = {
   token: string;
@@ -367,17 +366,8 @@ export const api = {
    * @param params { page, pageSize, search }
    * @returns { data: Customer[], total: number }
    */
-  getCustomers(params: { page?: number; pageSize?: number; search?: string }, token?: string) {
-    const urlParams = new URLSearchParams();
-    if (params.page !== undefined) urlParams.set("page", String(params.page));
-    if (params.pageSize !== undefined) urlParams.set("pageSize", String(params.pageSize));
-    if (params.search) urlParams.set("search", params.search);
-    return request<{ data: Customer[]; total: number }>(
-      `/customers${urlParams.size ? `?${urlParams.toString()}` : ""}`,
-      {},
-      token
-    );
-  },
+  
+  
   markConversationRead(phone: string, token: string, chatJid?: string | null) {
     return request<{ success: boolean }>(
       `/conversations/${phone}/read`,
