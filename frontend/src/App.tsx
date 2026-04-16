@@ -94,7 +94,7 @@ function buildSelectedWhatsAppStatus(
 
 function buildAccountScopedCacheKey(phone: string, chatJid?: string | null, whatsappAccountId?: string | null) {
   const conversationId = getConversationIdentifier(phone, chatJid) || phone;
-  return `${whatsappAccountId || "default"}::${conversationId}`;
+  return `${conversationId}`;
 }
 
 function App() {
@@ -604,7 +604,7 @@ function App() {
           chat_jid: nextCustomer.chat_jid || null,
           status: nextCustomer.status,
           notes: nextCustomer.notes,
-          whatsappAccountId: selectedWhatsAppAccountId
+          whatsappAccountId: activeConversationSourceAccountId
         },
         token
       );
@@ -641,7 +641,7 @@ function App() {
         {
           ...payload,
           chatJid: activeCustomerChatJid,
-          whatsappAccountId: selectedWhatsAppAccountId
+          whatsappAccountId: activeConversationSourceAccountId
         },
         token
       );
@@ -671,7 +671,7 @@ function App() {
           chat_jid: activeCustomerChatJid,
           status: payload.status,
           notes: selectedNotes,
-          whatsappAccountId: selectedWhatsAppAccountId
+          whatsappAccountId: activeConversationSourceAccountId
         },
         token
       );
@@ -712,7 +712,7 @@ function App() {
         {
           ...payload,
           chatJid: activeCustomerChatJid,
-          whatsappAccountId: selectedWhatsAppAccountId
+          whatsappAccountId: activeConversationSourceAccountId
         },
         token
       );
@@ -742,7 +742,7 @@ function App() {
           chat_jid: activeCustomerChatJid,
           status: payload.status,
           notes: selectedNotes,
-          whatsappAccountId: selectedWhatsAppAccountId
+          whatsappAccountId: activeConversationSourceAccountId
         },
         token
       );
@@ -982,6 +982,12 @@ function App() {
   );
   const activeChatJid = selectedConversation?.chatJid || customerDraft?.chat_jid || null;
   const activeContactChatJid = selectedContact?.chat_jid || customerDraft?.chat_jid || null;
+  const activeConversationSourceAccountId =
+    selectedConversation?.whatsappAccountId || customerDraft?.whatsapp_account_id || selectedContact?.whatsapp_account_id || null;
+  const activeConversationSourceState = String(selectedConversation?.sourceConnectionState || "").trim().toLowerCase();
+  const activeConversationCanSend = !selectedConversation || !activeConversationSourceState || activeConversationSourceState === "open";
+  const activeConversationSourceLabel =
+    selectedConversation?.sourceDisplayName || selectedConversation?.sourceAccountPhone || "the original WhatsApp source";
   const activeSelectionId = activeDashboardTab === "contacts" ? selectedContactConversationId : selectedPhone;
 
   useEffect(() => {
@@ -1094,7 +1100,7 @@ function App() {
     }
     loadWhatsAppAccounts(token);
     loadConversations(token);
-  }, [dashboardSessionId, token]);
+  }, [dashboardSessionId, selectedWhatsAppAccountId, token]);
 
   useEffect(() => {
     if (!token || !dashboardSessionId) {
@@ -2120,9 +2126,11 @@ function App() {
                 <div className="order-2 lg:order-none lg:col-start-2 lg:col-end-3 xl:col-start-3 xl:col-end-4 xl:min-h-0 xl:h-full">
                   {activeDashboardTab === "inbox" ? (
                     <ChatWindow
+                      canSendMessages={activeConversationCanSend}
                       contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
                       customerPanelProps={customerPanelProps}
                       chatJid={selectedConversation?.chatJid || customerDraft?.chat_jid || null}
+                      disconnectedSourceLabel={activeConversationCanSend ? null : activeConversationSourceLabel}
                       deletingMessageId={deletingMessageId}
                       loading={loadingMessages}
                       loadingSalesLeadItems={loadingSalesLeadItems}

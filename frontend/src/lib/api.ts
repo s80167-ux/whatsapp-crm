@@ -30,6 +30,10 @@ export type DashboardSessionResponse = {
 export type Conversation = {
   phone: string;
   chatJid: string | null;
+  whatsappAccountId?: string | null;
+  sourceAccountPhone?: string | null;
+  sourceDisplayName?: string | null;
+  sourceConnectionState?: string | null;
   contactName: string | null;
   profilePictureUrl?: string | null;
   lastMessage: string;

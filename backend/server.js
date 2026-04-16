@@ -571,13 +571,14 @@ app.get("/customers/by-id/:contact_id", requireAuth, bindAuthenticatedWhatsAppOw
     if (!customer) {
       return res.status(404).json({ error: "Customer not found." });
     }
-    const profile = await getContactProfile(req.user.sub, whatsappAccountId, customer.phone, customer.chat_jid || null);
+    const sourceWhatsAppAccountId = customer.whatsapp_account_id || null;
+    const profile = await getContactProfile(req.user.sub, sourceWhatsAppAccountId, customer.phone, customer.chat_jid || null);
 
     // Update DB cache if we got live data from WhatsApp
     if (profile.profilePictureUrl || profile.about) {
       await upsertCustomer({
         owner_user_id: req.user.sub,
-        whatsapp_account_id: whatsappAccountId,
+        whatsapp_account_id: sourceWhatsAppAccountId,
         phone: customer.phone,
         chat_jid: customer.chat_jid || null,
         profile_picture_url: profile.profilePictureUrl,
@@ -605,13 +606,14 @@ app.get("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
     const chatJid = typeof req.query?.chatJid === "string" ? req.query.chatJid.trim() || null : null;
     const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
     const customer = await getCustomerInsights(phone, req.user.sub, chatJid, whatsappAccountId);
-    const profile = await getContactProfile(req.user.sub, whatsappAccountId, phone, customer.chat_jid || chatJid || null);
+    const sourceWhatsAppAccountId = customer.whatsapp_account_id || null;
+    const profile = await getContactProfile(req.user.sub, sourceWhatsAppAccountId, phone, customer.chat_jid || chatJid || null);
 
     // Update DB cache if we got live data from WhatsApp
     if (profile.profilePictureUrl || profile.about) {
       await upsertCustomer({
         owner_user_id: req.user.sub,
-        whatsapp_account_id: whatsappAccountId,
+        whatsapp_account_id: sourceWhatsAppAccountId,
         phone,
         chat_jid: customer.chat_jid || chatJid || null,
         profile_picture_url: profile.profilePictureUrl,

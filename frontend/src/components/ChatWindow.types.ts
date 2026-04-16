@@ -14,6 +14,8 @@ export interface ChatWindowProps {
   contactName: string | null;
   phone: string | null;
   chatJid: string | null;
+  canSendMessages?: boolean;
+  disconnectedSourceLabel?: string | null;
   profilePictureUrl?: string | null;
   messages: Message[];
   deletingMessageId?: string | null;

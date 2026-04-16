@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CUSTOMER_STATUS_LABELS, type Conversation, type CustomerStatus, type WhatsAppAccount } from "../lib/api";
 import { getConversationIdentifier, getDisplayName, getDisplayPhone, getResolvedPhone, formatPhoneDisplay } from "../lib/display";
 
@@ -87,6 +87,10 @@ function getAccountStateBadgeClasses(value: string | null | undefined) {
   }
 }
 
+function getConversationSourceLabel(conversation: Conversation) {
+  return conversation.sourceDisplayName || conversation.sourceAccountPhone || "Historical source";
+}
+
 export function ChatList({
   activeView,
   conversations,
@@ -105,6 +109,7 @@ export function ChatList({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "today" | "recent">("all");
   const [page, setPage] = useState(1);
+  const previousConversationOrderRef = useRef<string[]>([]);
   const visibleWhatsAppAccounts = useMemo(
     () =>
       [...whatsAppAccounts].sort(
@@ -123,7 +128,7 @@ export function ChatList({
   const filteredConversations = useMemo(() => {
     const now = new Date();
 
-    return conversations
+    const sortedConversations = conversations
       .filter((conversation) => {
         const resolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid) || "";
         const conversationId = getConversationIdentifier(conversation.phone, conversation.chatJid) || "";
@@ -150,7 +155,32 @@ export function ChatList({
         return true;
       })
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [conversations, filter, query]);
+
+    if (!selectedPhone) {
+      return sortedConversations;
+    }
+
+    const selectedIndex = sortedConversations.findIndex(
+      (conversation) => getConversationIdentifier(conversation.phone, conversation.chatJid) === selectedPhone
+    );
+
+    if (selectedIndex === -1) {
+      return sortedConversations;
+    }
+
+    const previousIndex = previousConversationOrderRef.current.indexOf(selectedPhone);
+
+    if (previousIndex === -1 || previousIndex === selectedIndex) {
+      return sortedConversations;
+    }
+
+    const nextConversations = [...sortedConversations];
+    const [selectedConversation] = nextConversations.splice(selectedIndex, 1);
+    const targetIndex = Math.min(previousIndex, nextConversations.length);
+    nextConversations.splice(targetIndex, 0, selectedConversation);
+
+    return nextConversations;
+  }, [conversations, filter, query, selectedPhone]);
 
   const totalPages = Math.max(1, Math.ceil(filteredConversations.length / CONVERSATIONS_PAGE_SIZE));
   const paginatedConversations = filteredConversations.slice((page - 1) * CONVERSATIONS_PAGE_SIZE, page * CONVERSATIONS_PAGE_SIZE);
@@ -165,13 +195,19 @@ export function ChatList({
     }
   }, [page, totalPages]);
 
+  useEffect(() => {
+    previousConversationOrderRef.current = filteredConversations
+      .map((conversation) => getConversationIdentifier(conversation.phone, conversation.chatJid))
+      .filter((conversationId): conversationId is string => Boolean(conversationId));
+  }, [filteredConversations]);
+
   return (
     <section className="glass-panel flex h-full min-h-[220px] flex-col overflow-hidden p-3 sm:min-h-[420px] sm:p-4 xl:h-[calc(100dvh-24px)] xl:min-h-[calc(100dvh-24px)]">
       <div className="sticky top-0 z-10 -mx-3 -mt-3 mb-3 border-b border-white/60 bg-[rgba(248,249,250,0.94)] px-3 py-3 backdrop-blur sm:-mx-4 sm:-mt-4 sm:px-4 sm:py-4">
         <div className="mb-3 rounded-[22px] border border-white/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(243,247,246,0.92))] p-3 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-whatsapp-muted">Inbox source</p>
+              <p className="text-[10px] uppercase tracking-[0.2em] text-whatsapp-muted">Send replies with</p>
               <div className="mt-1 flex items-center gap-2">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[#e7f5ee] text-[#0f8f63] shadow-sm">
                   <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
@@ -276,12 +312,12 @@ export function ChatList({
                   ? activeView === "inbox"
                     ? "WhatsApp is connected, but no chats have been synced yet."
                     : `No conversations match the ${activeView} view yet.`
-                  : "Connect WhatsApp first to start syncing conversations."}
+                  : "No historical chats are available yet."}
               </p>
               <p className="mt-2 max-w-xs">
                 {whatsAppConnected
                   ? "Send or receive one WhatsApp message, then press Refresh to pull it into the dashboard."
-                  : "Use the connection card above to link your device and keep this page open while the session starts."}
+                  : "Previously synced chats stay here even if a number disconnects. Connect a WhatsApp source when you want to sync new activity."}
               </p>
             </>
           ) : (
@@ -304,7 +340,7 @@ export function ChatList({
             return (
               <div key={conversationKey} className="group relative">
                 <button
-                  className={`relative w-full max-w-full min-w-0 overflow-hidden rounded-lg border px-3 py-3 text-left transition-all duration-300 sm:px-4 sm:py-3 ${
+                  className={`relative w-full max-w-full min-w-0 overflow-hidden rounded-lg border px-3 py-3 text-left transition-colors duration-200 sm:px-4 sm:py-3 ${
                     active
                       ? "border-transparent bg-[#e9edef] shadow-none"
                       : "border-transparent bg-white hover:bg-[#f5f6f6] shadow-none"
@@ -384,6 +420,21 @@ export function ChatList({
                       <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors sm:text-[11px] ${active ? "text-whatsapp-dark/80" : "text-whatsapp-muted"}`}>
                         {formatPhoneDisplay(conversation.phone, conversation.chatJid)}
                       </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        {conversation.sourceConnectionState ? (
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getAccountStateBadgeClasses(conversation.sourceConnectionState)}`}>
+                            {getConversationSourceLabel(conversation)} - {formatAccountState(conversation.sourceConnectionState)}
+                          </span>
+                        ) : conversation.sourceAccountPhone || conversation.sourceDisplayName ? (
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
+                            {getConversationSourceLabel(conversation)}
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
+                            Historical source unavailable
+                          </span>
+                        )}
+                      </div>
                       <p className={`mt-1.5 hidden truncate text-xs leading-4 transition-colors md:block ${active ? "text-ink/80" : "text-whatsapp-muted group-hover:text-ink/80"}`}>
                         {conversation.lastMessage}
                       </p>

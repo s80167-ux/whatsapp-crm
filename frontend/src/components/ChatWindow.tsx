@@ -485,6 +485,8 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
     contactName,
     phone,
     chatJid,
+    canSendMessages = true,
+    disconnectedSourceLabel = null,
     profilePictureUrl,
     messages,
     deletingMessageId = null,
@@ -571,6 +573,7 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
   const visibleMessages = effectiveShowAllMessages ? baseMessages : latestMessages;
   const hiddenMessageCount = Math.max(baseMessages.length - 6, 0);
   const canRegisterLead = Boolean(phone && onCreateSalesLeadItem);
+  const sendDisabled = Boolean(sending || !canSendMessages);
 
   function resetEditSalesLeadForm() {
     setEditingSalesLeadItemId(null);
@@ -1160,7 +1163,7 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
             placeholder={attachmentTab === "sticker" ? "Optional note for CRM preview..." : "Optional caption..."}
             value={attachmentCaption}
           />
-          <button className="primary-button" disabled={sending} onClick={handleSendSelectedAttachment} type="button">
+          <button className="primary-button" disabled={sendDisabled} onClick={handleSendSelectedAttachment} type="button">
             {sending ? "Sending..." : `Send ${attachmentTab === "image" ? "picture" : attachmentTab === "sticker" ? "sticker" : "document"}`}
           </button>
         </div>
@@ -1196,7 +1199,7 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
             <button className="secondary-button" disabled={resolvingLocation} onClick={handleSendCurrentLocation} type="button">
               {resolvingLocation ? "Getting location..." : "Use current location"}
             </button>
-            <button className="primary-button" disabled={sending} onClick={handleSendLocationClick} type="button">
+            <button className="primary-button" disabled={sendDisabled} onClick={handleSendLocationClick} type="button">
               {sending ? "Sending..." : "Send location"}
             </button>
           </div>
@@ -1281,6 +1284,11 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
             </div>
           ) : null}
         </div>
+        {!canSendMessages ? (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            This is a history-only thread. Replying is unavailable because {disconnectedSourceLabel || "the original WhatsApp source"} is offline.
+          </div>
+        ) : null}
       </div>
 
       {showCustomerProfile && customerPanelProps ? (
@@ -1538,7 +1546,7 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
                     <button
                       aria-label={expandedQuickReplyMessageId === item.id ? "Hide quick replies" : "Show quick replies"}
                       className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-whatsapp-deep disabled:cursor-not-allowed disabled:opacity-55"
-                      disabled={sending}
+                      disabled={sendDisabled}
                       onClick={() => handleToggleInlineQuickReplies(item.id)}
                       type="button"
                     >
@@ -1559,7 +1567,7 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
                     <button
                       aria-label={expandedEmojiMessageId === item.id ? "Hide emoji replies" : "Show emoji replies"}
                       className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-whatsapp-deep disabled:cursor-not-allowed disabled:opacity-55"
-                      disabled={sending}
+                      disabled={sendDisabled}
                       onClick={() => handleToggleInlineEmojis(item.id)}
                       type="button"
                     >
@@ -1576,7 +1584,7 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
                     <button
                       aria-label="Open attachments"
                       className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-whatsapp-deep disabled:cursor-not-allowed disabled:opacity-55"
-                      disabled={sending}
+                      disabled={sendDisabled}
                       onClick={() => handleToggleInlineAttachments(item.id)}
                       type="button"
                     >
@@ -1598,7 +1606,7 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
                       <button
                         aria-label={expandedLeadRegistrationMessageId === item.id ? "Hide sales lead registration" : "Show sales lead registration"}
                         className="icon-hover-trigger flex h-7 w-7 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted transition hover:text-whatsapp-deep disabled:cursor-not-allowed disabled:opacity-55"
-                        disabled={sending}
+                        disabled={sendDisabled}
                         onClick={() => {
                           setExpandedLeadRegistrationMessageId((current) => (current === item.id ? null : item.id));
                           setComposerError("");
@@ -1638,7 +1646,7 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
                           <button
                             key={`${item.id}-${reply.id}`}
                             className="quick-reply-chip shrink-0 border border-whatsapp-line bg-white px-3 py-1.5 text-[11px] font-medium text-whatsapp-muted transition hover:bg-whatsapp-soft hover:text-whatsapp-deep disabled:cursor-not-allowed disabled:opacity-55 sm:text-xs"
-                            disabled={sending}
+                            disabled={sendDisabled}
                             onClick={() => void handleSendQuickReplyClick(reply)}
                             type="button"
                           >
@@ -1654,7 +1662,7 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
                           <button
                             key={`${item.id}-${emoji}`}
                             className="icon-hover-trigger quick-reply-chip shrink-0 border border-whatsapp-line bg-white px-3 py-1.5 text-base leading-none text-whatsapp-deep transition hover:bg-whatsapp-soft disabled:cursor-not-allowed disabled:opacity-55"
-                            disabled={sending}
+                            disabled={sendDisabled}
                             onClick={() => handleSendInlineEmoji(emoji)}
                             type="button"
                           >
@@ -2101,15 +2109,19 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
             ref={chatInputRef}
             onChange={(event) => onChangeMessage(event.target.value)}
             onKeyDown={(event) => {
+              if (!canSendMessages) {
+                return;
+              }
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
                 onSend();
               }
             }}
-            placeholder="Type your reply..."
+            placeholder={canSendMessages ? "Type your reply..." : "Reply unavailable while this source is offline"}
             value={messageText}
+            disabled={!canSendMessages}
           />
-          <button className="primary-button min-w-[120px]" disabled={sending} onClick={onSend} type="button">
+          <button className="primary-button min-w-[120px]" disabled={sendDisabled} onClick={onSend} type="button">
             {sending ? "Sending..." : "Send"}
           </button>
           </div>

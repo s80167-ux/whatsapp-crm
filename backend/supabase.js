@@ -913,12 +913,12 @@ async function deleteMessage({ owner_user_id, message_id }) {
 async function getConversations(ownerUserId, whatsappAccountId = null) {
   let messageQuery = supabase
     .from("messages")
-    .select("phone, chat_jid, message, created_at, direction")
+    .select("phone, chat_jid, message, created_at, direction, whatsapp_account_id")
     .eq("owner_user_id", ownerUserId)
     .order("created_at", { ascending: false });
   let customerQuery = supabase
     .from("customers")
-    .select("phone, chat_jid, status, contact_name, notes, unread_count, profile_picture_url, updated_at")
+    .select("phone, chat_jid, status, contact_name, notes, unread_count, profile_picture_url, updated_at, whatsapp_account_id")
     .eq("owner_user_id", ownerUserId);
   let salesItemsQuery = supabase
     .from("customer_sales_items")
@@ -992,6 +992,22 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
     throw salesItemsError;
   }
 
+  let accountRows = [];
+  const { data: loadedAccounts, error: accountError } = await supabase
+    .from("whatsapp_accounts")
+    .select("id, account_phone, display_name, connection_state")
+    .eq("owner_user_id", ownerUserId);
+
+  if (!accountError) {
+    accountRows = loadedAccounts || [];
+  }
+
+  const accountMap = new Map(
+    accountRows
+      .filter((account) => account?.id)
+      .map((account) => [account.id, account])
+  );
+
   const customerMap = new Map();
   const customerChatJidMap = new Map();
   const statusCountsByPhone = new Map();
@@ -1051,10 +1067,16 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
     const activeStatuses = Object.entries(statusCounts)
       .filter(([, count]) => count > 0)
       .map(([status]) => status);
+    const sourceAccountId = matchedCustomer?.whatsapp_account_id || row.whatsapp_account_id || null;
+    const sourceAccount = sourceAccountId ? accountMap.get(sourceAccountId) || null : null;
 
     conversations.push({
       phone: resolvedPhone || matchedCustomer?.phone || row.phone || "",
       chatJid: matchedCustomer?.chat_jid || row.chat_jid || null,
+      whatsappAccountId: sourceAccountId,
+      sourceAccountPhone: sourceAccount?.account_phone || null,
+      sourceDisplayName: sourceAccount?.display_name || null,
+      sourceConnectionState: sourceAccount?.connection_state || null,
       contactName: matchedCustomer?.contact_name || null,
       profilePictureUrl: matchedCustomer?.profile_picture_url || null,
       lastMessage: row.message,
@@ -1082,10 +1104,16 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
     const activeStatuses = Object.entries(statusCounts)
       .filter(([, count]) => count > 0)
       .map(([status]) => status);
+    const sourceAccountId = customer.whatsapp_account_id || null;
+    const sourceAccount = sourceAccountId ? accountMap.get(sourceAccountId) || null : null;
 
     conversations.push({
       phone: resolvedPhone || customer.phone || "",
       chatJid: customer.chat_jid || null,
+      whatsappAccountId: sourceAccountId,
+      sourceAccountPhone: sourceAccount?.account_phone || null,
+      sourceDisplayName: sourceAccount?.display_name || null,
+      sourceConnectionState: sourceAccount?.connection_state || null,
       contactName: customer.contact_name || null,
       profilePictureUrl: customer.profile_picture_url || null,
       lastMessage: "No synced messages yet",
