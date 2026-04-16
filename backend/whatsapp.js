@@ -30,6 +30,7 @@ const HISTORY_CHATS_FILE = "hist_chats.json";
 const HISTORY_CONTACTS_FILE = "hist_contacts.json";
 const HISTORY_MESSAGES_FILE = "hist_messages.json";
 const HISTORY_CACHE_MAX_MESSAGES = 5000;
+const CONNECTING_RECOVERY_TIMEOUT_MS = 25000;
 
 function isExplicitAbsoluteAuthDir(value) {
   const rawValue = String(value || "").trim();
@@ -298,6 +299,7 @@ function getOrCreateSessionFromAccount(account) {
     pendingHistorySyncRequests: new Set(),
     reconnectTimer: null,
     fallbackSyncTimer: null,
+    connectingRecoveryTimer: null,
     initializingPromise: null
   };
 
@@ -319,19 +321,20 @@ function clearFallbackSyncTimer(session) {
   }
 }
 
+function clearConnectingRecoveryTimer(session) {
+  if (session.connectingRecoveryTimer) {
+    clearTimeout(session.connectingRecoveryTimer);
+    session.connectingRecoveryTimer = null;
+  }
+}
+
 function shouldIgnoreQrDowngrade(session) {
   const currentState = String(session.connectionState || "").trim().toLowerCase();
-  const lastConnectedAt = session.account?.last_connected_at ? new Date(session.account.last_connected_at).getTime() : 0;
-
-  if (currentState === "open") {
+  if (currentState === "open" && session.sock) {
     return true;
   }
 
-  if (!lastConnectedAt || Number.isNaN(lastConnectedAt)) {
-    return false;
-  }
-
-  return Date.now() - lastConnectedAt < 10 * 60 * 1000;
+  return false;
 }
 
 function safelyRunSocketTask(label, task) {
@@ -349,6 +352,7 @@ async function disposeSession(session, options = {}) {
 
   clearReconnectTimer(session);
   clearFallbackSyncTimer(session);
+  clearConnectingRecoveryTimer(session);
   for (const request of session.pendingHistorySyncRequests || []) {
     clearTimeout(request.timeout);
     request.resolve({
@@ -1051,6 +1055,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
     const { state, saveCreds } = await useMultiFileAuthState(session.authDir);
     const { version } = await fetchLatestBaileysVersion();
     clearFallbackSyncTimer(session);
+    clearConnectingRecoveryTimer(session);
 
     session.sock = makeWASocket({
       version,
@@ -1063,6 +1068,36 @@ async function initializeWhatsApp(ownerUserId, accountId) {
     });
     const activeSock = session.sock;
     const isCurrentSocket = () => session.sock === activeSock;
+
+    session.connectingRecoveryTimer = setTimeout(() => {
+      safelyRunSocketTask(`connecting-timeout:${session.accountId}`, async () => {
+        if (!isCurrentSocket() || session.connectionState !== "connecting") {
+          return;
+        }
+
+        console.warn(
+          `WhatsApp session ${session.accountId} stayed in connecting for more than ${CONNECTING_RECOVERY_TIMEOUT_MS}ms. Resetting for QR recovery.`
+        );
+
+        clearConnectingRecoveryTimer(session);
+        session.qrData = null;
+        session.sock = null;
+        session.historySyncObserved = false;
+        clearFallbackSyncTimer(session);
+
+        try {
+          if (activeSock?.end) {
+            activeSock.end(undefined);
+          }
+        } catch (error) {
+          console.warn(`Failed to close stalled WhatsApp socket for ${session.accountId}:`, error?.message || error);
+        }
+
+        session.connectionState = "disconnected";
+        await syncSessionAccountState(session, { connection_state: "disconnected" }).catch(() => {});
+        scheduleReconnect(session, { resetAuth: true });
+      });
+    }, CONNECTING_RECOVERY_TIMEOUT_MS);
 
     activeSock.ev.on("creds.update", () => {
       if (!isCurrentSocket()) {
@@ -1086,6 +1121,8 @@ async function initializeWhatsApp(ownerUserId, accountId) {
         }
 
         if (qr) {
+          clearConnectingRecoveryTimer(session);
+
           if (shouldIgnoreQrDowngrade(session)) {
             console.warn(`Ignoring QR update for recently connected account ${session.accountId}.`);
             return;
@@ -1097,6 +1134,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
         }
 
         if (connection === "open") {
+          clearConnectingRecoveryTimer(session);
           session.connectionState = "open";
           session.qrData = null;
           console.log(`WhatsApp (Baileys) is ready for account ${session.accountId}.`);
@@ -1154,6 +1192,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
             }
           }, 3000);
         } else if (connection === "close") {
+          clearConnectingRecoveryTimer(session);
           const statusCode =
             lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output.statusCode : undefined;
           session.qrData = null;
