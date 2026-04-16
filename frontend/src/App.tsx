@@ -123,7 +123,9 @@ function App() {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
+  const [selectedConversationChatJid, setSelectedConversationChatJid] = useState<string | null>(null);
   const [selectedContactConversationId, setSelectedContactConversationId] = useState<string | null>(null);
+  const [selectedContactChatJid, setSelectedContactChatJid] = useState<string | null>(null);
   const [activeMessageFilterId, setActiveMessageFilterId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -158,6 +160,23 @@ function App() {
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const activeWhatsAppAccountChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const conversationsRefreshTimerRef = useRef<number | null>(null);
+  const activeSelectionRef = useRef<{
+    dashboardTab: DashboardTab;
+    selectedPhone: string | null;
+    selectedConversationChatJid: string | null;
+    selectedContactConversationId: string | null;
+    selectedContactChatJid: string | null;
+    activeChatJid: string | null;
+    activeContactChatJid: string | null;
+  }>({
+    dashboardTab: "inbox",
+    selectedPhone: null,
+    selectedConversationChatJid: null,
+    selectedContactConversationId: null,
+    selectedContactChatJid: null,
+    activeChatJid: null,
+    activeContactChatJid: null
+  });
   const isSalesDashboard = activeDashboardTab === "sales";
 
   // Contacts dashboard state and logic
@@ -220,6 +239,7 @@ function App() {
     setUserEmail("");
     setConversations([]);
     setSelectedPhone(null);
+    setSelectedConversationChatJid(null);
     setActiveMessageFilterId(null);
     setMessages([]);
     setCustomerDraft(null);
@@ -228,6 +248,7 @@ function App() {
     setWhatsAppAccounts([]);
     setSelectedWhatsAppAccountId(null);
     setSelectedContactConversationId(null);
+    setSelectedContactChatJid(null);
   }
 
   function persistDashboardSession(nextSessionId: string) {
@@ -312,7 +333,8 @@ function App() {
     }
 
     setSelectedContactConversationId(selectedPhone);
-  }, [activeDashboardTab, selectedContactConversationId, selectedPhone]);
+    setSelectedContactChatJid(selectedConversationChatJid);
+  }, [activeDashboardTab, selectedContactConversationId, selectedConversationChatJid, selectedPhone]);
 
   useEffect(() => {
     setApiUnauthorizedHandler((error) => handleSessionRevoked(error.message));
@@ -450,6 +472,23 @@ function App() {
     try {
       const data = await api.getMessages(phone, activeToken, chatJid, selectedWhatsAppAccountId);
       messagesCacheRef.current[cacheKey] = data;
+      const activeSelection = activeSelectionRef.current;
+
+      if (activeSelection.dashboardTab !== "inbox" || activeSelection.selectedPhone !== phone) {
+        return;
+      }
+
+      const requestedChatJid = String(chatJid || "").trim();
+      const currentChatJid = String(activeSelection.activeChatJid || "").trim();
+      const selectedChatJid = String(activeSelection.selectedConversationChatJid || "").trim();
+
+      if (
+        (requestedChatJid && currentChatJid && requestedChatJid !== currentChatJid) ||
+        (requestedChatJid && selectedChatJid && requestedChatJid !== selectedChatJid)
+      ) {
+        return;
+      }
+
       setMessages(data);
     } catch (error) {
       if (!silent) {
@@ -471,9 +510,28 @@ function App() {
 
     try {
       const data = await api.getCustomer(phone, activeToken, chatJid, selectedWhatsAppAccountId);
-      setCustomerDraft(data);
-      if (activeDashboardTab === "inbox") {
-        setSelectedPhone((current) => data.phone || current);
+      const activeSelection = activeSelectionRef.current;
+      const isInboxTarget = activeSelection.dashboardTab === "inbox" && activeSelection.selectedPhone === phone;
+      const isContactTarget =
+        activeSelection.dashboardTab === "contacts" && activeSelection.selectedContactConversationId === phone;
+
+      if (isInboxTarget || isContactTarget) {
+        const requestedChatJid = String(chatJid || "").trim();
+        const currentChatJid = String(
+          activeSelection.dashboardTab === "contacts" ? activeSelection.activeContactChatJid : activeSelection.activeChatJid
+        ).trim();
+        const selectedChatJid = String(
+          activeSelection.dashboardTab === "contacts" ? activeSelection.selectedContactChatJid : activeSelection.selectedConversationChatJid
+        ).trim();
+
+        if (
+          !requestedChatJid ||
+          (!currentChatJid && !selectedChatJid) ||
+          requestedChatJid === currentChatJid ||
+          requestedChatJid === selectedChatJid
+        ) {
+          setCustomerDraft(data);
+        }
       }
       updateConversationStatus({
         phone: data.phone,
@@ -496,6 +554,30 @@ function App() {
 
     try {
       const data = await api.getCustomerSalesItems(phone, activeToken, chatJid, selectedWhatsAppAccountId);
+      const activeSelection = activeSelectionRef.current;
+      const isInboxTarget = activeSelection.dashboardTab === "inbox" && activeSelection.selectedPhone === phone;
+      const isContactTarget =
+        activeSelection.dashboardTab === "contacts" && activeSelection.selectedContactConversationId === phone;
+
+      if (!isInboxTarget && !isContactTarget) {
+        return;
+      }
+
+      const requestedChatJid = String(chatJid || "").trim();
+      const currentChatJid = String(
+        activeSelection.dashboardTab === "contacts" ? activeSelection.activeContactChatJid : activeSelection.activeChatJid
+      ).trim();
+      const selectedChatJid = String(
+        activeSelection.dashboardTab === "contacts" ? activeSelection.selectedContactChatJid : activeSelection.selectedConversationChatJid
+      ).trim();
+
+      if (
+        (requestedChatJid && currentChatJid && requestedChatJid !== currentChatJid) ||
+        (requestedChatJid && selectedChatJid && requestedChatJid !== selectedChatJid)
+      ) {
+        return;
+      }
+
       setSalesLeadItems(data);
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to load customer sales items.");
@@ -549,6 +631,7 @@ function App() {
 
       if (selectedPhone && conversationId && selectedPhone === conversationId) {
         setSelectedPhone(null);
+        setSelectedConversationChatJid(null);
         setMessages([]);
         setCustomerDraft(null);
         setSalesLeadItems([]);
@@ -1036,12 +1119,36 @@ function App() {
   }, [conversations, selectedWhatsAppAccount]);
 
   const selectedConversation = useMemo(
-    () => leadConversations.find((conversation) => getConversationIdentifier(conversation.phone, conversation.chatJid) === selectedPhone) || null,
-    [leadConversations, selectedPhone]
+    () =>
+      leadConversations.find((conversation) => {
+        const conversationId = getConversationIdentifier(conversation.phone, conversation.chatJid);
+        if (conversationId !== selectedPhone) {
+          return false;
+        }
+
+        if (selectedConversationChatJid) {
+          return String(conversation.chatJid || "").trim() === selectedConversationChatJid;
+        }
+
+        return true;
+      }) || null,
+    [leadConversations, selectedConversationChatJid, selectedPhone]
   );
   const selectedContact = useMemo(
-    () => contacts.find((contact) => getConversationIdentifier(contact.phone, contact.chat_jid) === selectedContactConversationId) || null,
-    [contacts, selectedContactConversationId]
+    () =>
+      contacts.find((contact) => {
+        const conversationId = getConversationIdentifier(contact.phone, contact.chat_jid);
+        if (conversationId !== selectedContactConversationId) {
+          return false;
+        }
+
+        if (selectedContactChatJid) {
+          return String(contact.chat_jid || "").trim() === selectedContactChatJid;
+        }
+
+        return true;
+      }) || null,
+    [contacts, selectedContactChatJid, selectedContactConversationId]
   );
   const activeChatJid = selectedConversation?.chatJid || customerDraft?.chat_jid || null;
   const activeContactChatJid = selectedContact?.chat_jid || customerDraft?.chat_jid || null;
@@ -1065,6 +1172,18 @@ function App() {
   const activeConversationSourceLabel =
     selectedConversation?.sourceDisplayName || selectedConversation?.sourceAccountPhone || "the original WhatsApp source";
   const activeSelectionId = activeDashboardTab === "contacts" ? selectedContactConversationId : selectedPhone;
+
+  useEffect(() => {
+    activeSelectionRef.current = {
+      dashboardTab: activeDashboardTab,
+      selectedPhone,
+      selectedConversationChatJid,
+      selectedContactConversationId,
+      selectedContactChatJid,
+      activeChatJid,
+      activeContactChatJid
+    };
+  }, [activeChatJid, activeContactChatJid, activeDashboardTab, selectedContactChatJid, selectedContactConversationId, selectedConversationChatJid, selectedPhone]);
 
   useEffect(() => {
     let mounted = true;
@@ -1265,7 +1384,9 @@ function App() {
     setSalesLeadItems([]);
     setAllSalesLeadItems([]);
     setSelectedPhone(null);
+    setSelectedConversationChatJid(null);
     setSelectedContactConversationId(null);
+    setSelectedContactChatJid(null);
 
     if (!token || !dashboardSessionId) {
       return;
@@ -1522,6 +1643,7 @@ function App() {
 
     if (!visibleConversations.length) {
       setSelectedPhone(null);
+      setSelectedConversationChatJid(null);
       return;
     }
 
@@ -1530,6 +1652,7 @@ function App() {
     }
 
     setSelectedPhone(getConversationIdentifier(visibleConversations[0].phone, visibleConversations[0].chatJid));
+    setSelectedConversationChatJid(visibleConversations[0].chatJid || null);
   }, [selectedPhone, visibleConversations]);
 
   async function handleAuthSubmit() {
@@ -2103,6 +2226,7 @@ function App() {
                 setActiveDashboardTab("inbox");
                 setActiveMessageFilterId(messageId || null);
                 setSelectedPhone(nextConversationId);
+                setSelectedConversationChatJid(fallbackConversation?.chatJid || chatJid || null);
               }}
               onRefresh={() => {
                 if (!token) {
@@ -2151,13 +2275,15 @@ function App() {
                           loadCustomerSalesItems(selectedPhone, token, activeCustomerChatJid, true);
                         }
                       }}
-                      onSelect={(phone) => {
+                      onSelect={(phone, chatJid) => {
                         setActiveMessageFilterId(null);
                         setSelectedPhone(phone);
+                        setSelectedConversationChatJid(chatJid || null);
                       }}
                       onSelectWhatsAppAccount={(accountId) => setSelectedWhatsAppAccountId(accountId || null)}
                       refreshing={refreshingChats}
                       selectedPhone={selectedPhone}
+                      selectedChatJid={selectedConversationChatJid}
                       selectedWhatsAppAccountId={selectedWhatsAppAccountId}
                       whatsAppAccounts={whatsAppAccounts}
                       whatsAppConnected={effectiveWhatsAppStatus?.connected === true}
@@ -2169,6 +2295,7 @@ function App() {
                       loading={contactsLoading}
                       refreshing={contactsRefreshing}
                       selectedConversationId={selectedContactConversationId}
+                      selectedChatJid={selectedContactChatJid}
                       page={contactsPage}
                       pageSize={CONTACTS_PAGE_SIZE}
                       total={contactsTotal}
@@ -2176,13 +2303,15 @@ function App() {
                       onQueryChange={setContactsQuery}
                       query={contactsQuery}
                       onRefresh={() => fetchContacts({ page: contactsPage, query: contactsQuery })}
-                      onSelect={(phone, opts) => {
+                      onSelect={(phone, chatJid, opts) => {
                         setActiveMessageFilterId(null);
                         setSelectedContactConversationId(phone);
+                        setSelectedContactChatJid(chatJid || null);
                         if (opts && opts.focusChatInput) {
                           setActiveDashboardTab("inbox");
                           setActiveView("inbox");
                           setSelectedPhone(phone);
+                          setSelectedConversationChatJid(chatJid || null);
                           setTimeout(() => {
                             const chatInput = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(".chat-input-editor, .chat-input textarea, .chat-input input");
                             if (chatInput) {

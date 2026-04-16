@@ -12,6 +12,7 @@ function isMobileDevice() {
 interface ContactListProps {
   contacts: Customer[];
   selectedConversationId: string | null;
+  selectedChatJid?: string | null;
   loading: boolean;
   refreshing: boolean;
   activeStatusFilter: CustomerStatus | null;
@@ -22,7 +23,7 @@ interface ContactListProps {
   query: string;
   onQueryChange: (query: string) => void;
   onRefresh: () => void;
-  onSelect: (conversationId: string, opts?: { focusChatInput?: boolean }) => void;
+  onSelect: (conversationId: string, chatJid?: string | null, opts?: { focusChatInput?: boolean }) => void;
 }
 
 const STATUS_ORDER: CustomerStatus[] = ["new_lead", "interested", "processing", "closed_won", "closed_lost"];
@@ -108,7 +109,7 @@ function getStatusLabel(status: CustomerStatus): string {
   }
 }
 
-export function ContactList({ contacts, selectedConversationId, loading, refreshing, activeStatusFilter, page, pageSize, total, onPageChange, query, onQueryChange, onRefresh, onSelect }: ContactListProps) {
+export function ContactList({ contacts, selectedConversationId, selectedChatJid, loading, refreshing, activeStatusFilter, page, pageSize, total, onPageChange, query, onQueryChange, onRefresh, onSelect }: ContactListProps) {
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-white p-4 shadow-soft">
       {/* Title and description */}
@@ -161,7 +162,9 @@ export function ContactList({ contacts, selectedConversationId, loading, refresh
                   const displayPhone = getDisplayPhone(contact.phone, contact.chat_jid);
                   const activeStatuses = STATUS_ORDER.filter((status) => (contact.status_counts?.[status] ?? 0) > 0);
                   // Use selectedPhone for highlight, do not auto-jump
-                  const active = selectedConversationId === conversationId;
+                  const active =
+                    selectedConversationId === conversationId &&
+                    (!selectedChatJid || String(contact.chat_jid || "").trim() === String(selectedChatJid).trim());
 
                   return (
                     <div
@@ -192,7 +195,7 @@ export function ContactList({ contacts, selectedConversationId, loading, refresh
                                 className={`truncate text-sm font-bold leading-5 transition-colors ${active ? "text-whatsapp-deep" : "text-ink group-hover:text-whatsapp-deep"} cursor-pointer`}
                                 onClick={() => {
                                   if (conversationId) {
-                                    onSelect(conversationId);
+                                    onSelect(conversationId, contact.chat_jid);
                                   }
                                 }}
                               >
@@ -252,7 +255,7 @@ export function ContactList({ contacts, selectedConversationId, loading, refresh
                               tabIndex={-1}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                if (conversationId) onSelect(conversationId, { focusChatInput: true });
+                                if (conversationId) onSelect(conversationId, contact.chat_jid, { focusChatInput: true });
                               }}
                             >
                               <svg width="24" height="24" fill="none" viewBox="0 0 24 24" className="mb-1">

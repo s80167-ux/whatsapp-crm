@@ -29,13 +29,14 @@ type ChatListProps = {
   onRefresh: () => void;
   onDeleteConversation: (phone: string, chatJid?: string | null) => void;
   selectedPhone: string | null;
+  selectedChatJid?: string | null;
   loading: boolean;
   onSelectWhatsAppAccount: (accountId: string) => void;
   refreshing: boolean;
   selectedWhatsAppAccountId: string | null;
   whatsAppAccounts: WhatsAppAccount[];
   whatsAppConnected: boolean;
-  onSelect: (conversationId: string) => void;
+  onSelect: (conversationId: string, chatJid?: string | null) => void;
 };
 
 function formatTimestamp(value: string) {
@@ -98,6 +99,7 @@ export function ChatList({
   onRefresh,
   onDeleteConversation,
   selectedPhone,
+  selectedChatJid,
   loading,
   onSelectWhatsAppAccount,
   refreshing,
@@ -301,7 +303,9 @@ export function ChatList({
             const displayPhone = getDisplayPhone(conversation.phone, conversation.chatJid);
             const activeStatuses = STATUS_ORDER.filter((status) => (conversation.status_counts?.[status] ?? 0) > 0);
             // Use activeConversationId prop for highlight, fallback to selectedPhone for backward compatibility
-            const active = selectedPhone === conversationId;
+            const active =
+              selectedPhone === conversationId &&
+              (!selectedChatJid || String(conversation.chatJid || "").trim() === String(selectedChatJid).trim());
             const conversationKey = conversation.chatJid || conversationId || conversation.timestamp;
             const deleting = deletingConversationKey === conversationKey;
 
@@ -316,7 +320,7 @@ export function ChatList({
                   disabled={!conversationId || deleting}
                   onClick={() => {
                     if (conversationId) {
-                      onSelect(conversationId);
+                      onSelect(conversationId, conversation.chatJid);
                     }
                   }}
                   type="button"
