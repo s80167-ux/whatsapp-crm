@@ -47,7 +47,7 @@ function formatTimestamp(value: string) {
 
 function formatAccountPhone(value: string | null | undefined) {
   if (!value) {
-    return "Phone unavailable";
+    return "Awaiting number";
   }
 
   return value.startsWith("+") ? value : `+${value}`;
@@ -105,9 +105,16 @@ export function ChatList({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "today" | "recent">("all");
   const [page, setPage] = useState(1);
+  const visibleWhatsAppAccounts = useMemo(
+    () =>
+      [...whatsAppAccounts].sort(
+        (left, right) => new Date(right.updated_at || 0).getTime() - new Date(left.updated_at || 0).getTime()
+      ),
+    [whatsAppAccounts]
+  );
   const selectedAccount =
-    whatsAppAccounts.find((account) => account.id === selectedWhatsAppAccountId) ||
-    whatsAppAccounts[0] ||
+    visibleWhatsAppAccounts.find((account) => account.id === selectedWhatsAppAccountId) ||
+    visibleWhatsAppAccounts[0] ||
     null;
   const selectedAccountLabel = selectedAccount?.display_name || selectedAccount?.account_phone || "WhatsApp account";
   const selectedAccountPhone = formatAccountPhone(selectedAccount?.account_phone);
@@ -188,8 +195,8 @@ export function ChatList({
               onChange={(event) => onSelectWhatsAppAccount(event.target.value)}
               value={selectedWhatsAppAccountId || ""}
             >
-              {whatsAppAccounts.length ? null : <option value="">No WhatsApp accounts yet</option>}
-              {whatsAppAccounts.map((account) => {
+              {visibleWhatsAppAccounts.length ? null : <option value="">No WhatsApp accounts yet</option>}
+              {visibleWhatsAppAccounts.map((account) => {
                 const label = account.display_name || account.account_phone || "WhatsApp account";
                 const phone = formatAccountPhone(account.account_phone);
                 const state = formatAccountState(account.connection_state);

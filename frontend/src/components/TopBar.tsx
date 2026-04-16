@@ -21,11 +21,16 @@ const navItems: NavigationItem[] = [
 
 type TopBarProps = {
   activeTab: DashboardTab;
+  activeWhatsAppNumber?: string | null;
+  connectingNewWhatsApp: boolean;
   disconnectingWhatsApp: boolean;
   loadingWhatsApp: boolean;
   onChangeTab: (tab: DashboardTab) => void;
+  onCleanupWhatsAppAccounts: () => Promise<void> | void;
+  onConnectNewWhatsApp: () => void;
   onDisconnectWhatsApp: () => void;
   onLogout: () => void;
+  selectedWhatsAppAccountId?: string | null;
   token: string;
   userEmail: string;
   whatsAppQr: WhatsAppQr | null;
@@ -34,11 +39,16 @@ type TopBarProps = {
 
 export function TopBar({
   activeTab,
+  activeWhatsAppNumber = null,
+  connectingNewWhatsApp,
   disconnectingWhatsApp,
   loadingWhatsApp,
   onChangeTab,
+  onCleanupWhatsAppAccounts,
+  onConnectNewWhatsApp,
   onDisconnectWhatsApp,
   onLogout,
+  selectedWhatsAppAccountId = null,
   token,
   userEmail,
   whatsAppQr,
@@ -295,11 +305,16 @@ export function TopBar({
       <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-2 lg:w-auto lg:shrink-0">
         <div className="flex items-center gap-1.5">
           <WhatsAppConnectCard
+            activeWhatsAppNumber={activeWhatsAppNumber}
             compact
+            connectingNew={connectingNewWhatsApp}
             disconnecting={disconnectingWhatsApp}
             loading={loadingWhatsApp}
+            onCleanupAccounts={onCleanupWhatsAppAccounts}
+            onConnectNew={onConnectNewWhatsApp}
             onDisconnect={onDisconnectWhatsApp}
             qr={whatsAppQr}
+            selectedWhatsAppAccountId={selectedWhatsAppAccountId}
             status={whatsAppStatus}
             token={token}
           />

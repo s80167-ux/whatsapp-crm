@@ -75,6 +75,23 @@ function normalizePhoneValue(value: string | null | undefined) {
   return String(value || "").replace(/\D/g, "") || null;
 }
 
+function buildSelectedWhatsAppStatus(
+  account: WhatsAppAccount | null,
+  polledStatus: WhatsAppStatus | null,
+  qr: WhatsAppQr | null
+) {
+  if (!account) {
+    return polledStatus;
+  }
+
+  const state = String(account.connection_state || "").trim().toLowerCase() || polledStatus?.state || "disconnected";
+  return {
+    connected: state === "open",
+    state,
+    hasQr: state === "qr" || Boolean(qr?.qr) || Boolean(polledStatus?.hasQr)
+  };
+}
+
 function buildAccountScopedCacheKey(phone: string, chatJid?: string | null, whatsappAccountId?: string | null) {
   const conversationId = getConversationIdentifier(phone, chatJid) || phone;
   return `${whatsappAccountId || "default"}::${conversationId}`;
@@ -112,6 +129,7 @@ function App() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [dashboardError, setDashboardError] = useState("");
+  const [dashboardNotice, setDashboardNotice] = useState("");
   const [loadingCustomer, setLoadingCustomer] = useState(false);
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [customerDraft, setCustomerDraft] = useState<Customer | null>(null);
@@ -126,14 +144,15 @@ function App() {
   const [whatsAppQr, setWhatsAppQr] = useState<WhatsAppQr | null>(null);
   const [whatsAppAccounts, setWhatsAppAccounts] = useState<WhatsAppAccount[]>([]);
   const [selectedWhatsAppAccountId, setSelectedWhatsAppAccountId] = useState<string | null>(null);
-  const [connectedWhatsAppPhone, setConnectedWhatsAppPhone] = useState<string | null>(null);
   const [loadingWhatsApp, setLoadingWhatsApp] = useState(true);
   const [disconnectingWhatsApp, setDisconnectingWhatsApp] = useState(false);
+  const [connectingNewWhatsApp, setConnectingNewWhatsApp] = useState(false);
   const [deletingConversationKey, setDeletingConversationKey] = useState<string | null>(null);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const handlingSessionRevocationRef = useRef(false);
   const messagesCacheRef = useRef<Record<string, Message[]>>({});
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const activeWhatsAppAccountChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const conversationsRefreshTimerRef = useRef<number | null>(null);
   const isSalesDashboard = activeDashboardTab === "sales";
 
@@ -204,7 +223,6 @@ function App() {
     setAllSalesLeadItems([]);
     setWhatsAppAccounts([]);
     setSelectedWhatsAppAccountId(null);
-    setConnectedWhatsAppPhone(null);
     setSelectedContactConversationId(null);
   }
 
@@ -747,17 +765,29 @@ function App() {
   async function loadWhatsAppState(
     silent = false,
     options?: {
-      includeProfile?: boolean;
+      accountId?: string | null;
     }
   ) {
-    const includeProfile = options?.includeProfile ?? Boolean(token);
+    if (!token || !dashboardSessionId) {
+      setWhatsAppStatus(null);
+      setWhatsAppQr(null);
+      if (!silent) {
+        setLoadingWhatsApp(false);
+      }
+      return;
+    }
+
+    const targetAccountId = options?.accountId !== undefined ? options.accountId : selectedWhatsAppAccountId;
 
     if (!silent) {
       setLoadingWhatsApp(true);
     }
 
     try {
-      const [status, qr] = await Promise.all([api.getWhatsAppStatus(), api.getWhatsAppQr()]);
+      const [status, qr] = await Promise.all([
+        api.getWhatsAppStatus(token, targetAccountId),
+        api.getWhatsAppQr(token, targetAccountId)
+      ]);
       setWhatsAppStatus(status);
       setWhatsAppQr((current) => {
         if (status.connected) {
@@ -775,12 +805,6 @@ function App() {
         return qr;
       });
 
-      if (includeProfile && token) {
-        const profile = await api.getWhatsAppProfile(token).catch(() => null);
-        setConnectedWhatsAppPhone(normalizePhoneValue(profile?.phone));
-      } else if (!token) {
-        setConnectedWhatsAppPhone(null);
-      }
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to load WhatsApp state.");
     } finally {
@@ -793,22 +817,26 @@ function App() {
   async function loadWhatsAppAccounts(activeToken: string, options?: { preserveSelection?: boolean }) {
     try {
       const accounts = await api.getWhatsAppAccounts(activeToken);
-      setWhatsAppAccounts(accounts);
+      const visibleAccounts = accounts.filter((account) => {
+        const hasPhone = Boolean(normalizePhoneValue(account.account_phone));
+        const state = String(account.connection_state || "").trim().toLowerCase();
+        return hasPhone || state === "connecting" || state === "qr" || state === "open";
+      });
+
+      setWhatsAppAccounts(visibleAccounts);
       setSelectedWhatsAppAccountId((current) => {
-        if (options?.preserveSelection && current && accounts.some((account) => account.id === current)) {
+        if (options?.preserveSelection && current && visibleAccounts.some((account) => account.id === current)) {
           return current;
         }
 
-        if (current && accounts.some((account) => account.id === current)) {
+        if (current && visibleAccounts.some((account) => account.id === current)) {
           return current;
         }
 
         const connectedAccount =
-          (connectedWhatsAppPhone
-            ? accounts.find((account) => normalizePhoneValue(account.account_phone) === connectedWhatsAppPhone)
-            : null) || null;
+          visibleAccounts.find((account) => String(account.connection_state || "").trim().toLowerCase() === "open") || null;
 
-        return connectedAccount?.id || accounts[0]?.id || null;
+        return connectedAccount?.id || visibleAccounts[0]?.id || null;
       });
     } catch (error) {
       console.warn("Failed to load WhatsApp accounts:", error);
@@ -818,7 +846,7 @@ function App() {
   }
 
   async function handleDisconnectWhatsApp() {
-    if (!token || disconnectingWhatsApp) {
+    if (!token || !selectedWhatsAppAccountId || disconnectingWhatsApp) {
       return;
     }
 
@@ -826,7 +854,7 @@ function App() {
     setDashboardError("");
 
     try {
-      const status = await api.disconnectWhatsApp(token);
+      const status = await api.disconnectWhatsApp(token, selectedWhatsAppAccountId);
       setWhatsAppStatus(status);
       setWhatsAppQr({
         connected: status.connected,
@@ -835,7 +863,7 @@ function App() {
       });
 
       window.setTimeout(() => {
-        loadWhatsAppState(true);
+        loadWhatsAppState(true, { accountId: selectedWhatsAppAccountId });
         if (token) {
           loadWhatsAppAccounts(token, { preserveSelection: true });
         }
@@ -847,9 +875,94 @@ function App() {
     }
   }
 
+  async function handleConnectNewWhatsApp() {
+    if (!token || connectingNewWhatsApp) {
+      return;
+    }
+
+    setConnectingNewWhatsApp(true);
+    setDashboardError("");
+
+    try {
+      const account = await api.createWhatsAppConnection(token);
+      await loadWhatsAppAccounts(token);
+      setSelectedWhatsAppAccountId(account.id);
+      await loadWhatsAppState(false, { accountId: account.id });
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "Failed to start a new WhatsApp connection.");
+    } finally {
+      setConnectingNewWhatsApp(false);
+    }
+  }
+
+  async function handleCleanupWhatsAppAccounts() {
+    if (!token) {
+      return;
+    }
+
+    setDashboardError("");
+    setDashboardNotice("");
+
+    try {
+      const result = await api.cleanupStaleWhatsAppAccounts(token);
+      const visibleAccounts = result.accounts.filter((account) => {
+        const normalizedPhone = normalizePhoneValue(account.account_phone);
+        const state = String(account.connection_state || "").trim().toLowerCase();
+        return Boolean(normalizedPhone) || state === "connecting" || state === "qr" || state === "open";
+      });
+
+      setWhatsAppAccounts(visibleAccounts);
+      setSelectedWhatsAppAccountId((current) => {
+        if (current && visibleAccounts.some((account) => account.id === current)) {
+          return current;
+        }
+
+        return visibleAccounts[0]?.id || null;
+      });
+
+      const removedTotal = result.removedInvalidCount + result.removedDuplicateCount;
+      if (removedTotal > 0) {
+        setDashboardNotice(
+          `Cleaned up ${removedTotal} stale WhatsApp source${removedTotal === 1 ? "" : "s"} (${result.removedDuplicateCount} duplicate${result.removedDuplicateCount === 1 ? "" : "s"}, ${result.removedInvalidCount} incomplete).`
+        );
+      } else {
+        setDashboardNotice("WhatsApp sources are already clean.");
+      }
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "Failed to cleanup WhatsApp sources.");
+    }
+  }
+
+  useEffect(() => {
+    if (!dashboardNotice) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setDashboardNotice("");
+    }, 5000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [dashboardNotice]);
+
+  const selectedWhatsAppAccount =
+    whatsAppAccounts.find((account) => account.id === selectedWhatsAppAccountId) || null;
+  const selectedWhatsAppAccountState = String(selectedWhatsAppAccount?.connection_state || "").trim().toLowerCase();
+  const effectiveWhatsAppStatus = selectedWhatsAppAccount
+    ? {
+        connected: selectedWhatsAppAccountState === "open",
+        state: selectedWhatsAppAccountState || whatsAppStatus?.state || "disconnected",
+        hasQr:
+          selectedWhatsAppAccountState === "qr" ||
+          Boolean(whatsAppQr?.qr) ||
+          Boolean(whatsAppStatus?.hasQr)
+      }
+    : whatsAppStatus;
+
   const leadConversations = useMemo(() => {
-    const selectedAccountPhone =
-      whatsAppAccounts.find((account) => account.id === selectedWhatsAppAccountId)?.account_phone || connectedWhatsAppPhone;
+    const selectedAccountPhone = selectedWhatsAppAccount?.account_phone || null;
 
     if (!selectedAccountPhone) {
       return conversations;
@@ -857,7 +970,7 @@ function App() {
 
     const normalizedSelectedAccountPhone = normalizePhoneValue(selectedAccountPhone);
     return conversations.filter((conversation) => normalizePhoneValue(conversation.phone) !== normalizedSelectedAccountPhone);
-  }, [connectedWhatsAppPhone, conversations, selectedWhatsAppAccountId, whatsAppAccounts]);
+  }, [conversations, selectedWhatsAppAccount]);
 
   const selectedConversation = useMemo(
     () => leadConversations.find((conversation) => getConversationIdentifier(conversation.phone, conversation.chatJid) === selectedPhone) || null,
@@ -972,21 +1085,79 @@ function App() {
   }, []);
 
   useEffect(() => {
-    loadWhatsAppState(false, { includeProfile: Boolean(token) });
-  }, []);
-
-  useEffect(() => {
     if (!token || !dashboardSessionId) {
-      setConnectedWhatsAppPhone(null);
+      setWhatsAppStatus(null);
+      setWhatsAppQr(null);
       setWhatsAppAccounts([]);
       setSelectedWhatsAppAccountId(null);
       return;
     }
-
-    loadWhatsAppState(true, { includeProfile: true });
     loadWhatsAppAccounts(token);
     loadConversations(token);
   }, [dashboardSessionId, token]);
+
+  useEffect(() => {
+    if (!token || !dashboardSessionId) {
+      return;
+    }
+
+    loadWhatsAppState(true);
+  }, [dashboardSessionId, selectedWhatsAppAccountId, token]);
+
+  useEffect(() => {
+    if (activeWhatsAppAccountChannelRef.current) {
+      supabase.removeChannel(activeWhatsAppAccountChannelRef.current);
+      activeWhatsAppAccountChannelRef.current = null;
+    }
+
+    if (!token || !dashboardSessionId || !selectedWhatsAppAccountId) {
+      return;
+    }
+
+    const channel = supabase
+      .channel(`whatsapp-account:${selectedWhatsAppAccountId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "whatsapp_accounts",
+          filter: `id=eq.${selectedWhatsAppAccountId}`
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            setWhatsAppAccounts((current) => current.filter((account) => account.id !== selectedWhatsAppAccountId));
+            return;
+          }
+
+          const nextAccount = payload.new as WhatsAppAccount | undefined;
+          if (!nextAccount) {
+            return;
+          }
+
+          setWhatsAppAccounts((current) => {
+            const existingIndex = current.findIndex((account) => account.id === nextAccount.id);
+            if (existingIndex === -1) {
+              return [nextAccount, ...current];
+            }
+
+            const next = [...current];
+            next[existingIndex] = nextAccount;
+            return next;
+          });
+        }
+      )
+      .subscribe();
+
+    activeWhatsAppAccountChannelRef.current = channel;
+
+    return () => {
+      supabase.removeChannel(channel);
+      if (activeWhatsAppAccountChannelRef.current === channel) {
+        activeWhatsAppAccountChannelRef.current = null;
+      }
+    };
+  }, [dashboardSessionId, selectedWhatsAppAccountId, token]);
 
   useEffect(() => {
     if (!whatsAppAccounts.length) {
@@ -999,13 +1170,11 @@ function App() {
       }
 
       const connectedAccount =
-        (connectedWhatsAppPhone
-          ? whatsAppAccounts.find((account) => normalizePhoneValue(account.account_phone) === connectedWhatsAppPhone)
-          : null) || null;
+        whatsAppAccounts.find((account) => String(account.connection_state || "").trim().toLowerCase() === "open") || null;
 
       return connectedAccount?.id || whatsAppAccounts[0]?.id || null;
     });
-  }, [connectedWhatsAppPhone, whatsAppAccounts]);
+  }, [whatsAppAccounts]);
 
   useEffect(() => {
     messagesCacheRef.current = {};
@@ -1064,6 +1233,10 @@ function App() {
   }, [activeDashboardTab, dashboardSessionId, token]);
 
   useEffect(() => {
+    if (!token || !dashboardSessionId) {
+      return;
+    }
+
     if (whatsAppStatus?.connected) {
       return;
     }
@@ -1082,32 +1255,18 @@ function App() {
   }, [whatsAppQr?.qr, whatsAppStatus?.connected, whatsAppStatus?.hasQr]);
 
   useEffect(() => {
-    if (token) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      loadWhatsAppState(true, { includeProfile: false });
-    }, whatsAppStatePollMs);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [token]);
-
-  useEffect(() => {
     if (!token || !dashboardSessionId) {
       return;
     }
 
     const interval = window.setInterval(() => {
-      loadWhatsAppState(true, { includeProfile: false });
+      loadWhatsAppState(true);
     }, whatsAppStatePollMs);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [dashboardSessionId, token]);
+  }, [dashboardSessionId, selectedWhatsAppAccountId, token]);
 
   // Polling removed: manual refresh only.
 
@@ -1211,6 +1370,11 @@ function App() {
       if (conversationsRefreshTimerRef.current) {
         window.clearTimeout(conversationsRefreshTimerRef.current);
         conversationsRefreshTimerRef.current = null;
+      }
+
+      if (activeWhatsAppAccountChannelRef.current) {
+        supabase.removeChannel(activeWhatsAppAccountChannelRef.current);
+        activeWhatsAppAccountChannelRef.current = null;
       }
     };
   }, []);
@@ -1800,21 +1964,27 @@ function App() {
         <div className="mx-auto max-w-[1600px]">
           <TopBar
             activeTab={activeDashboardTab}
+            activeWhatsAppNumber={selectedWhatsAppAccount?.account_phone || null}
+            connectingNewWhatsApp={connectingNewWhatsApp}
             disconnectingWhatsApp={disconnectingWhatsApp}
             loadingWhatsApp={loadingWhatsApp}
             onChangeTab={setActiveDashboardTab}
+            onCleanupWhatsAppAccounts={handleCleanupWhatsAppAccounts}
+            onConnectNewWhatsApp={handleConnectNewWhatsApp}
             onDisconnectWhatsApp={handleDisconnectWhatsApp}
             onLogout={handleLogout}
+            selectedWhatsAppAccountId={selectedWhatsAppAccountId}
             token={token}
             userEmail={userEmail}
             whatsAppQr={whatsAppQr}
-            whatsAppStatus={whatsAppStatus}
+            whatsAppStatus={effectiveWhatsAppStatus}
           />
         </div>
       </div>
 
       <div className="mx-auto flex w-full max-w-[1600px] min-h-0 flex-1 flex-col gap-4 pt-44 sm:pt-48 lg:pt-28">
         {dashboardError ? <div className="glass-panel border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">{dashboardError}</div> : null}
+        {dashboardNotice ? <div className="glass-panel border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{dashboardNotice}</div> : null}
 
         {isSalesDashboard ? (
           <div className="min-h-0 flex-1 space-y-4 xl:grid xl:grid-cols-[minmax(320px,1.5fr)_minmax(0,3fr)] xl:items-stretch xl:gap-4 xl:space-y-0 xl:space-x-0">
@@ -1911,7 +2081,7 @@ function App() {
                       selectedPhone={selectedPhone}
                       selectedWhatsAppAccountId={selectedWhatsAppAccountId}
                       whatsAppAccounts={whatsAppAccounts}
-                      whatsAppConnected={Boolean(whatsAppStatus?.connected)}
+                      whatsAppConnected={effectiveWhatsAppStatus?.connected === true}
                     />
                   ) : (
                     <ContactList

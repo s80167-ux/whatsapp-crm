@@ -816,8 +816,7 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
           listRef.current.scrollTop = listRef.current.scrollHeight;
         }
         if (chatInputRef.current) {
-          chatInputRef.current.focus();
-          chatInputRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+          chatInputRef.current.focus({ preventScroll: true });
         }
       });
 

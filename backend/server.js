@@ -2,6 +2,14 @@ require("dotenv").config();
 const express = require("express");
 const app = express();
 
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception:", error);
+});
+
 const { getCustomers, ...otherSupabaseExports } = require("./supabase");
 // ...existing code...
 
@@ -33,12 +41,15 @@ const {
   deleteMessage,
   upsertCustomer,
   getWhatsAppAccounts,
+  cleanupStaleWhatsAppAccounts,
   getWhatsAppSettings,
   upsertWhatsAppProfile,
   getProfileByUserId
 } = require("./supabase");
 const {
   initializeWhatsApp,
+  createWhatsAppConnection,
+  shouldAutoInitializeAccount,
   sendMessageToPhone,
   sendAttachmentToPhone,
   sendLocationToPhone,
@@ -48,8 +59,8 @@ const {
   getWhatsAppProfile,
   disconnectWhatsApp,
   getContactProfile,
-  bindWhatsAppOwner,
   getCurrentWhatsAppAccountContext,
+  removeWhatsAppSessions,
   normalizePhone
 } = require("./whatsapp");
 
@@ -136,8 +147,7 @@ app.use(
 );
 app.use(express.json());
 
-function bindAuthenticatedWhatsAppOwner(req, _res, next) {
-  bindWhatsAppOwner(req.user?.sub || null);
+function bindAuthenticatedWhatsAppOwner(_req, _res, next) {
   next();
 }
 
@@ -177,24 +187,47 @@ app.get("/", (_req, res) => {
   });
 });
 
-app.get("/health", (_req, res) => {
+app.get("/health", async (_req, res) => {
   res.json({
     ok: true,
-    whatsapp: getWhatsAppStatus()
+    whatsapp: { connected: false, state: "disconnected", hasQr: false }
   });
 });
 
-whatsappRouter.get("/status", (_req, res) => {
-  res.json(getWhatsAppStatus());
-});
-
-whatsappRouter.get("/qr", (_req, res) => {
-  res.json(getWhatsAppQr());
-});
-
-whatsappRouter.get("/profile", requireAuth, bindAuthenticatedWhatsAppOwner, async (_req, res) => {
+whatsappRouter.get("/status", requireAuth, async (req, res) => {
   try {
-    return res.json(await getWhatsAppProfile());
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
+    return res.json(await getWhatsAppStatus(req.user.sub, whatsappAccountId));
+  } catch (error) {
+    console.error("Failed to fetch WhatsApp status:", error);
+    return res.status(500).json({ error: "Failed to fetch WhatsApp status." });
+  }
+});
+
+whatsappRouter.get("/qr", requireAuth, async (req, res) => {
+  try {
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
+    return res.json(await getWhatsAppQr(req.user.sub, whatsappAccountId));
+  } catch (error) {
+    console.error("Failed to fetch WhatsApp QR:", error);
+    return res.status(500).json({ error: "Failed to fetch WhatsApp QR." });
+  }
+});
+
+whatsappRouter.post("/connect", requireAuth, async (req, res) => {
+  try {
+    const account = await createWhatsAppConnection(req.user.sub);
+    return res.status(201).json(account);
+  } catch (error) {
+    console.error("Failed to create WhatsApp connection:", error);
+    return res.status(500).json({ error: "Failed to create WhatsApp connection." });
+  }
+});
+
+whatsappRouter.get("/profile", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
+    return res.json(await getWhatsAppProfile(req.user.sub, whatsappAccountId));
   } catch (error) {
     console.error("Failed to fetch WhatsApp profile:", error);
     return res.status(500).json({ error: "Failed to fetch WhatsApp profile." });
@@ -204,10 +237,30 @@ whatsappRouter.get("/profile", requireAuth, bindAuthenticatedWhatsAppOwner, asyn
 whatsappRouter.get("/accounts", requireAuth, async (req, res) => {
   try {
     const accounts = await getWhatsAppAccounts(req.user.sub);
+    const accountsToInitialize = accounts.filter((account) => shouldAutoInitializeAccount(account));
+    await Promise.allSettled(
+      accountsToInitialize.map((account) => initializeWhatsApp(req.user.sub, account.id))
+    );
     return res.json(accounts);
   } catch (error) {
     console.error("Failed to fetch WhatsApp accounts:", error);
     return res.status(500).json({ error: "Failed to fetch WhatsApp accounts." });
+  }
+});
+
+whatsappRouter.post("/cleanup-stale-accounts", requireAuth, async (req, res) => {
+  try {
+    const summary = await cleanupStaleWhatsAppAccounts(req.user.sub);
+    await removeWhatsAppSessions(summary.removedIds);
+    const accounts = await getWhatsAppAccounts(req.user.sub);
+    return res.json({
+      success: true,
+      ...summary,
+      accounts
+    });
+  } catch (error) {
+    console.error("Failed to cleanup stale WhatsApp accounts:", error);
+    return res.status(500).json({ error: "Failed to cleanup stale WhatsApp accounts." });
   }
 });
 
@@ -238,7 +291,8 @@ whatsappRouter.put("/settings", requireAuth, async (req, res) => {
 
 whatsappRouter.post("/disconnect", requireAuth, bindAuthenticatedWhatsAppOwner, async (_req, res) => {
   try {
-    const status = await disconnectWhatsApp();
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(_req);
+    const status = await disconnectWhatsApp(_req.user.sub, whatsappAccountId);
     return res.json(status);
   } catch (error) {
     console.error("Failed to disconnect WhatsApp:", error);
@@ -427,7 +481,7 @@ app.delete("/messages/:messageId", requireAuth, bindAuthenticatedWhatsAppOwner, 
       message_id: messageId
     });
 
-    const whatsapp = await deleteMessageFromPhone({
+    const whatsapp = await deleteMessageFromPhone(req.user.sub, deletedMessage.whatsapp_account_id || null, {
       phone: deletedMessage.phone,
       chatJid: deletedMessage.chat_jid || null,
       waMessageId: deletedMessage.wa_message_id || null,
@@ -517,7 +571,7 @@ app.get("/customers/by-id/:contact_id", requireAuth, bindAuthenticatedWhatsAppOw
     if (!customer) {
       return res.status(404).json({ error: "Customer not found." });
     }
-    const profile = await getContactProfile(customer.phone, customer.chat_jid || null);
+    const profile = await getContactProfile(req.user.sub, whatsappAccountId, customer.phone, customer.chat_jid || null);
 
     // Update DB cache if we got live data from WhatsApp
     if (profile.profilePictureUrl || profile.about) {
@@ -551,7 +605,7 @@ app.get("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
     const chatJid = typeof req.query?.chatJid === "string" ? req.query.chatJid.trim() || null : null;
     const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
     const customer = await getCustomerInsights(phone, req.user.sub, chatJid, whatsappAccountId);
-    const profile = await getContactProfile(phone, customer.chat_jid || chatJid || null);
+    const profile = await getContactProfile(req.user.sub, whatsappAccountId, phone, customer.chat_jid || chatJid || null);
 
     // Update DB cache if we got live data from WhatsApp
     if (profile.profilePictureUrl || profile.about) {
@@ -604,7 +658,7 @@ app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
     });
 
     const customer = await getCustomerInsights(phone, req.user.sub, chatJid, whatsappAccountId);
-    const profile = await getContactProfile(phone, customer.chat_jid || chatJid || null);
+    const profile = await getContactProfile(req.user.sub, whatsappAccountId, phone, customer.chat_jid || chatJid || null);
 
     return res.json({
       ...customer,
@@ -784,7 +838,7 @@ app.post("/send", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) 
     const customer = await getCustomerByPhone(normalizedPhone, req.user.sub, chatJid || null, whatsappAccountId);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
 
-    const result = await sendMessageToPhone(normalizedPhone, message, resolvedChatJid);
+    const result = await sendMessageToPhone(req.user.sub, whatsappAccountId, normalizedPhone, message, resolvedChatJid);
 
     await upsertCustomer({
       owner_user_id: req.user.sub,
@@ -826,7 +880,7 @@ app.post("/send/attachment", requireAuth, bindAuthenticatedWhatsAppOwner, upload
 
     const customer = await getCustomerByPhone(normalizedPhone, req.user.sub, chatJid || null, whatsappAccountId);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
-    const result = await sendAttachmentToPhone({
+    const result = await sendAttachmentToPhone(req.user.sub, whatsappAccountId, {
       phone: normalizedPhone,
       chatJid: resolvedChatJid,
       buffer: file.buffer,
@@ -882,7 +936,7 @@ app.post("/send/location", requireAuth, bindAuthenticatedWhatsAppOwner, async (r
 
     const customer = await getCustomerByPhone(normalizedPhone, req.user.sub, chatJid || null, whatsappAccountId);
     const resolvedChatJid = chatJid || customer.chat_jid || null;
-    const result = await sendLocationToPhone({
+    const result = await sendLocationToPhone(req.user.sub, whatsappAccountId, {
       phone: normalizedPhone,
       chatJid: resolvedChatJid,
       latitude,
@@ -936,12 +990,6 @@ console.log(
 
 const server = app.listen(port, async () => {
   console.log(`Backend listening on http://localhost:${port}`);
-
-  try {
-    await initializeWhatsApp();
-  } catch (error) {
-    console.error("Failed to initialize WhatsApp:", error);
-  }
 });
 
 server.on("error", (error) => {

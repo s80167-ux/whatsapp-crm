@@ -369,32 +369,67 @@ function applyWhatsAppAccountFilter(query, whatsappAccountId, columnName = "what
   return query.eq(columnName, whatsappAccountId);
 }
 
+async function findMessageByWhatsAppId(owner_user_id, wa_message_id, whatsapp_account_id = null) {
+  if (!owner_user_id || !wa_message_id) {
+    return null;
+  }
+
+  let scopedQuery = supabase
+    .from("messages")
+    .select("*")
+    .eq("owner_user_id", owner_user_id)
+    .eq("wa_message_id", wa_message_id)
+    .limit(1);
+
+  scopedQuery = applyWhatsAppAccountFilter(scopedQuery, whatsapp_account_id);
+
+  const scopedResult = await scopedQuery.maybeSingle();
+
+  throwIfTenantSchemaError(scopedResult.error, "messages.owner_user_id");
+
+  if (
+    !isMissingColumnError(scopedResult.error, "messages.wa_message_id") &&
+    !isMissingColumnError(scopedResult.error, "messages.whatsapp_account_id")
+  ) {
+    if (scopedResult.error) {
+      throw scopedResult.error;
+    }
+
+    if (scopedResult.data) {
+      return scopedResult.data;
+    }
+  }
+
+  if (!whatsapp_account_id) {
+    return null;
+  }
+
+  const unscopedResult = await supabase
+    .from("messages")
+    .select("*")
+    .eq("owner_user_id", owner_user_id)
+    .eq("wa_message_id", wa_message_id)
+    .limit(1)
+    .maybeSingle();
+
+  throwIfTenantSchemaError(unscopedResult.error, "messages.owner_user_id");
+
+  if (isMissingColumnError(unscopedResult.error, "messages.wa_message_id")) {
+    return null;
+  }
+
+  if (unscopedResult.error) {
+    throw unscopedResult.error;
+  }
+
+  return unscopedResult.data || null;
+}
+
 async function findExistingMessage({ owner_user_id, whatsapp_account_id, phone, chat_jid, wa_message_id, message, direction, created_at }) {
   if (wa_message_id) {
-    let byWhatsAppIdQuery = supabase
-      .from("messages")
-      .select("*")
-      .eq("owner_user_id", owner_user_id)
-      .eq("wa_message_id", wa_message_id)
-      .limit(1);
-
-    byWhatsAppIdQuery = applyWhatsAppAccountFilter(byWhatsAppIdQuery, whatsapp_account_id);
-
-    const byWhatsAppId = await byWhatsAppIdQuery.maybeSingle();
-
-    throwIfTenantSchemaError(byWhatsAppId.error, "messages.owner_user_id");
-
-    if (
-      !isMissingColumnError(byWhatsAppId.error, "messages.wa_message_id") &&
-      !isMissingColumnError(byWhatsAppId.error, "messages.whatsapp_account_id")
-    ) {
-      if (byWhatsAppId.error) {
-        throw byWhatsAppId.error;
-      }
-
-      if (byWhatsAppId.data) {
-        return byWhatsAppId.data;
-      }
+    const byWhatsAppId = await findMessageByWhatsAppId(owner_user_id, wa_message_id, whatsapp_account_id);
+    if (byWhatsAppId) {
+      return byWhatsAppId;
     }
   }
 
@@ -714,6 +749,30 @@ async function updateOutgoingMessageStatus({ owner_user_id, whatsapp_account_id,
 
   if (data) {
     return data;
+  }
+
+  if (whatsapp_account_id) {
+    const fallbackResult = await supabase
+      .from("messages")
+      .update({
+        send_status
+      })
+      .eq("owner_user_id", owner_user_id)
+      .eq("wa_message_id", wa_message_id)
+      .eq("direction", "outgoing")
+      .select("*")
+      .limit(1)
+      .maybeSingle();
+
+    throwIfTenantSchemaError(fallbackResult.error, "messages.owner_user_id");
+
+    if (fallbackResult.error && !isMissingColumnError(fallbackResult.error, "messages.wa_message_id")) {
+      throw fallbackResult.error;
+    }
+
+    if (fallbackResult.data) {
+      return fallbackResult.data;
+    }
   }
 
   return null;
@@ -1786,6 +1845,136 @@ async function getWhatsAppAccounts(ownerUserId) {
   return data || [];
 }
 
+async function getWhatsAppAccountById(ownerUserId, accountId) {
+  if (!ownerUserId || !accountId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("whatsapp_accounts")
+    .select("*")
+    .eq("owner_user_id", ownerUserId)
+    .eq("id", accountId)
+    .maybeSingle();
+
+  if (error && error.code !== "42P01") {
+    throw error;
+  }
+
+  return data || null;
+}
+
+function normalizeAccountPhoneForKey(phone) {
+  return String(phone || "").replace(/\D/g, "");
+}
+
+function getWhatsAppAccountScore(account) {
+  let score = 0;
+
+  if (account?.connection_state === "open") {
+    score += 8;
+  }
+
+  if (account?.account_phone) {
+    score += 4;
+  }
+
+  if (account?.account_jid) {
+    score += 2;
+  }
+
+  if (account?.last_connected_at) {
+    score += 1;
+  }
+
+  return score;
+}
+
+async function cleanupStaleWhatsAppAccounts(ownerUserId) {
+  if (!ownerUserId) {
+    return {
+      removedInvalidCount: 0,
+      removedDuplicateCount: 0,
+      removedIds: [],
+      remainingCount: 0
+    };
+  }
+
+  const accounts = await getWhatsAppAccounts(ownerUserId);
+  const removedIds = new Set();
+
+  for (const account of accounts) {
+    const phoneKey = normalizeAccountPhoneForKey(account?.account_phone);
+    if (!phoneKey && account?.connection_state !== "open") {
+      removedIds.add(account.id);
+    }
+  }
+
+  const duplicateGroups = new Map();
+  for (const account of accounts) {
+    const phoneKey = normalizeAccountPhoneForKey(account?.account_phone);
+    if (!phoneKey) {
+      continue;
+    }
+
+    const existing = duplicateGroups.get(phoneKey) || [];
+    existing.push(account);
+    duplicateGroups.set(phoneKey, existing);
+  }
+
+  for (const group of duplicateGroups.values()) {
+    if (group.length < 2) {
+      continue;
+    }
+
+    const ranked = [...group].sort((left, right) => {
+      const scoreDiff = getWhatsAppAccountScore(right) - getWhatsAppAccountScore(left);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+
+      const leftTime = Date.parse(left?.updated_at || left?.created_at || 0);
+      const rightTime = Date.parse(right?.updated_at || right?.created_at || 0);
+      return rightTime - leftTime;
+    });
+
+    const [winner, ...losers] = ranked;
+    for (const account of losers) {
+      if (account.id !== winner?.id) {
+        removedIds.add(account.id);
+      }
+    }
+  }
+
+  const removedIdList = Array.from(removedIds);
+
+  if (removedIdList.length) {
+    const { error } = await supabase
+      .from("whatsapp_accounts")
+      .delete()
+      .eq("owner_user_id", ownerUserId)
+      .in("id", removedIdList);
+
+    if (error && error.code !== "42P01") {
+      throw error;
+    }
+  }
+
+  const invalidIds = accounts
+    .filter((account) => {
+      const phoneKey = normalizeAccountPhoneForKey(account?.account_phone);
+      return !phoneKey && account?.connection_state !== "open" && removedIds.has(account.id);
+    })
+    .map((account) => account.id);
+
+  return {
+    removedInvalidCount: invalidIds.length,
+    removedDuplicateCount: removedIdList.length - invalidIds.length,
+    removedIds: removedIdList,
+    remainingCount: Math.max(accounts.length - removedIdList.length, 0)
+  };
+}
+
 async function getLatestWhatsAppAccount(ownerUserId) {
   const { data, error } = await supabase
     .from("whatsapp_accounts")
@@ -1803,6 +1992,7 @@ async function getLatestWhatsAppAccount(ownerUserId) {
 }
 
 async function upsertWhatsAppAccount({
+  id,
   owner_user_id,
   account_phone,
   account_jid,
@@ -1815,6 +2005,31 @@ async function upsertWhatsAppAccount({
 }) {
   const now = new Date().toISOString();
   const candidates = [];
+
+  if (id) {
+    candidates.push(
+      supabase
+        .from("whatsapp_accounts")
+        .select("*")
+        .eq("owner_user_id", owner_user_id)
+        .eq("id", id)
+        .limit(1)
+        .maybeSingle()
+    );
+  }
+
+  if (auth_dir) {
+    candidates.push(
+      supabase
+        .from("whatsapp_accounts")
+        .select("*")
+        .eq("owner_user_id", owner_user_id)
+        .eq("auth_dir", auth_dir)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    );
+  }
 
   if (account_phone) {
     candidates.push(
@@ -1835,19 +2050,6 @@ async function upsertWhatsAppAccount({
         .select("*")
         .eq("owner_user_id", owner_user_id)
         .eq("account_jid", account_jid)
-        .limit(1)
-        .maybeSingle()
-    );
-  }
-
-  if (!candidates.length && auth_dir) {
-    candidates.push(
-      supabase
-        .from("whatsapp_accounts")
-        .select("*")
-        .eq("owner_user_id", owner_user_id)
-        .eq("auth_dir", auth_dir)
-        .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle()
     );
@@ -2277,6 +2479,8 @@ module.exports = {
   getWhatsAppSettings,
   upsertWhatsAppProfile,
   getWhatsAppAccounts,
+  getWhatsAppAccountById,
+  cleanupStaleWhatsAppAccounts,
   getLatestWhatsAppAccount,
   upsertWhatsAppAccount,
   getCustomerSalesItems,

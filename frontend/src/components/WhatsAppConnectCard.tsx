@@ -3,22 +3,59 @@ import { createPortal } from "react-dom";
 import { api, type WhatsAppProfile, type WhatsAppQr, type WhatsAppStatus } from "../lib/api";
 
 type WhatsAppConnectCardProps = {
+  activeWhatsAppNumber?: string | null;
   status: WhatsAppStatus | null;
   qr: WhatsAppQr | null;
   loading: boolean;
   token: string;
+  selectedWhatsAppAccountId?: string | null;
   compact?: boolean;
+  onCleanupAccounts?: () => Promise<void> | void;
   onDisconnect?: () => void;
+  onConnectNew?: () => void;
+  connectingNew?: boolean;
   disconnecting?: boolean;
 };
 
 function statusLabel(status: WhatsAppStatus | null) {
-  return status?.connected ? "🟢 Connected" : "🔴 Not connected";
+  const state = String(status?.state || "").trim().toLowerCase();
+
+  if (status?.connected || state === "open") {
+    return "🟢 Connected";
+  }
+
+  if (state === "qr") {
+    return "🟡 Awaiting QR";
+  }
+
+  if (state === "connecting") {
+    return "🟡 Connecting";
+  }
+
+  if (state === "disconnecting") {
+    return "🟠 Disconnecting";
+  }
+
+  return "🔴 Not connected";
 }
 
-function compactStatusTitle(status: WhatsAppStatus | null, loading: boolean) {
-  if (status?.connected) {
+function compactStatusTitle(status: WhatsAppStatus | null) {
+  const state = String(status?.state || "").trim().toLowerCase();
+
+  if (status?.connected || state === "open") {
     return "🟢 Connected";
+  }
+
+  if (state === "qr") {
+    return "🟡 Awaiting QR";
+  }
+
+  if (state === "connecting") {
+    return "🟡 Connecting";
+  }
+
+  if (state === "disconnecting") {
+    return "🟠 Disconnecting";
   }
 
   return "🔴 Not connected";
@@ -45,12 +82,17 @@ function formatPrice(price: number, currency: string) {
 }
 
 export function WhatsAppConnectCard({
+  activeWhatsAppNumber = null,
   status,
   qr,
   loading,
   token,
+  selectedWhatsAppAccountId = null,
   compact = false,
+  onCleanupAccounts,
   onDisconnect,
+  onConnectNew,
+  connectingNew = false,
   disconnecting = false
 }: WhatsAppConnectCardProps) {
   const qrButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -66,6 +108,7 @@ export function WhatsAppConnectCard({
   const [syncDays, setSyncDays] = useState<number>(7);
   const [savingSync, setSavingSync] = useState(false);
   const [clearingDb, setClearingDb] = useState(false);
+  const [cleaningAccounts, setCleaningAccounts] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showQrOverlay, setShowQrOverlay] = useState(false);
   const [qrOverlayPosition, setQrOverlayPosition] = useState<{ left: number; top: number } | null>(null);
@@ -122,10 +165,28 @@ export function WhatsAppConnectCard({
     }
   }
 
+  async function handleCleanupAccounts(e: React.MouseEvent) {
+    e.stopPropagation();
+
+    if (!onCleanupAccounts || cleaningAccounts) {
+      return;
+    }
+
+    setCleaningAccounts(true);
+    try {
+      await onCleanupAccounts();
+    } finally {
+      setCleaningAccounts(false);
+    }
+  }
+
   const shouldShowQrPanel = !status?.connected && (Boolean(qr?.qr) || Boolean(status?.hasQr) || loading);
   const canDisconnect = Boolean(onDisconnect) && Boolean(status?.connected || disconnecting);
+  const canConnectNew = Boolean(onConnectNew);
   const canViewProfile = Boolean(status?.connected && token);
   const disconnectLabel = disconnecting ? "Disconnecting WhatsApp" : "Disconnect WhatsApp";
+  const connectLabel = connectingNew ? "Starting new connection" : "Connect another number";
+  const activeNumberLabel = activeWhatsAppNumber ? formatPhone(activeWhatsAppNumber) : null;
 
   useEffect(() => {
     if (!showProfilePanel || !canViewProfile) {
@@ -139,7 +200,7 @@ export function WhatsAppConnectCard({
       setProfileError("");
 
       try {
-        const data = await api.getWhatsAppProfile(token);
+        const data = await api.getWhatsAppProfile(token, selectedWhatsAppAccountId);
         if (!cancelled) {
           setProfile(data);
         }
@@ -159,7 +220,7 @@ export function WhatsAppConnectCard({
     return () => {
       cancelled = true;
     };
-  }, [canViewProfile, showProfilePanel, token]);
+  }, [canViewProfile, selectedWhatsAppAccountId, showProfilePanel, token]);
 
   useEffect(() => {
     if (!status?.connected) {
@@ -384,6 +445,22 @@ export function WhatsAppConnectCard({
     </button>
   ) : null;
 
+  const connectIconButton = canConnectNew ? (
+    <button
+      aria-label={connectLabel}
+      className={`icon-hover-trigger flex ${compact ? "h-8 w-8" : "h-10 w-10"} appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent disabled:cursor-not-allowed disabled:opacity-50`}
+      disabled={connectingNew}
+      onClick={onConnectNew}
+      type="button"
+    >
+      <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+        <path d="M12 5v14M5 12h14" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+      </svg>
+      <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Connect</span>
+      <span className="icon-hover-label hidden sm:inline">{connectLabel}</span>
+    </button>
+  ) : null;
+
   const settingsIconButton = (
     <button
       aria-label={showAdvanced ? "Hide WhatsApp settings" : "Show WhatsApp settings"}
@@ -580,6 +657,20 @@ export function WhatsAppConnectCard({
         </div>
 
         <div className="whatsapp-popover-card border-rose-200 bg-rose-50 px-3 py-3">
+          <div className="mb-3 flex items-center justify-between gap-3 border-b border-rose-200/70 pb-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-700">Session cleanup</p>
+              <p className="mt-1 text-[10px] leading-4 text-amber-700/90">Remove abandoned and duplicate inbox sources.</p>
+            </div>
+            <button
+              className="rounded-[12px] bg-amber-500 px-3 py-2 text-[10px] font-semibold text-white transition hover:bg-amber-600 disabled:opacity-50"
+              onClick={handleCleanupAccounts}
+              disabled={!onCleanupAccounts || cleaningAccounts}
+            >
+              {cleaningAccounts ? "Cleaning..." : "Clean"}
+            </button>
+          </div>
+
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-rose-700">Danger Zone</p>
@@ -640,9 +731,13 @@ export function WhatsAppConnectCard({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.2em] text-whatsapp-muted">WhatsApp</p>
-            <p className="mt-1 text-sm font-semibold leading-5 text-ink">{compactStatusTitle(status, loading)}</p>
+            <p className="mt-1 text-sm font-semibold leading-5 text-ink">{compactStatusTitle(status)}</p>
+            {activeNumberLabel ? (
+              <p className="mt-0.5 truncate text-[11px] font-medium text-whatsapp-muted">{activeNumberLabel}</p>
+            ) : null}
           </div>
           <div className="flex items-center gap-1">
+            {connectIconButton}
             {profileIconButton}
             {qrIconButton}
             {settingsIconButton}
@@ -713,8 +808,12 @@ export function WhatsAppConnectCard({
         <div>
           <p className="text-xs uppercase tracking-[0.25em] text-whatsapp-muted">WhatsApp</p>
           <h3 className="mt-1.5 text-xl font-semibold text-ink">{status?.connected ? "🟢 Connected" : "🔴 Not connected"}</h3>
+          {activeNumberLabel ? (
+            <p className="mt-1 text-sm font-medium text-whatsapp-muted">{activeNumberLabel}</p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
+          {connectIconButton}
           {profileIconButton}
           {disconnectIconButton}
         </div>

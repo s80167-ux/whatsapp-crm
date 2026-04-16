@@ -169,6 +169,15 @@ export type WhatsAppAccount = {
   updated_at: string;
 };
 
+export type WhatsAppAccountCleanupResponse = {
+  success: boolean;
+  removedInvalidCount: number;
+  removedDuplicateCount: number;
+  removedIds: string[];
+  remainingCount: number;
+  accounts: WhatsAppAccount[];
+};
+
 export type UserProfile = {
   id: string;
   email: string | null;
@@ -362,14 +371,23 @@ export const api = {
       token
     );
   },
-  getWhatsAppStatus() {
-    return request<WhatsAppStatus>("/whatsapp/status");
+  getWhatsAppStatus(token: string, whatsappAccountId?: string | null) {
+    return request<WhatsAppStatus>(withWhatsAppAccountParam("/whatsapp/status", whatsappAccountId), {}, token);
   },
-  getWhatsAppQr() {
-    return request<WhatsAppQr>("/whatsapp/qr");
+  getWhatsAppQr(token: string, whatsappAccountId?: string | null) {
+    return request<WhatsAppQr>(withWhatsAppAccountParam("/whatsapp/qr", whatsappAccountId), {}, token);
   },
-  getWhatsAppProfile(token: string) {
-    return request<WhatsAppProfile>("/whatsapp/profile", {}, token);
+  createWhatsAppConnection(token: string) {
+    return request<WhatsAppAccount>(
+      "/whatsapp/connect",
+      {
+        method: "POST"
+      },
+      token
+    );
+  },
+  getWhatsAppProfile(token: string, whatsappAccountId?: string | null) {
+    return request<WhatsAppProfile>(withWhatsAppAccountParam("/whatsapp/profile", whatsappAccountId), {}, token);
   },
   getWhatsAppAccounts(token: string) {
     return request<WhatsAppAccount[]>("/whatsapp/accounts", {}, token);
@@ -384,9 +402,16 @@ export const api = {
       token
     );
   },
-  disconnectWhatsApp(token: string) {
+  cleanupStaleWhatsAppAccounts(token: string) {
+    return request<WhatsAppAccountCleanupResponse>(
+      "/whatsapp/cleanup-stale-accounts",
+      { method: "POST" },
+      token
+    );
+  },
+  disconnectWhatsApp(token: string, whatsappAccountId?: string | null) {
     return request<WhatsAppStatus>(
-      "/whatsapp/disconnect",
+      withWhatsAppAccountParam("/whatsapp/disconnect", whatsappAccountId),
       {
         method: "POST"
       },
