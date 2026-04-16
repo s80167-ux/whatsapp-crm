@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CUSTOMER_STATUS_LABELS, type Conversation, type CustomerStatus, type WhatsAppAccount } from "../lib/api";
 import { getConversationIdentifier, getDisplayName, getDisplayPhone, getResolvedPhone, formatPhoneDisplay } from "../lib/display";
 
@@ -109,7 +109,6 @@ export function ChatList({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "today" | "recent">("all");
   const [page, setPage] = useState(1);
-  const previousConversationOrderRef = useRef<string[]>([]);
   const visibleWhatsAppAccounts = useMemo(
     () =>
       [...whatsAppAccounts].sort(
@@ -128,7 +127,7 @@ export function ChatList({
   const filteredConversations = useMemo(() => {
     const now = new Date();
 
-    const sortedConversations = conversations
+    return conversations
       .filter((conversation) => {
         const resolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid) || "";
         const conversationId = getConversationIdentifier(conversation.phone, conversation.chatJid) || "";
@@ -155,32 +154,7 @@ export function ChatList({
         return true;
       })
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-    if (!selectedPhone) {
-      return sortedConversations;
-    }
-
-    const selectedIndex = sortedConversations.findIndex(
-      (conversation) => getConversationIdentifier(conversation.phone, conversation.chatJid) === selectedPhone
-    );
-
-    if (selectedIndex === -1) {
-      return sortedConversations;
-    }
-
-    const previousIndex = previousConversationOrderRef.current.indexOf(selectedPhone);
-
-    if (previousIndex === -1 || previousIndex === selectedIndex) {
-      return sortedConversations;
-    }
-
-    const nextConversations = [...sortedConversations];
-    const [selectedConversation] = nextConversations.splice(selectedIndex, 1);
-    const targetIndex = Math.min(previousIndex, nextConversations.length);
-    nextConversations.splice(targetIndex, 0, selectedConversation);
-
-    return nextConversations;
-  }, [conversations, filter, query, selectedPhone]);
+  }, [conversations, filter, query]);
 
   const totalPages = Math.max(1, Math.ceil(filteredConversations.length / CONVERSATIONS_PAGE_SIZE));
   const paginatedConversations = filteredConversations.slice((page - 1) * CONVERSATIONS_PAGE_SIZE, page * CONVERSATIONS_PAGE_SIZE);
@@ -194,12 +168,6 @@ export function ChatList({
       setPage(totalPages);
     }
   }, [page, totalPages]);
-
-  useEffect(() => {
-    previousConversationOrderRef.current = filteredConversations
-      .map((conversation) => getConversationIdentifier(conversation.phone, conversation.chatJid))
-      .filter((conversationId): conversationId is string => Boolean(conversationId));
-  }, [filteredConversations]);
 
   return (
     <section className="glass-panel flex h-full min-h-[220px] flex-col overflow-hidden p-3 sm:min-h-[420px] sm:p-4 xl:h-[calc(100dvh-24px)] xl:min-h-[calc(100dvh-24px)]">

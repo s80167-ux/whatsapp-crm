@@ -204,6 +204,30 @@ export type DeleteMessageResponse = {
   };
 };
 
+export type ConversationRepopulateResponse = {
+  success: boolean;
+  phone: string | null;
+  chatJid: string | null;
+  whatsappAccountId: string | null;
+  history: {
+    attempted: boolean;
+    requested: boolean;
+    matched: boolean;
+    matchedMessages: number;
+    matchedChats: number;
+    matchedContacts: number;
+    timedOut: boolean;
+    warning: string | null;
+    anchorMessageId: string | null;
+  };
+  profile: {
+    refreshed: boolean;
+    profilePictureUrl: string | null;
+    about: string | null;
+  };
+  customer?: Customer | null;
+};
+
 const configuredApiUrl = import.meta.env.VITE_API_URL;
 const isLocalhost =
   typeof window !== "undefined" &&
@@ -499,6 +523,19 @@ export const api = {
     }
 
     return request<Customer>(`/customers/${phone}${params.size ? `?${params.toString()}` : ""}`, {}, token);
+  },
+  repopulateConversation(phone: string, token: string, options?: { chatJid?: string | null; whatsappAccountId?: string | null }) {
+    return request<ConversationRepopulateResponse>(
+      withWhatsAppAccountParam(`/customers/${phone}/repopulate`, options?.whatsappAccountId),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          chatJid: options?.chatJid || null,
+          whatsappAccountId: options?.whatsappAccountId || null
+        })
+      },
+      token
+    );
   },
   getCustomerSalesItems(phone: string, token: string, chatJid?: string | null, whatsappAccountId?: string | null) {
     const params = new URLSearchParams();

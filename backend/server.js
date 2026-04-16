@@ -28,6 +28,7 @@ const {
   getConversations,
   getMessagesByPhone,
   getMessagesByContactId,
+  getConversationHistoryAnchor,
   saveMessage,
   getCustomerByContactId,
   getCustomerByPhone,
@@ -59,6 +60,7 @@ const {
   getWhatsAppProfile,
   disconnectWhatsApp,
   getContactProfile,
+  repopulateConversationFromWhatsApp,
   getCurrentWhatsAppAccountContext,
   removeWhatsAppSessions,
   normalizePhone
@@ -167,6 +169,44 @@ async function resolveRequestWhatsAppAccountId(req, { fallbackToActive = true } 
   return context.id || null;
 }
 
+async function resolveLiveWhatsAppAccounts(ownerUserId, accounts) {
+  return await Promise.all(
+    (accounts || []).map(async (account) => {
+      try {
+        const status = await getWhatsAppStatus(ownerUserId, account.id);
+        const nextState = String(status?.state || account.connection_state || "disconnected").trim().toLowerCase();
+
+        return {
+          ...account,
+          connection_state: nextState
+        };
+      } catch (error) {
+        console.warn(`Failed to resolve live WhatsApp status for ${account?.id}:`, error?.message || error);
+        return account;
+      }
+    })
+  );
+}
+
+function resolveLiveConversationStates(conversations, liveAccounts) {
+  const liveAccountMap = new Map((liveAccounts || []).map((account) => [account.id, account]));
+
+  return (conversations || []).map((conversation) => {
+    const liveSourceAccount = conversation?.whatsappAccountId ? liveAccountMap.get(conversation.whatsappAccountId) || null : null;
+
+    if (!liveSourceAccount) {
+      return conversation;
+    }
+
+    return {
+      ...conversation,
+      sourceAccountPhone: liveSourceAccount.account_phone || conversation.sourceAccountPhone || null,
+      sourceDisplayName: liveSourceAccount.display_name || conversation.sourceDisplayName || null,
+      sourceConnectionState: liveSourceAccount.connection_state || conversation.sourceConnectionState || null
+    };
+  });
+}
+
 app.get("/", (_req, res) => {
   res.json({
     name: "whatsapp-crm-backend",
@@ -241,7 +281,7 @@ whatsappRouter.get("/accounts", requireAuth, async (req, res) => {
     await Promise.allSettled(
       accountsToInitialize.map((account) => initializeWhatsApp(req.user.sub, account.id))
     );
-    return res.json(accounts);
+    return res.json(await resolveLiveWhatsAppAccounts(req.user.sub, accounts));
   } catch (error) {
     console.error("Failed to fetch WhatsApp accounts:", error);
     return res.status(500).json({ error: "Failed to fetch WhatsApp accounts." });
@@ -256,7 +296,7 @@ whatsappRouter.post("/cleanup-stale-accounts", requireAuth, async (req, res) => 
     return res.json({
       success: true,
       ...summary,
-      accounts
+      accounts: await resolveLiveWhatsAppAccounts(req.user.sub, accounts)
     });
   } catch (error) {
     console.error("Failed to cleanup stale WhatsApp accounts:", error);
@@ -413,7 +453,9 @@ app.get("/conversations", requireAuth, bindAuthenticatedWhatsAppOwner, async (re
   try {
     const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
     const conversations = await getConversations(req.user.sub, whatsappAccountId);
-    return res.json(conversations);
+    const accounts = await getWhatsAppAccounts(req.user.sub);
+    const liveAccounts = await resolveLiveWhatsAppAccounts(req.user.sub, accounts);
+    return res.json(resolveLiveConversationStates(conversations, liveAccounts));
   } catch (error) {
     console.error("Failed to fetch conversations:", error);
     return res.status(500).json({ error: "Failed to fetch conversations." });
@@ -607,19 +649,33 @@ app.get("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
     const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
     const customer = await getCustomerInsights(phone, req.user.sub, chatJid, whatsappAccountId);
     const sourceWhatsAppAccountId = customer.whatsapp_account_id || null;
-    const profile = await getContactProfile(req.user.sub, sourceWhatsAppAccountId, phone, customer.chat_jid || chatJid || null);
+    let profile = { profilePictureUrl: null, about: null };
+
+    try {
+      profile = await getContactProfile(
+        req.user.sub,
+        sourceWhatsAppAccountId,
+        customer.phone || phone,
+        customer.chat_jid || chatJid || null
+      );
+    } catch (profileError) {
+      console.warn(
+        `[PROFILE LOOKUP] Failed for ${customer.phone || phone || "unknown"}. Returning cached customer data instead:`,
+        profileError?.message || profileError
+      );
+    }
 
     // Update DB cache if we got live data from WhatsApp
     if (profile.profilePictureUrl || profile.about) {
       await upsertCustomer({
         owner_user_id: req.user.sub,
         whatsapp_account_id: sourceWhatsAppAccountId,
-        phone,
+        phone: customer.phone || phone,
         chat_jid: customer.chat_jid || chatJid || null,
         profile_picture_url: profile.profilePictureUrl,
         about: profile.about
       }).catch((err) => {
-        console.warn(`[PROFILE CACHE] Failed for ${phone}. If you haven't run the SQL migration yet, this is expected:`, err.message);
+        console.warn(`[PROFILE CACHE] Failed for ${customer.phone || phone}. If you haven't run the SQL migration yet, this is expected:`, err.message);
       });
     }
 
@@ -632,6 +688,53 @@ app.get("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
   } catch (error) {
     console.error("Failed to fetch customer:", error);
     return res.status(500).json({ error: "Failed to fetch customer." });
+  }
+});
+
+app.post("/customers/:phone/repopulate", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const phone = normalizePhone(req.params.phone);
+    const chatJid = typeof req.body?.chatJid === "string" ? req.body.chatJid.trim() || null : null;
+    const requestedWhatsAppAccountId = await resolveRequestWhatsAppAccountId(req);
+
+    if (!phone && !chatJid) {
+      return res.status(400).json({ error: "Phone or chat JID is required." });
+    }
+
+    const customer = await getCustomerByPhone(phone, req.user.sub, chatJid, requestedWhatsAppAccountId);
+    const sourceWhatsAppAccountId = customer?.whatsapp_account_id || requestedWhatsAppAccountId || null;
+    const targetPhone = customer?.phone || phone;
+    const targetChatJid = customer?.chat_jid || chatJid || null;
+    const anchorMessage = await getConversationHistoryAnchor(
+      targetPhone,
+      req.user.sub,
+      targetChatJid,
+      sourceWhatsAppAccountId
+    );
+
+    const repopulation = await repopulateConversationFromWhatsApp(req.user.sub, sourceWhatsAppAccountId, {
+      phone: targetPhone,
+      chatJid: targetChatJid,
+      contactName: customer?.contact_name || null,
+      anchorMessage
+    });
+
+    const refreshedCustomer = await getCustomerInsights(
+      targetPhone,
+      req.user.sub,
+      targetChatJid,
+      repopulation.whatsappAccountId || sourceWhatsAppAccountId
+    );
+
+    return res.json({
+      ...repopulation,
+      customer: refreshedCustomer
+    });
+  } catch (error) {
+    console.error("Failed to repopulate customer from WhatsApp:", error);
+    return res.status(error.status || 500).json({
+      error: error.message || "Failed to repopulate customer from WhatsApp."
+    });
   }
 });
 

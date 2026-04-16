@@ -81,6 +81,20 @@ function formatPrice(price: number, currency: string) {
   }).format(price);
 }
 
+function getQrPlaceholderLabel(status: WhatsAppStatus | null, loading: boolean) {
+  const state = String(status?.state || "").trim().toLowerCase();
+
+  if (loading || state === "connecting") {
+    return "Preparing QR...";
+  }
+
+  if (state === "qr" || status?.hasQr) {
+    return "Waiting for QR image...";
+  }
+
+  return "QR not ready";
+}
+
 export function WhatsAppConnectCard({
   activeWhatsAppNumber = null,
   status,
@@ -187,6 +201,7 @@ export function WhatsAppConnectCard({
   const disconnectLabel = disconnecting ? "Disconnecting WhatsApp" : "Disconnect WhatsApp";
   const connectLabel = connectingNew ? "Starting new connection" : "Connect another number";
   const activeNumberLabel = activeWhatsAppNumber ? formatPhone(activeWhatsAppNumber) : null;
+  const qrPlaceholderLabel = getQrPlaceholderLabel(status, loading);
 
   useEffect(() => {
     if (!showProfilePanel || !canViewProfile) {
@@ -784,7 +799,7 @@ export function WhatsAppConnectCard({
                     </div>
                   ) : (
                     <div className="flex h-44 w-44 max-w-full items-center justify-center rounded-[11px] border border-dashed border-white/15 bg-white/14 px-3 text-center text-[11px] leading-4 text-whatsapp-muted">
-                      QR not ready
+                      {qrPlaceholderLabel}
                     </div>
                   )}
                 </div>
@@ -829,11 +844,11 @@ export function WhatsAppConnectCard({
             <div className="text-center text-sm font-medium text-whatsapp-dark" />
           ) : status?.hasQr || loading ? (
             <div className="text-center text-sm text-whatsapp-muted">
-              QR not ready
+              {qrPlaceholderLabel}
             </div>
           ) : (
             <div className="text-center text-sm text-whatsapp-muted">
-              QR not ready
+              {qrPlaceholderLabel}
             </div>
           )}
         </div>

@@ -508,7 +508,9 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
     onSendQuickReply,
     onSendAttachment,
     onSendLocation,
-    onManualRefresh
+    onManualRefresh,
+    repopulatingFromWhatsApp = false,
+    onRepopulateFromWhatsApp
   } = props;
   const listRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -1323,7 +1325,17 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
           </div>
         ) : null}
         {/* Manual Refresh Button */}
-        <div className="flex justify-end mb-2">
+        <div className="mb-2 flex justify-end gap-2">
+          {onRepopulateFromWhatsApp ? (
+            <button
+              type="button"
+              className="rounded border border-whatsapp-line bg-white px-3 py-1 text-xs font-medium text-whatsapp-deep shadow-soft transition hover:bg-whatsapp-soft disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={repopulatingFromWhatsApp}
+              onClick={onRepopulateFromWhatsApp}
+            >
+              {repopulatingFromWhatsApp ? "Repopulating..." : "Repopulate from WhatsApp"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="rounded border border-whatsapp-line bg-white px-3 py-1 text-xs font-medium text-whatsapp-deep shadow-soft transition hover:bg-whatsapp-soft"
@@ -2027,85 +2039,87 @@ export function ChatWindow(props: ChatWindowProps & { onManualRefresh?: () => vo
         ) : null}
 
         <div className="rounded-xl border border-whatsapp-line bg-white p-2 shadow-soft">
-          <div className="flex items-center gap-2">
-          <button
-            className={`icon-hover-trigger flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent sm:h-11 sm:w-11 ${
-              showQuickReplies ? "text-whatsapp-deep" : ""
-            }`}
-            onClick={() => {
-              setShowQuickReplies((current) => !current);
-              setShowAttachmentMenu(false);
-              setShowEmojiPicker(false);
-              setComposerError("");
-            }}
-            type="button"
-          >
-            <ActionIcon>
-              <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
-                <path
-                  d="M7 10h10M7 14h6m-7 7 3.6-3H18a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3H6A3 3 0 0 0 3 7v8a3 3 0 0 0 3 3v3Z"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.8"
-                />
-              </svg>
-            </ActionIcon>
-            <span className="icon-hover-label">Quick replies</span>
-          </button>
+          <div className="flex items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+            <button
+              className={`icon-hover-trigger flex h-9 w-9 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent sm:h-10 sm:w-10 ${
+                showQuickReplies ? "text-whatsapp-deep" : ""
+              }`}
+              onClick={() => {
+                setShowQuickReplies((current) => !current);
+                setShowAttachmentMenu(false);
+                setShowEmojiPicker(false);
+                setComposerError("");
+              }}
+              type="button"
+            >
+              <ActionIcon>
+                <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
+                  <path
+                    d="M7 10h10M7 14h6m-7 7 3.6-3H18a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3H6A3 3 0 0 0 3 7v8a3 3 0 0 0 3 3v3Z"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="1.8"
+                  />
+                </svg>
+              </ActionIcon>
+              <span className="icon-hover-label">Quick replies</span>
+            </button>
 
-          <button
-            className={`icon-hover-trigger flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent sm:h-11 sm:w-11 ${
-              showAttachmentMenu ? "text-whatsapp-deep" : ""
-            }`}
-            onClick={() => {
-              setShowAttachmentMenu((current) => !current);
-              setShowQuickReplies(false);
-              setShowEmojiPicker(false);
-              setComposerError("");
-            }}
-            type="button"
-          >
-            <ActionIcon>
-              <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
-                <path
-                  d="m21.4 11.1-8.5 8.5a5 5 0 0 1-7.1-7.1l9.2-9.2a3.5 3.5 0 0 1 5 5L10.5 17.8a2 2 0 1 1-2.8-2.8l8-8"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="1.8"
-                />
-              </svg>
-            </ActionIcon>
-            <span className="icon-hover-label">Attachments</span>
-          </button>
+            <button
+              className={`icon-hover-trigger flex h-9 w-9 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent sm:h-10 sm:w-10 ${
+                showAttachmentMenu ? "text-whatsapp-deep" : ""
+              }`}
+              onClick={() => {
+                setShowAttachmentMenu((current) => !current);
+                setShowQuickReplies(false);
+                setShowEmojiPicker(false);
+                setComposerError("");
+              }}
+              type="button"
+            >
+              <ActionIcon>
+                <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
+                  <path
+                    d="m21.4 11.1-8.5 8.5a5 5 0 0 1-7.1-7.1l9.2-9.2a3.5 3.5 0 0 1 5 5L10.5 17.8a2 2 0 1 1-2.8-2.8l8-8"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="1.8"
+                  />
+                </svg>
+              </ActionIcon>
+              <span className="icon-hover-label">Attachments</span>
+            </button>
 
-          <button
-            className={`icon-hover-trigger flex h-10 w-10 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent sm:h-11 sm:w-11 ${
-              showEmojiPicker ? "text-whatsapp-deep" : ""
-            }`}
-            onClick={() => {
-              setShowEmojiPicker((current) => !current);
-              setShowAttachmentMenu(false);
-              setShowQuickReplies(false);
-              setComposerError("");
-            }}
-            type="button"
-          >
-            <ActionIcon>
-              <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
-                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
-                <path d="M9 10h.01M15 10h.01" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-                <path d="M8.5 14c.8 1.3 2.05 2 3.5 2s2.7-.7 3.5-2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-              </svg>
-            </ActionIcon>
-            <span className="icon-hover-label">
-              Emojis
-            </span>
-          </button>
+            <button
+              className={`icon-hover-trigger flex h-9 w-9 shrink-0 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent sm:h-10 sm:w-10 ${
+                showEmojiPicker ? "text-whatsapp-deep" : ""
+              }`}
+              onClick={() => {
+                setShowEmojiPicker((current) => !current);
+                setShowAttachmentMenu(false);
+                setShowQuickReplies(false);
+                setComposerError("");
+              }}
+              type="button"
+            >
+              <ActionIcon>
+                <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+                  <path d="M9 10h.01M15 10h.01" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                  <path d="M8.5 14c.8 1.3 2.05 2 3.5 2s2.7-.7 3.5-2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                </svg>
+              </ActionIcon>
+              <span className="icon-hover-label">
+                Emojis
+              </span>
+            </button>
+          </div>
 
           <input
-            className="input-glass"
+            className="input-glass min-w-0 flex-1"
             ref={chatInputRef}
             onChange={(event) => onChangeMessage(event.target.value)}
             onKeyDown={(event) => {

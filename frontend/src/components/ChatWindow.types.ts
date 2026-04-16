@@ -37,4 +37,6 @@ export interface ChatWindowProps {
   onSendQuickReply: (text: string) => Promise<void>;
   onSendAttachment: (file: File, caption?: string | undefined) => Promise<void>;
   onSendLocation: (location: { latitude: number; longitude: number; name?: string; address?: string }) => Promise<void>;
+  repopulatingFromWhatsApp?: boolean;
+  onRepopulateFromWhatsApp?: () => void;
 }

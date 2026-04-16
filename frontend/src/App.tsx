@@ -84,7 +84,10 @@ function buildSelectedWhatsAppStatus(
     return polledStatus;
   }
 
-  const state = String(account.connection_state || "").trim().toLowerCase() || polledStatus?.state || "disconnected";
+  const state =
+    String(polledStatus?.state || "").trim().toLowerCase() ||
+    String(account.connection_state || "").trim().toLowerCase() ||
+    "disconnected";
   return {
     connected: state === "open",
     state,
@@ -149,6 +152,7 @@ function App() {
   const [connectingNewWhatsApp, setConnectingNewWhatsApp] = useState(false);
   const [deletingConversationKey, setDeletingConversationKey] = useState<string | null>(null);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  const [repopulatingConversation, setRepopulatingConversation] = useState(false);
   const handlingSessionRevocationRef = useRef(false);
   const messagesCacheRef = useRef<Record<string, Message[]>>({});
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -396,23 +400,27 @@ function App() {
       setRefreshingChats(true);
     }
 
-    try {
-      const data = await api.getConversations(activeToken, selectedWhatsAppAccountId);
-      setConversations(data);
-      setSelectedPhone((current) => {
-        if (!data.length) {
-          return null;
-        }
+      try {
+        const data = await api.getConversations(activeToken, selectedWhatsAppAccountId);
+        setConversations(data);
+        setSelectedPhone((current) => {
+          if (!data.length) {
+            return null;
+          }
 
-        if (current && data.some((item) => getConversationIdentifier(item.phone, item.chatJid) === current)) {
-          return current;
-        }
+          if (current && data.some((item) => getConversationIdentifier(item.phone, item.chatJid) === current)) {
+            return current;
+          }
 
-        if (activeDashboardTab !== "inbox") {
-          return current;
-        }
+          if (current) {
+            return current;
+          }
 
-        return getConversationIdentifier(data[0]?.phone, data[0]?.chatJid) || null;
+          if (activeDashboardTab !== "inbox") {
+            return current;
+          }
+
+          return getConversationIdentifier(data[0]?.phone, data[0]?.chatJid) || null;
       });
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to load conversations.");
@@ -789,6 +797,28 @@ function App() {
         api.getWhatsAppQr(token, targetAccountId)
       ]);
       setWhatsAppStatus(status);
+      if (targetAccountId) {
+        setWhatsAppAccounts((current) =>
+          current.map((account) =>
+            account.id === targetAccountId
+              ? {
+                  ...account,
+                  connection_state: status.state
+                }
+              : account
+          )
+        );
+        setConversations((current) =>
+          current.map((conversation) =>
+            conversation.whatsappAccountId === targetAccountId
+              ? {
+                  ...conversation,
+                  sourceConnectionState: status.state
+                }
+              : conversation
+          )
+        );
+      }
       setWhatsAppQr((current) => {
         if (status.connected) {
           return qr;
@@ -875,6 +905,49 @@ function App() {
     }
   }
 
+  async function handleRepopulateConversation() {
+    if (!token || !selectedPhone || repopulatingConversation) {
+      return;
+    }
+
+    setRepopulatingConversation(true);
+    setDashboardError("");
+    setDashboardNotice("");
+
+    try {
+      const response = await api.repopulateConversation(selectedPhone, token, {
+        chatJid: activeChatJid,
+        whatsappAccountId: activeConversationSourceAccountId
+      });
+
+      await loadWhatsAppState(true);
+      await loadConversations(token, true);
+      await Promise.allSettled([
+        loadMessages(selectedPhone, token, activeChatJid, true, true),
+        loadCustomer(selectedPhone, token, activeChatJid, true),
+        loadCustomerSalesItems(selectedPhone, token, activeChatJid, true)
+      ]);
+
+      if (response.customer) {
+        setCustomerDraft(response.customer);
+      }
+
+      if (response.history.warning) {
+        setDashboardNotice(response.history.warning);
+      } else if (response.history.requested && response.history.matchedMessages > 0) {
+        setDashboardNotice(`Repopulated ${response.history.matchedMessages} WhatsApp message${response.history.matchedMessages === 1 ? "" : "s"} for this conversation.`);
+      } else if (response.profile.refreshed) {
+        setDashboardNotice("Refreshed the latest WhatsApp profile details for this conversation.");
+      } else {
+        setDashboardNotice("Repopulation request completed, but WhatsApp did not return any new conversation data.");
+      }
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "Failed to repopulate conversation from WhatsApp.");
+    } finally {
+      setRepopulatingConversation(false);
+    }
+  }
+
   async function handleConnectNewWhatsApp() {
     if (!token || connectingNewWhatsApp) {
       return;
@@ -949,17 +1022,7 @@ function App() {
 
   const selectedWhatsAppAccount =
     whatsAppAccounts.find((account) => account.id === selectedWhatsAppAccountId) || null;
-  const selectedWhatsAppAccountState = String(selectedWhatsAppAccount?.connection_state || "").trim().toLowerCase();
-  const effectiveWhatsAppStatus = selectedWhatsAppAccount
-    ? {
-        connected: selectedWhatsAppAccountState === "open",
-        state: selectedWhatsAppAccountState || whatsAppStatus?.state || "disconnected",
-        hasQr:
-          selectedWhatsAppAccountState === "qr" ||
-          Boolean(whatsAppQr?.qr) ||
-          Boolean(whatsAppStatus?.hasQr)
-      }
-    : whatsAppStatus;
+  const effectiveWhatsAppStatus = buildSelectedWhatsAppStatus(selectedWhatsAppAccount, whatsAppStatus, whatsAppQr);
 
   const leadConversations = useMemo(() => {
     const selectedAccountPhone = selectedWhatsAppAccount?.account_phone || null;
@@ -985,7 +1048,20 @@ function App() {
   const activeConversationSourceAccountId =
     selectedConversation?.whatsappAccountId || customerDraft?.whatsapp_account_id || selectedContact?.whatsapp_account_id || null;
   const activeConversationSourceState = String(selectedConversation?.sourceConnectionState || "").trim().toLowerCase();
-  const activeConversationCanSend = !selectedConversation || !activeConversationSourceState || activeConversationSourceState === "open";
+  const selectedWhatsAppAccountPhone = normalizePhoneValue(selectedWhatsAppAccount?.account_phone);
+  const activeConversationSourcePhone = normalizePhoneValue(selectedConversation?.sourceAccountPhone);
+  const activeConversationUsesSelectedAccount = Boolean(
+    selectedConversation &&
+      ((activeConversationSourceAccountId && selectedWhatsAppAccountId && activeConversationSourceAccountId === selectedWhatsAppAccountId) ||
+        (activeConversationSourcePhone && selectedWhatsAppAccountPhone && activeConversationSourcePhone === selectedWhatsAppAccountPhone))
+  );
+  const resolvedActiveConversationSourceState = activeConversationUsesSelectedAccount
+    ? String(effectiveWhatsAppStatus?.state || selectedWhatsAppAccount?.connection_state || activeConversationSourceState || "")
+        .trim()
+        .toLowerCase()
+    : activeConversationSourceState;
+  const activeConversationCanSend =
+    !selectedConversation || !resolvedActiveConversationSourceState || resolvedActiveConversationSourceState === "open";
   const activeConversationSourceLabel =
     selectedConversation?.sourceDisplayName || selectedConversation?.sourceAccountPhone || "the original WhatsApp source";
   const activeSelectionId = activeDashboardTab === "contacts" ? selectedContactConversationId : selectedPhone;
@@ -1449,10 +1525,7 @@ function App() {
       return;
     }
 
-    if (
-      selectedPhone &&
-      visibleConversations.some((conversation) => getConversationIdentifier(conversation.phone, conversation.chatJid) === selectedPhone)
-    ) {
+    if (selectedPhone) {
       return;
     }
 
@@ -2148,10 +2221,12 @@ function App() {
                       onClearMessageFilter={() => setActiveMessageFilterId(null)}
                       phone={activeCustomerPhone}
                       profilePictureUrl={customerDraft?.profile_picture_url || null}
+                      repopulatingFromWhatsApp={repopulatingConversation}
                       salesLeadItems={salesLeadItems}
                       salesLeadStatus={selectedStatus}
                       savingSalesLeadItem={savingSalesLeadItem}
                       sending={sending}
+                      onRepopulateFromWhatsApp={handleRepopulateConversation}
                       onManualRefresh={() => {
                         if (!token) return;
                         loadWhatsAppState(true);

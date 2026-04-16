@@ -68,6 +68,7 @@ async function getMessagesByContactId(contact_id, owner_user_id, chat_jid = null
 }
 const { createClient } = require("@supabase/supabase-js");
 const { getPhoneLookupValues, normalizePhone, resolveWhatsAppPhone } = require("./wa-identifiers");
+const path = require("path");
 
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -89,6 +90,35 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
     persistSession: false
   }
 });
+
+const baseAuthDir = process.env.WHATSAPP_AUTH_DIR
+  ? path.resolve(process.env.WHATSAPP_AUTH_DIR)
+  : path.join(__dirname, "baileys_auth");
+
+function normalizeWhatsAppAuthDir(value, accountId) {
+  const rawValue = String(value || "").trim();
+
+  if (!rawValue) {
+    return rawValue;
+  }
+
+  const pathTokens = rawValue.split(/[\\/]+/).filter(Boolean);
+  const accountDirToken =
+    [...pathTokens]
+      .reverse()
+      .find((token) => /^account-[0-9a-f-]{36}$/i.test(token) || /^[0-9a-f-]{36}$/i.test(token)) ||
+    "";
+
+  if (accountDirToken) {
+    return path.join(baseAuthDir, accountDirToken);
+  }
+
+  if (accountId) {
+    return path.join(baseAuthDir, `account-${accountId}`);
+  }
+
+  return rawValue;
+}
 
 const STATUS_NOTE_MARKER = "[[crm_status:";
 const STATUS_NOTE_REGEX = /^\[\[crm_status:(new_lead|interested|processing|closed_won|closed_lost)\]\]\n?/;
@@ -872,6 +902,111 @@ async function getMessagesByPhone(phone, ownerUserId, chatJid, whatsappAccountId
   }));
 }
 
+async function getConversationHistoryAnchor(phone, ownerUserId, chatJid, whatsappAccountId = null) {
+  const lookupValues = await getPhoneLookupValues(phone, chatJid || null);
+  let data;
+  let error;
+
+  if (chatJid) {
+    let byChatJidQuery = supabase
+      .from("messages")
+      .select("id, phone, chat_jid, wa_message_id, direction, created_at")
+      .eq("owner_user_id", ownerUserId)
+      .eq("chat_jid", chatJid)
+      .order("created_at", { ascending: true });
+    byChatJidQuery = applyWhatsAppAccountFilter(byChatJidQuery, whatsappAccountId);
+
+    let byPhoneQuery = lookupValues.length
+      ? supabase
+          .from("messages")
+          .select("id, phone, chat_jid, wa_message_id, direction, created_at")
+          .eq("owner_user_id", ownerUserId)
+          .in("phone", lookupValues)
+          .order("created_at", { ascending: true })
+      : Promise.resolve({ data: [], error: null });
+
+    if (lookupValues.length) {
+      byPhoneQuery = applyWhatsAppAccountFilter(byPhoneQuery, whatsappAccountId);
+    }
+
+    let [byChatJid, byPhone] = await Promise.all([byChatJidQuery, byPhoneQuery]);
+
+    if (
+      isMissingColumnError(byChatJid.error, "messages.chat_jid") ||
+      isMissingColumnError(byChatJid.error, "messages.wa_message_id") ||
+      isMissingColumnError(byChatJid.error, "messages.whatsapp_account_id")
+    ) {
+      byChatJid = { data: [], error: null };
+    }
+
+    if (
+      isMissingColumnError(byPhone.error, "messages.wa_message_id") ||
+      isMissingColumnError(byPhone.error, "messages.whatsapp_account_id")
+    ) {
+      byPhone = await supabase
+        .from("messages")
+        .select("id, phone, direction, created_at")
+        .eq("owner_user_id", ownerUserId)
+        .in("phone", lookupValues)
+        .order("created_at", { ascending: true });
+    }
+
+    data = Array.from(
+      new Map([...(byPhone.data || []), ...(byChatJid.data || [])].map((item) => [item.id, item])).values()
+    ).sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime());
+    error = byChatJid.error || byPhone.error;
+  } else {
+    if (!lookupValues.length) {
+      return null;
+    }
+
+    let query = supabase
+      .from("messages")
+      .select("id, phone, chat_jid, wa_message_id, direction, created_at")
+      .eq("owner_user_id", ownerUserId)
+      .in("phone", lookupValues)
+      .order("created_at", { ascending: true });
+    query = applyWhatsAppAccountFilter(query, whatsappAccountId);
+
+    ({ data, error } = await query);
+
+    if (
+      isMissingColumnError(error, "messages.chat_jid") ||
+      isMissingColumnError(error, "messages.wa_message_id") ||
+      isMissingColumnError(error, "messages.whatsapp_account_id")
+    ) {
+      ({ data, error } = await supabase
+        .from("messages")
+        .select("id, phone, direction, created_at")
+        .eq("owner_user_id", ownerUserId)
+        .in("phone", lookupValues)
+        .order("created_at", { ascending: true }));
+    }
+  }
+
+  throwIfTenantSchemaError(error, "messages.owner_user_id");
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  if (!rows.length) {
+    return null;
+  }
+
+  const fetchableRow = rows.find((row) => row?.wa_message_id && row?.created_at) || null;
+  const selectedRow = fetchableRow || rows[0];
+  const resolvedPhone = await resolveWhatsAppPhone(selectedRow.phone, selectedRow.chat_jid || chatJid || null);
+
+  return {
+    ...selectedRow,
+    phone: resolvedPhone || selectedRow.phone || phone || null,
+    chat_jid: selectedRow.chat_jid || chatJid || null,
+    wa_message_id: selectedRow.wa_message_id || null
+  };
+}
+
 async function deleteMessage({ owner_user_id, message_id }) {
   const { data: existingMessage, error: lookupError } = await supabase
     .from("messages")
@@ -1251,10 +1386,10 @@ async function getCustomerInsights(phone, ownerUserId, chatJid, whatsappAccountI
       byPhoneQuery
     ]);
 
-    if (isMissingColumnError(byPhone.error, "customer_sales_items.whatsapp_account_id")) {
+    if (isMissingColumnError(byPhone.error, "messages.whatsapp_account_id")) {
       byPhone = await supabase
-        .from("customer_sales_items")
-        .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
+        .from("messages")
+        .select("id, direction, created_at, message")
         .eq("owner_user_id", ownerUserId)
         .in("phone", lookupValues)
         .order("created_at", { ascending: false });
@@ -1283,6 +1418,15 @@ async function getCustomerInsights(phone, ownerUserId, chatJid, whatsappAccountI
       .order("created_at", { ascending: false });
     query = applyWhatsAppAccountFilter(query, whatsappAccountId);
     ({ data: messages, error } = await query);
+
+    if (isMissingColumnError(error, "messages.whatsapp_account_id")) {
+      ({ data: messages, error } = await supabase
+        .from("messages")
+        .select("id, direction, created_at, message")
+        .eq("owner_user_id", ownerUserId)
+        .in("phone", lookupValues)
+        .order("created_at", { ascending: false }));
+    }
   }
 
   throwIfTenantSchemaError(error, "messages.owner_user_id");
@@ -2085,13 +2229,16 @@ async function upsertWhatsAppAccount({
 
   const results = await Promise.all(candidates);
   const existingAccount = results.map((result) => result.data).find(Boolean) || null;
+  const normalizedAuthDir = auth_dir !== undefined
+    ? normalizeWhatsAppAuthDir(auth_dir, id || existingAccount?.id || null)
+    : undefined;
   const payload = {
     owner_user_id,
     ...(account_phone !== undefined ? { account_phone } : {}),
     ...(account_jid !== undefined ? { account_jid } : {}),
     ...(display_name !== undefined ? { display_name } : {}),
     ...(profile_picture_url !== undefined ? { profile_picture_url } : {}),
-    ...(auth_dir !== undefined ? { auth_dir } : {}),
+    ...(normalizedAuthDir !== undefined ? { auth_dir: normalizedAuthDir } : {}),
     ...(connection_state !== undefined ? { connection_state } : {}),
     ...(is_active !== undefined ? { is_active } : {}),
     ...(last_connected_at !== undefined ? { last_connected_at } : {}),
@@ -2497,6 +2644,7 @@ module.exports = {
   updateOutgoingMessageStatus,
   deleteMessage,
   getMessagesByPhone,
+  getConversationHistoryAnchor,
   getConversations,
   getCustomerByPhone,
   getCustomerInsights,

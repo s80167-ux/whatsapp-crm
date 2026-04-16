@@ -63,14 +63,38 @@ async function readMappingFile(fileName) {
     return mappingCache.get(fileName);
   }
 
-  try {
-    const value = JSON.parse(await fs.readFile(path.join(authDir, fileName), "utf8"));
-    mappingCache.set(fileName, value);
-    return value;
-  } catch {
-    mappingCache.set(fileName, null);
-    return null;
+  const candidatePaths = await getMappingCandidatePaths(fileName);
+
+  for (const candidatePath of candidatePaths) {
+    try {
+      const value = JSON.parse(await fs.readFile(candidatePath, "utf8"));
+      mappingCache.set(fileName, value);
+      return value;
+    } catch {
+      // Keep looking. LID mapping files are written lazily per account.
+    }
   }
+
+  return null;
+}
+
+async function getAccountAuthDirs() {
+  try {
+    const entries = await fs.readdir(authDir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(authDir, entry.name));
+  } catch {
+    return [];
+  }
+}
+
+async function getMappingCandidatePaths(fileName) {
+  const accountAuthDirs = await getAccountAuthDirs();
+  return [
+    path.join(authDir, fileName),
+    ...accountAuthDirs.map((accountAuthDir) => path.join(accountAuthDir, fileName))
+  ];
 }
 
 async function resolvePhoneFromIdentifier(value) {

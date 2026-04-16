@@ -26,6 +26,10 @@ const sessions = new Map();
 const baseAuthDir = process.env.WHATSAPP_AUTH_DIR
   ? path.resolve(process.env.WHATSAPP_AUTH_DIR)
   : path.join(__dirname, "baileys_auth");
+const HISTORY_CHATS_FILE = "hist_chats.json";
+const HISTORY_CONTACTS_FILE = "hist_contacts.json";
+const HISTORY_MESSAGES_FILE = "hist_messages.json";
+const HISTORY_CACHE_MAX_MESSAGES = 5000;
 
 function withTimeout(promise, timeoutMs, fallbackValue) {
   return Promise.race([
@@ -93,6 +97,64 @@ function createQuietBaileysLogger() {
   return logger;
 }
 
+async function readHistoryCacheFile(session, fileName, fallbackValue) {
+  try {
+    const filePath = path.join(session.authDir, fileName);
+    const raw = await fs.readFile(filePath, "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return fallbackValue;
+  }
+}
+
+async function writeHistoryCacheFile(session, fileName, value) {
+  try {
+    await fs.writeFile(path.join(session.authDir, fileName), JSON.stringify(value, null, 2));
+  } catch (error) {
+    console.warn(`Failed to write ${fileName} for ${session.accountId}:`, error?.message || error);
+  }
+}
+
+function getHistoryMessageCacheKey(message) {
+  const remoteJid = String(message?.key?.remoteJid || "").trim();
+  const messageId = String(message?.key?.id || "").trim();
+  const timestamp = extractMessageTimestampSeconds(message?.messageTimestamp) || 0;
+  return `${remoteJid}:${messageId}:${timestamp}`;
+}
+
+async function cacheHistoryMessages(session, messages, cutoffSecs) {
+  const existingMessages = await readHistoryCacheFile(session, HISTORY_MESSAGES_FILE, []);
+  const messageMap = new Map();
+
+  for (const message of Array.isArray(existingMessages) ? existingMessages : []) {
+    const timestampSeconds = extractMessageTimestampSeconds(message?.messageTimestamp);
+    if (timestampSeconds < cutoffSecs) {
+      continue;
+    }
+
+    messageMap.set(getHistoryMessageCacheKey(message), message);
+  }
+
+  for (const message of Array.isArray(messages) ? messages : []) {
+    const timestampSeconds = extractMessageTimestampSeconds(message?.messageTimestamp);
+    if (timestampSeconds < cutoffSecs) {
+      continue;
+    }
+
+    messageMap.set(getHistoryMessageCacheKey(message), message);
+  }
+
+  const nextMessages = Array.from(messageMap.values())
+    .sort(
+      (left, right) =>
+        extractMessageTimestampSeconds(left?.messageTimestamp) -
+        extractMessageTimestampSeconds(right?.messageTimestamp)
+    )
+    .slice(-HISTORY_CACHE_MAX_MESSAGES);
+
+  await writeHistoryCacheFile(session, HISTORY_MESSAGES_FILE, nextMessages);
+}
+
 async function loadBaileys() {
   if (!baileysModulePromise) {
     baileysModulePromise = import("@whiskeysockets/baileys").then((module) => ({
@@ -121,9 +183,46 @@ function shouldAutoInitializeAccount(account) {
   return ["open", "qr", "connecting", "disconnecting"].includes(state);
 }
 
+function normalizeStoredAuthDir(configuredDir, accountId) {
+  const rawValue = String(configuredDir || "").trim();
+
+  if (!rawValue) {
+    return null;
+  }
+
+  const pathTokens = rawValue.split(/[\\/]+/).filter(Boolean);
+  const lastToken = pathTokens[pathTokens.length - 1] || "";
+  const accountDirToken =
+    [...pathTokens]
+      .reverse()
+      .find((token) => /^account-[0-9a-f-]{36}$/i.test(token) || /^[0-9a-f-]{36}$/i.test(token)) ||
+    "";
+
+  const preferredToken = accountDirToken || lastToken;
+
+  if (/^account-[0-9a-f-]{36}$/i.test(preferredToken) || /^[0-9a-f-]{36}$/i.test(preferredToken)) {
+    return path.join(baseAuthDir, preferredToken);
+  }
+
+  if (path.isAbsolute(rawValue)) {
+    return rawValue;
+  }
+
+  if (/^[a-z]:/i.test(rawValue)) {
+    return rawValue;
+  }
+
+  if (accountId) {
+    return path.join(baseAuthDir, `account-${accountId}`);
+  }
+
+  return path.join(baseAuthDir, preferredToken);
+}
+
 function getSessionAuthDir(account) {
   const configuredDir = String(account?.auth_dir || "").trim();
-  return configuredDir ? path.resolve(configuredDir) : path.join(baseAuthDir, String(account?.id || crypto.randomUUID()));
+  const normalizedConfiguredDir = normalizeStoredAuthDir(configuredDir, String(account?.id || "").trim() || null);
+  return normalizedConfiguredDir || path.join(baseAuthDir, `account-${String(account?.id || crypto.randomUUID())}`);
 }
 
 function getOrCreateSessionFromAccount(account) {
@@ -158,6 +257,7 @@ function getOrCreateSessionFromAccount(account) {
     connectionState: String(account?.connection_state || "disconnected"),
     manualDisconnectRequested: false,
     historySyncObserved: false,
+    pendingHistorySyncRequests: new Set(),
     reconnectTimer: null,
     fallbackSyncTimer: null,
     initializingPromise: null
@@ -181,6 +281,21 @@ function clearFallbackSyncTimer(session) {
   }
 }
 
+function shouldIgnoreQrDowngrade(session) {
+  const currentState = String(session.connectionState || "").trim().toLowerCase();
+  const lastConnectedAt = session.account?.last_connected_at ? new Date(session.account.last_connected_at).getTime() : 0;
+
+  if (currentState === "open") {
+    return true;
+  }
+
+  if (!lastConnectedAt || Number.isNaN(lastConnectedAt)) {
+    return false;
+  }
+
+  return Date.now() - lastConnectedAt < 10 * 60 * 1000;
+}
+
 function safelyRunSocketTask(label, task) {
   Promise.resolve()
     .then(task)
@@ -196,6 +311,21 @@ async function disposeSession(session, options = {}) {
 
   clearReconnectTimer(session);
   clearFallbackSyncTimer(session);
+  for (const request of session.pendingHistorySyncRequests || []) {
+    clearTimeout(request.timeout);
+    request.resolve({
+      matched: false,
+      matchedMessages: 0,
+      matchedChats: 0,
+      matchedContacts: 0,
+      timedOut: false,
+      cancelled: true,
+      syncType: null
+    });
+  }
+  if (session.pendingHistorySyncRequests?.clear) {
+    session.pendingHistorySyncRequests.clear();
+  }
   session.manualDisconnectRequested = true;
   session.qrData = null;
   session.connectionState = options.connectionState || "disconnected";
@@ -517,6 +647,89 @@ function extractMessageTimestampSeconds(value) {
   return 0;
 }
 
+function settleHistorySyncRequest(session, request, result) {
+  if (!request || request.settled) {
+    return;
+  }
+
+  request.settled = true;
+  clearTimeout(request.timeout);
+  session.pendingHistorySyncRequests?.delete(request);
+  request.resolve(result);
+}
+
+function registerHistorySyncRequest(session, target, timeoutMs = 15000) {
+  return new Promise((resolve) => {
+    const request = {
+      target,
+      resolve,
+      settled: false,
+      timeout: setTimeout(() => {
+        settleHistorySyncRequest(session, request, {
+          matched: false,
+          matchedMessages: 0,
+          matchedChats: 0,
+          matchedContacts: 0,
+          timedOut: true,
+          cancelled: false,
+          syncType: null
+        });
+      }, timeoutMs)
+    };
+
+    session.pendingHistorySyncRequests.add(request);
+  });
+}
+
+async function historyEntryMatchesTarget(target, jidValue) {
+  const normalizedJid = String(jidValue || "").trim();
+
+  if (!normalizedJid) {
+    return false;
+  }
+
+  if (target.chatJid && normalizedJid === target.chatJid) {
+    return true;
+  }
+
+  if (!target.phone) {
+    return false;
+  }
+
+  const resolvedPhone = await resolveWhatsAppPhone(normalizedJid, normalizedJid);
+  return Boolean(resolvedPhone && resolvedPhone === target.phone);
+}
+
+async function collectHistorySyncMatchStats(target, payload) {
+  const stats = {
+    matched: false,
+    matchedMessages: 0,
+    matchedChats: 0,
+    matchedContacts: 0
+  };
+
+  for (const message of payload.messages || []) {
+    if (await historyEntryMatchesTarget(target, message?.key?.remoteJid)) {
+      stats.matchedMessages += 1;
+    }
+  }
+
+  for (const chat of payload.chats || []) {
+    if (await historyEntryMatchesTarget(target, chat?.id)) {
+      stats.matchedChats += 1;
+    }
+  }
+
+  for (const contact of payload.contacts || []) {
+    if (await historyEntryMatchesTarget(target, contact?.id)) {
+      stats.matchedContacts += 1;
+    }
+  }
+
+  stats.matched = stats.matchedMessages > 0 || stats.matchedChats > 0 || stats.matchedContacts > 0;
+  return stats;
+}
+
 function getSelfJid(session) {
   return session.sock?.user?.id || session.account?.account_jid || null;
 }
@@ -560,6 +773,64 @@ async function upsertHistoryCustomer({
     profile_picture_url: profilePictureUrl || undefined,
     about: about || undefined
   }).catch((err) => console.warn("Failed to upsert history customer", err.message));
+}
+
+async function hydrateSessionFromLocalHistoryCache(session) {
+  const [cachedChats, cachedContacts, cachedMessages] = await Promise.all([
+    readHistoryCacheFile(session, HISTORY_CHATS_FILE, []),
+    readHistoryCacheFile(session, HISTORY_CONTACTS_FILE, []),
+    readHistoryCacheFile(session, HISTORY_MESSAGES_FILE, [])
+  ]);
+
+  const contactsByJid = new Map();
+  let restoredChats = 0;
+  let restoredMessages = 0;
+
+  for (const contact of Array.isArray(cachedContacts) ? cachedContacts : []) {
+    if (contact?.id) {
+      contactsByJid.set(contact.id, contact);
+    }
+  }
+
+  for (const chat of Array.isArray(cachedChats) ? cachedChats : []) {
+    if (!chat?.id || chat.id.endsWith("@g.us") || chat.id === "status@broadcast") {
+      continue;
+    }
+
+    const phone = await resolveWhatsAppPhone(chat.id, chat.id);
+    const linkedContact = contactsByJid.get(chat.id);
+    const contactName = String(
+      linkedContact?.name || linkedContact?.notify || linkedContact?.verifiedName || chat.name || ""
+    ).trim();
+
+    if (!phone) {
+      continue;
+    }
+
+    await upsertHistoryCustomer({
+      session,
+      phone,
+      chatJid: chat.id,
+      contactName,
+      unreadCount: typeof chat.unreadCount === "number" ? chat.unreadCount : undefined
+    });
+
+    restoredChats += 1;
+  }
+
+  for (const message of Array.isArray(cachedMessages) ? cachedMessages : []) {
+    try {
+      await persistIncomingMessage(session, message);
+      restoredMessages += 1;
+    } catch (error) {
+      console.warn("Failed to restore cached history message:", error?.message || error);
+    }
+  }
+
+  return {
+    restoredChats,
+    restoredMessages
+  };
 }
 
 async function persistIncomingMessage(session, msg) {
@@ -775,6 +1046,11 @@ async function initializeWhatsApp(ownerUserId, accountId) {
         }
 
         if (qr) {
+          if (shouldIgnoreQrDowngrade(session)) {
+            console.warn(`Ignoring QR update for recently connected account ${session.accountId}.`);
+            return;
+          }
+
           session.qrData = await QRCode.toDataURL(qr);
           session.connectionState = "qr";
           await syncSessionAccountState(session, { connection_state: "qr" }).catch(() => {});
@@ -797,6 +1073,13 @@ async function initializeWhatsApp(ownerUserId, accountId) {
             }
 
             try {
+              const restored = await hydrateSessionFromLocalHistoryCache(session);
+              if (restored.restoredChats || restored.restoredMessages) {
+                console.log(
+                  `Restored ${restored.restoredChats} cached chats and ${restored.restoredMessages} cached messages for ${session.accountId} before fallback resync.`
+                );
+              }
+
               console.log(`History sync not received for ${session.accountId}. Triggering fallback app-state resync.`);
               await activeSock.resyncAppState(ALL_WA_PATCH_NAMES, true);
               console.log(`Fallback app-state resync finished for ${session.accountId}.`);
@@ -982,7 +1265,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
       });
     });
 
-    activeSock.ev.on("messaging-history.set", ({ chats, contacts, messages }) => {
+    activeSock.ev.on("messaging-history.set", ({ chats, contacts, messages, syncType }) => {
       safelyRunSocketTask(`messaging-history.set:${session.accountId}`, async () => {
         if (!isCurrentSocket()) {
           return;
@@ -997,6 +1280,10 @@ async function initializeWhatsApp(ownerUserId, accountId) {
           const cutoffSecs = Math.floor(Date.now() / 1000) - days * 24 * 60 * 60;
           const contactsByJid = new Map();
 
+          if (Array.isArray(chats)) {
+            await writeHistoryCacheFile(session, HISTORY_CHATS_FILE, chats);
+          }
+
           if (Array.isArray(contacts)) {
             for (const contact of contacts) {
               if (contact?.id) {
@@ -1006,12 +1293,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
           }
 
           if (Array.isArray(contacts)) {
-            await fs.writeFile(path.join(session.authDir, "hist_contacts.json"), JSON.stringify(contacts, null, 2)).catch(
-              () => {}
-            );
-            await fs.writeFile(path.join(session.authDir, "hist_chats.json"), JSON.stringify(chats, null, 2)).catch(
-              () => {}
-            );
+            await writeHistoryCacheFile(session, HISTORY_CONTACTS_FILE, contacts);
 
             for (const contact of contacts) {
               if (contact.id && !contact.id.endsWith("@g.us") && contact.id !== "status@broadcast") {
@@ -1080,6 +1362,8 @@ async function initializeWhatsApp(ownerUserId, accountId) {
             (m) => extractMessageTimestampSeconds(m?.messageTimestamp) >= cutoffSecs
           );
 
+          await cacheHistoryMessages(session, recentMessages, cutoffSecs);
+
           console.log(
             `History sync chunk received for ${session.accountId}: ${safeMessages.length} total messages, keeping ${recentMessages.length} recent (last ${days} days).`
           );
@@ -1094,6 +1378,25 @@ async function initializeWhatsApp(ownerUserId, accountId) {
         } catch (error) {
           console.error("Failed to process messaging-history.set:", error.message);
         }
+
+        if (session.pendingHistorySyncRequests?.size) {
+          for (const request of Array.from(session.pendingHistorySyncRequests)) {
+            const matchStats = await collectHistorySyncMatchStats(request.target, {
+              chats,
+              contacts,
+              messages
+            });
+
+            if (matchStats.matched) {
+              settleHistorySyncRequest(session, request, {
+                ...matchStats,
+                timedOut: false,
+                cancelled: false,
+                syncType: syncType || null
+              });
+            }
+          }
+        }
       });
     });
 
@@ -1106,7 +1409,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
 }
 
 async function getWhatsAppStatus(ownerUserId, accountId) {
-  const session = await ensureSession(ownerUserId, accountId, {
+  let session = await ensureSession(ownerUserId, accountId, {
     initialize: false
   });
 
@@ -1114,11 +1417,21 @@ async function getWhatsAppStatus(ownerUserId, accountId) {
     return defaultStatus();
   }
 
+  if (!session.sock && shouldAutoInitializeAccount(session.account)) {
+    try {
+      session = await ensureSession(ownerUserId, accountId, {
+        initialize: true
+      });
+    } catch (error) {
+      console.warn(`Failed to initialize WhatsApp status session for ${session.accountId}:`, error?.message || error);
+    }
+  }
+
   return defaultStatus(session.connectionState, session.qrData);
 }
 
 async function getWhatsAppQr(ownerUserId, accountId) {
-  const session = await ensureSession(ownerUserId, accountId, {
+  let session = await ensureSession(ownerUserId, accountId, {
     initialize: false
   });
 
@@ -1128,6 +1441,16 @@ async function getWhatsAppQr(ownerUserId, accountId) {
       state: "disconnected",
       qr: null
     };
+  }
+
+  if (!session.sock && shouldAutoInitializeAccount(session.account)) {
+    try {
+      session = await ensureSession(ownerUserId, accountId, {
+        initialize: true
+      });
+    } catch (error) {
+      console.warn(`Failed to initialize WhatsApp QR session for ${session.accountId}:`, error?.message || error);
+    }
   }
 
   return {
@@ -1297,6 +1620,118 @@ async function getContactProfile(ownerUserId, accountId, phone, chatJid) {
   }
 }
 
+async function repopulateConversationFromWhatsApp(ownerUserId, accountId, options = {}) {
+  const session = await ensureSession(ownerUserId, accountId);
+
+  if (!session) {
+    const error = new Error("WhatsApp account not found.");
+    error.status = 404;
+    throw error;
+  }
+
+  if (!session.sock || session.connectionState !== "open") {
+    const error = new Error("WhatsApp must be connected before repopulating conversation history.");
+    error.status = 409;
+    throw error;
+  }
+
+  const targetChatJid = String(options.chatJid || options.anchorMessage?.chat_jid || "").trim() || null;
+  const targetPhone =
+    normalizeCustomerPhone(options.phone) ||
+    (await resolveWhatsAppPhone(options.anchorMessage?.phone, targetChatJid || options.anchorMessage?.chat_jid || null)) ||
+    null;
+  const anchorMessage = options.anchorMessage && typeof options.anchorMessage === "object" ? options.anchorMessage : null;
+  const result = {
+    success: true,
+    phone: targetPhone,
+    chatJid: targetChatJid,
+    whatsappAccountId: session.accountId,
+    history: {
+      attempted: false,
+      requested: false,
+      matched: false,
+      matchedMessages: 0,
+      matchedChats: 0,
+      matchedContacts: 0,
+      timedOut: false,
+      warning: null,
+      anchorMessageId: anchorMessage?.wa_message_id || null
+    },
+    profile: {
+      refreshed: false,
+      profilePictureUrl: null,
+      about: null
+    }
+  };
+
+  if (typeof session.sock.fetchMessageHistory === "function" && targetChatJid && anchorMessage?.wa_message_id && anchorMessage?.created_at) {
+    result.history.attempted = true;
+
+    const historyWaitPromise = registerHistorySyncRequest(session, {
+      phone: targetPhone,
+      chatJid: targetChatJid
+    });
+
+    try {
+      const oldestTimestampSeconds = Math.floor(new Date(anchorMessage.created_at).getTime() / 1000);
+      await session.sock.fetchMessageHistory(
+        50,
+        {
+          remoteJid: targetChatJid,
+          id: anchorMessage.wa_message_id,
+          fromMe: anchorMessage.direction === "outgoing"
+        },
+        oldestTimestampSeconds
+      );
+      result.history.requested = true;
+
+      const historySyncResult = await historyWaitPromise;
+      result.history.matched = historySyncResult.matched;
+      result.history.matchedMessages = historySyncResult.matchedMessages;
+      result.history.matchedChats = historySyncResult.matchedChats;
+      result.history.matchedContacts = historySyncResult.matchedContacts;
+      result.history.timedOut = historySyncResult.timedOut;
+
+      if (historySyncResult.timedOut) {
+        result.history.warning = "WhatsApp accepted the history request, but no matching history chunk arrived before timeout.";
+      }
+    } catch (error) {
+      result.history.warning = error instanceof Error ? error.message : "Failed to request WhatsApp message history.";
+    }
+  } else if (!targetChatJid) {
+    result.history.warning = "Unable to request message history because this conversation does not have a stable WhatsApp chat JID yet.";
+  } else if (!anchorMessage?.wa_message_id || !anchorMessage?.created_at) {
+    result.history.warning = "Unable to request older history because no existing WhatsApp message anchor was found for this conversation.";
+  } else {
+    result.history.warning = "This Baileys session does not expose on-demand history fetching.";
+  }
+
+  if (targetPhone || targetChatJid) {
+    const profile = await getContactProfile(ownerUserId, session.accountId, targetPhone, targetChatJid);
+    result.profile = {
+      refreshed: Boolean(profile.profilePictureUrl || profile.about),
+      profilePictureUrl: profile.profilePictureUrl || null,
+      about: profile.about || null
+    };
+
+    if (targetPhone) {
+      await upsertCustomer({
+        owner_user_id: ownerUserId,
+        whatsapp_account_id: session.accountId,
+        phone: targetPhone,
+        chat_jid: targetChatJid,
+        contact_name: options.contactName || undefined,
+        profile_picture_url: profile.profilePictureUrl || undefined,
+        about: profile.about || undefined
+      }).catch((error) => {
+        console.warn("Failed to refresh WhatsApp customer profile cache:", error?.message || error);
+      });
+    }
+  }
+
+  return result;
+}
+
 async function disconnectWhatsApp(ownerUserId, accountId) {
   const session = await ensureSession(ownerUserId, accountId, { initialize: false });
 
@@ -1343,6 +1778,7 @@ module.exports = {
   getWhatsAppQr,
   getWhatsAppProfile,
   getContactProfile,
+  repopulateConversationFromWhatsApp,
   getCurrentWhatsAppAccountContext,
   disconnectWhatsApp,
   removeWhatsAppSessions,
