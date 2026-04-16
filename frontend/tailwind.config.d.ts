@@ -6,6 +6,16 @@ declare const _default: {
                 ink: string;
                 accent: string;
                 mint: string;
+                whatsapp: {
+                    deep: string;
+                    dark: string;
+                    green: string;
+                    soft: string;
+                    canvas: string;
+                    sky: string;
+                    line: string;
+                    muted: string;
+                };
             };
             boxShadow: {
                 glass: string;
