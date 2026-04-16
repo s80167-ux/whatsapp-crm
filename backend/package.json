@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
-    "backfill:whatsapp-accounts": "node backfill_whatsapp_accounts.js"
+    "backfill:whatsapp-accounts": "node backfill_whatsapp_accounts.js",
+    "backfill:whatsapp-message-timestamps": "node backfill_whatsapp_message_timestamps.js"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",

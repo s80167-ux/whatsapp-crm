@@ -126,6 +126,37 @@ function getAttachmentMediaType(mimeType, fileName) {
   return "document";
 }
 
+function extractMessageTimestampSeconds(timestampValue) {
+  if (typeof timestampValue === "number" && Number.isFinite(timestampValue)) {
+    return timestampValue;
+  }
+
+  if (typeof timestampValue === "bigint") {
+    return Number(timestampValue);
+  }
+
+  if (timestampValue && typeof timestampValue === "object") {
+    if (typeof timestampValue.low === "number") {
+      return timestampValue.low;
+    }
+
+    if (typeof timestampValue.toNumber === "function") {
+      const numericValue = timestampValue.toNumber();
+      if (Number.isFinite(numericValue)) {
+        return numericValue;
+      }
+    }
+  }
+
+  const parsedValue = Number(timestampValue);
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
+
+function getWhatsAppRegisteredAt(value) {
+  const timestampSeconds = extractMessageTimestampSeconds(value);
+  return timestampSeconds > 0 ? new Date(timestampSeconds * 1000).toISOString() : undefined;
+}
+
 function getAttachmentPreviewText(file, caption) {
   const mediaType = getAttachmentMediaType(file?.mimetype, file?.originalname);
   const label = mediaType === "image" ? "Image" : mediaType === "video" ? "Video" : mediaType === "sticker" ? "Sticker" : "Document";
@@ -947,6 +978,7 @@ app.post("/send", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) 
     const resolvedChatJid = chatJid || customer.chat_jid || null;
 
     const result = await sendMessageToPhone(req.user.sub, whatsappAccountId, normalizedPhone, message, resolvedChatJid);
+    const createdAt = getWhatsAppRegisteredAt(result?.messageTimestamp);
 
     await upsertCustomer({
       owner_user_id: req.user.sub,
@@ -963,7 +995,8 @@ app.post("/send", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) 
       wa_message_id: result?.key?.id || null,
       message,
       direction: "outgoing",
-      send_status: "sent"
+      send_status: "sent",
+      ...(createdAt ? { created_at: createdAt } : {})
     });
 
     return res.status(201).json(savedMessage);
@@ -996,6 +1029,7 @@ app.post("/send/attachment", requireAuth, bindAuthenticatedWhatsAppOwner, upload
       fileName: file.originalname,
       caption
     });
+    const createdAt = getWhatsAppRegisteredAt(result?.messageTimestamp);
 
     await upsertCustomer({
       owner_user_id: req.user.sub,
@@ -1020,7 +1054,8 @@ app.post("/send/attachment", requireAuth, bindAuthenticatedWhatsAppOwner, upload
       media_file_name: file.originalname,
       media_data_url: mediaDataUrl,
       direction: "outgoing",
-      send_status: "sent"
+      send_status: "sent",
+      ...(createdAt ? { created_at: createdAt } : {})
     });
 
     return res.status(201).json(savedMessage);
@@ -1052,6 +1087,7 @@ app.post("/send/location", requireAuth, bindAuthenticatedWhatsAppOwner, async (r
       name,
       address
     });
+    const createdAt = getWhatsAppRegisteredAt(result?.messageTimestamp);
 
     await upsertCustomer({
       owner_user_id: req.user.sub,
@@ -1069,7 +1105,8 @@ app.post("/send/location", requireAuth, bindAuthenticatedWhatsAppOwner, async (r
       wa_message_id: result?.key?.id || null,
       message: `[Location] ${locationName}`,
       direction: "outgoing",
-      send_status: "sent"
+      send_status: "sent",
+      ...(createdAt ? { created_at: createdAt } : {})
     });
 
     return res.status(201).json(savedMessage);

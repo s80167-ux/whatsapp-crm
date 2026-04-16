@@ -917,7 +917,8 @@ async function persistIncomingMessage(session, msg) {
       phone,
       chat_jid: msg.key.remoteJid,
       wa_message_id: msg.key.id,
-      send_status: "sent"
+      send_status: "sent",
+      created_at: createdAt
     });
 
     if (updatedMessage) {

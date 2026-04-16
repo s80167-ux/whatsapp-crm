@@ -775,16 +775,22 @@ async function saveMessage({ owner_user_id, whatsapp_account_id, phone, chat_jid
   return data;
 }
 
-async function updateOutgoingMessageStatus({ owner_user_id, whatsapp_account_id, phone, chat_jid, wa_message_id, send_status }) {
+async function updateOutgoingMessageStatus({ owner_user_id, whatsapp_account_id, phone, chat_jid, wa_message_id, send_status, created_at }) {
   if (!wa_message_id || !send_status) {
     return null;
   }
 
+  const updateFields = {
+    send_status
+  };
+
+  if (created_at) {
+    updateFields.created_at = created_at;
+  }
+
   let query = supabase
     .from("messages")
-    .update({
-      send_status
-    })
+    .update(updateFields)
     .eq("owner_user_id", owner_user_id)
     .eq("wa_message_id", wa_message_id)
     .eq("direction", "outgoing");
@@ -814,9 +820,7 @@ async function updateOutgoingMessageStatus({ owner_user_id, whatsapp_account_id,
   if (whatsapp_account_id) {
     const fallbackResult = await supabase
       .from("messages")
-      .update({
-        send_status
-      })
+      .update(updateFields)
       .eq("owner_user_id", owner_user_id)
       .eq("wa_message_id", wa_message_id)
       .eq("direction", "outgoing")
