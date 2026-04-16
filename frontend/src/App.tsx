@@ -1471,7 +1471,43 @@ function App() {
     };
   }, [dashboardSessionId, selectedWhatsAppAccountId, token]);
 
-  // Polling removed: manual refresh only.
+  // Keep the inbox warm even if Supabase Realtime is unavailable or reconnecting.
+  useEffect(() => {
+    if (!token || !dashboardSessionId) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void loadConversations(token, true);
+
+      const activeSelection = activeSelectionRef.current;
+      if (!activeSelection.selectedPhone) {
+        return;
+      }
+
+      if (activeSelection.dashboardTab === "contacts") {
+        void Promise.allSettled([
+          loadCustomer(activeSelection.selectedPhone, token, activeSelection.activeContactChatJid, true),
+          loadCustomerSalesItems(activeSelection.selectedPhone, token, activeSelection.activeContactChatJid, true)
+        ]);
+        return;
+      }
+
+      if (activeSelection.dashboardTab !== "inbox") {
+        return;
+      }
+
+      void Promise.allSettled([
+        loadMessages(activeSelection.selectedPhone, token, activeSelection.activeChatJid, true, true),
+        loadCustomer(activeSelection.selectedPhone, token, activeSelection.activeChatJid, true),
+        loadCustomerSalesItems(activeSelection.selectedPhone, token, activeSelection.activeChatJid, true)
+      ]);
+    }, conversationPollMs);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [dashboardSessionId, token]);
 
   // Supabase Realtime subscription for inbox activity.
   useEffect(() => {
@@ -1505,8 +1541,15 @@ function App() {
             return;
           }
           const changedConversationId = changedMessage ? getConversationIdentifier(changedMessage.phone, changedMessage.chat_jid) : null;
+          const activeSelection = activeSelectionRef.current;
+          const activeSelectedPhone = activeSelection.selectedPhone;
+          const activeSelectedChatJid = String(activeSelection.activeChatJid || activeSelection.selectedConversationChatJid || "").trim();
+          const changedChatJid = String(changedMessage?.chat_jid || "").trim();
+          const matchesActiveConversation =
+            Boolean(changedConversationId && activeSelectedPhone && changedConversationId === activeSelectedPhone) &&
+            (!activeSelectedChatJid || !changedChatJid || activeSelectedChatJid === changedChatJid);
 
-          if (changedConversationId && selectedPhone && changedConversationId === selectedPhone) {
+          if (matchesActiveConversation) {
             if (payload.eventType === "INSERT" && payload.new) {
               const newMessage = payload.new as Message;
 
@@ -1566,7 +1609,7 @@ function App() {
         conversationsRefreshTimerRef.current = null;
       }
     };
-  }, [dashboardSessionId, selectedPhone, selectedWhatsAppAccountId, token]);
+  }, [dashboardSessionId, selectedWhatsAppAccountId, token]);
 
   useEffect(() => {
     return () => {
