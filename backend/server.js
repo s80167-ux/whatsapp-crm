@@ -51,6 +51,7 @@ const {
   initializeWhatsApp,
   createWhatsAppConnection,
   shouldAutoInitializeAccount,
+  isRuntimeCompatibleWhatsAppAccount,
   sendMessageToPhone,
   sendAttachmentToPhone,
   sendLocationToPhone,
@@ -276,7 +277,9 @@ whatsappRouter.get("/profile", requireAuth, bindAuthenticatedWhatsAppOwner, asyn
 
 whatsappRouter.get("/accounts", requireAuth, async (req, res) => {
   try {
-    const accounts = await getWhatsAppAccounts(req.user.sub);
+    const accounts = (await getWhatsAppAccounts(req.user.sub)).filter((account) =>
+      isRuntimeCompatibleWhatsAppAccount(account)
+    );
     const accountsToInitialize = accounts.filter((account) => shouldAutoInitializeAccount(account));
     await Promise.allSettled(
       accountsToInitialize.map((account) => initializeWhatsApp(req.user.sub, account.id))

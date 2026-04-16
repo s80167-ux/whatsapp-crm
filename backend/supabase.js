@@ -95,10 +95,35 @@ const baseAuthDir = process.env.WHATSAPP_AUTH_DIR
   ? path.resolve(process.env.WHATSAPP_AUTH_DIR)
   : path.join(__dirname, "baileys_auth");
 
+function isExplicitAbsoluteAuthDir(value) {
+  const rawValue = String(value || "").trim();
+
+  if (!rawValue) {
+    return false;
+  }
+
+  return path.isAbsolute(rawValue) || /^[a-z]:[\\/]/i.test(rawValue) || rawValue.startsWith("\\\\");
+}
+
+function isAuthDirWithinRuntimeRoot(value) {
+  const normalizedValue = String(value || "").trim();
+
+  if (!normalizedValue) {
+    return true;
+  }
+
+  const relativePath = path.relative(baseAuthDir, normalizedValue);
+  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
 function normalizeWhatsAppAuthDir(value, accountId) {
   const rawValue = String(value || "").trim();
 
   if (!rawValue) {
+    return rawValue;
+  }
+
+  if (isExplicitAbsoluteAuthDir(rawValue)) {
     return rawValue;
   }
 
@@ -118,6 +143,11 @@ function normalizeWhatsAppAuthDir(value, accountId) {
   }
 
   return rawValue;
+}
+
+function isRuntimeCompatibleWhatsAppAuthDir(value) {
+  const normalizedValue = normalizeWhatsAppAuthDir(value);
+  return isAuthDirWithinRuntimeRoot(normalizedValue);
 }
 
 const STATUS_NOTE_MARKER = "[[crm_status:";
@@ -2040,28 +2070,6 @@ function normalizeAccountPhoneForKey(phone) {
   return String(phone || "").replace(/\D/g, "");
 }
 
-function getWhatsAppAccountScore(account) {
-  let score = 0;
-
-  if (account?.connection_state === "open") {
-    score += 8;
-  }
-
-  if (account?.account_phone) {
-    score += 4;
-  }
-
-  if (account?.account_jid) {
-    score += 2;
-  }
-
-  if (account?.last_connected_at) {
-    score += 1;
-  }
-
-  return score;
-}
-
 async function cleanupStaleWhatsAppAccounts(ownerUserId) {
   if (!ownerUserId) {
     return {
@@ -2072,49 +2080,15 @@ async function cleanupStaleWhatsAppAccounts(ownerUserId) {
     };
   }
 
-  const accounts = await getWhatsAppAccounts(ownerUserId);
+  const accounts = (await getWhatsAppAccounts(ownerUserId)).filter((account) =>
+    isRuntimeCompatibleWhatsAppAuthDir(account?.auth_dir)
+  );
   const removedIds = new Set();
 
   for (const account of accounts) {
     const phoneKey = normalizeAccountPhoneForKey(account?.account_phone);
     if (!phoneKey && account?.connection_state !== "open") {
       removedIds.add(account.id);
-    }
-  }
-
-  const duplicateGroups = new Map();
-  for (const account of accounts) {
-    const phoneKey = normalizeAccountPhoneForKey(account?.account_phone);
-    if (!phoneKey) {
-      continue;
-    }
-
-    const existing = duplicateGroups.get(phoneKey) || [];
-    existing.push(account);
-    duplicateGroups.set(phoneKey, existing);
-  }
-
-  for (const group of duplicateGroups.values()) {
-    if (group.length < 2) {
-      continue;
-    }
-
-    const ranked = [...group].sort((left, right) => {
-      const scoreDiff = getWhatsAppAccountScore(right) - getWhatsAppAccountScore(left);
-      if (scoreDiff !== 0) {
-        return scoreDiff;
-      }
-
-      const leftTime = Date.parse(left?.updated_at || left?.created_at || 0);
-      const rightTime = Date.parse(right?.updated_at || right?.created_at || 0);
-      return rightTime - leftTime;
-    });
-
-    const [winner, ...losers] = ranked;
-    for (const account of losers) {
-      if (account.id !== winner?.id) {
-        removedIds.add(account.id);
-      }
     }
   }
 
@@ -2141,7 +2115,7 @@ async function cleanupStaleWhatsAppAccounts(ownerUserId) {
 
   return {
     removedInvalidCount: invalidIds.length,
-    removedDuplicateCount: removedIdList.length - invalidIds.length,
+    removedDuplicateCount: 0,
     removedIds: removedIdList,
     remainingCount: Math.max(accounts.length - removedIdList.length, 0)
   };
@@ -2176,6 +2150,7 @@ async function upsertWhatsAppAccount({
   last_connected_at
 }) {
   const now = new Date().toISOString();
+  const normalizedAuthDir = auth_dir !== undefined ? normalizeWhatsAppAuthDir(auth_dir, id || null) : undefined;
   const candidates = [];
 
   if (id) {
@@ -2190,38 +2165,14 @@ async function upsertWhatsAppAccount({
     );
   }
 
-  if (auth_dir) {
+  if (normalizedAuthDir) {
     candidates.push(
       supabase
         .from("whatsapp_accounts")
         .select("*")
         .eq("owner_user_id", owner_user_id)
-        .eq("auth_dir", auth_dir)
+        .eq("auth_dir", normalizedAuthDir)
         .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-    );
-  }
-
-  if (account_phone) {
-    candidates.push(
-      supabase
-        .from("whatsapp_accounts")
-        .select("*")
-        .eq("owner_user_id", owner_user_id)
-        .eq("account_phone", account_phone)
-        .limit(1)
-        .maybeSingle()
-    );
-  }
-
-  if (account_jid) {
-    candidates.push(
-      supabase
-        .from("whatsapp_accounts")
-        .select("*")
-        .eq("owner_user_id", owner_user_id)
-        .eq("account_jid", account_jid)
         .limit(1)
         .maybeSingle()
     );
@@ -2229,7 +2180,7 @@ async function upsertWhatsAppAccount({
 
   const results = await Promise.all(candidates);
   const existingAccount = results.map((result) => result.data).find(Boolean) || null;
-  const normalizedAuthDir = auth_dir !== undefined
+  const persistedAuthDir = auth_dir !== undefined
     ? normalizeWhatsAppAuthDir(auth_dir, id || existingAccount?.id || null)
     : undefined;
   const payload = {
@@ -2238,7 +2189,7 @@ async function upsertWhatsAppAccount({
     ...(account_jid !== undefined ? { account_jid } : {}),
     ...(display_name !== undefined ? { display_name } : {}),
     ...(profile_picture_url !== undefined ? { profile_picture_url } : {}),
-    ...(normalizedAuthDir !== undefined ? { auth_dir: normalizedAuthDir } : {}),
+    ...(persistedAuthDir !== undefined ? { auth_dir: persistedAuthDir } : {}),
     ...(connection_state !== undefined ? { connection_state } : {}),
     ...(is_active !== undefined ? { is_active } : {}),
     ...(last_connected_at !== undefined ? { last_connected_at } : {}),

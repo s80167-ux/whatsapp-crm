@@ -31,6 +31,27 @@ const HISTORY_CONTACTS_FILE = "hist_contacts.json";
 const HISTORY_MESSAGES_FILE = "hist_messages.json";
 const HISTORY_CACHE_MAX_MESSAGES = 5000;
 
+function isExplicitAbsoluteAuthDir(value) {
+  const rawValue = String(value || "").trim();
+
+  if (!rawValue) {
+    return false;
+  }
+
+  return path.isAbsolute(rawValue) || /^[a-z]:[\\/]/i.test(rawValue) || rawValue.startsWith("\\\\");
+}
+
+function isAuthDirWithinRuntimeRoot(value) {
+  const normalizedValue = String(value || "").trim();
+
+  if (!normalizedValue) {
+    return true;
+  }
+
+  const relativePath = path.relative(baseAuthDir, normalizedValue);
+  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
 function withTimeout(promise, timeoutMs, fallbackValue) {
   return Promise.race([
     promise,
@@ -179,6 +200,10 @@ function defaultStatus(state = "disconnected", qrData = null) {
 }
 
 function shouldAutoInitializeAccount(account) {
+  if (!isRuntimeCompatibleWhatsAppAccount(account)) {
+    return false;
+  }
+
   const state = String(account?.connection_state || "").trim().toLowerCase();
   return ["open", "qr", "connecting", "disconnecting"].includes(state);
 }
@@ -188,6 +213,10 @@ function normalizeStoredAuthDir(configuredDir, accountId) {
 
   if (!rawValue) {
     return null;
+  }
+
+  if (isExplicitAbsoluteAuthDir(rawValue)) {
+    return rawValue;
   }
 
   const pathTokens = rawValue.split(/[\\/]+/).filter(Boolean);
@@ -217,6 +246,15 @@ function normalizeStoredAuthDir(configuredDir, accountId) {
   }
 
   return path.join(baseAuthDir, preferredToken);
+}
+
+function isRuntimeCompatibleAuthDir(configuredDir) {
+  const normalizedConfiguredDir = normalizeStoredAuthDir(configuredDir, null);
+  return isAuthDirWithinRuntimeRoot(normalizedConfiguredDir);
+}
+
+function isRuntimeCompatibleWhatsAppAccount(account) {
+  return isRuntimeCompatibleAuthDir(account?.auth_dir);
 }
 
 function getSessionAuthDir(account) {
@@ -399,14 +437,16 @@ async function resolveAccount(ownerUserId, requestedAccountId = null, options = 
   }
 
   if (normalizedAccountId) {
-    return await getWhatsAppAccountById(normalizedOwnerId, normalizedAccountId);
+    const account = await getWhatsAppAccountById(normalizedOwnerId, normalizedAccountId);
+    return isRuntimeCompatibleWhatsAppAccount(account) ? account : null;
   }
 
   const accounts = await getWhatsAppAccounts(normalizedOwnerId);
+  const compatibleAccounts = accounts.filter((account) => isRuntimeCompatibleWhatsAppAccount(account));
   const openAccount =
-    accounts.find((account) => String(account.connection_state || "").trim().toLowerCase() === "open") || null;
+    compatibleAccounts.find((account) => String(account.connection_state || "").trim().toLowerCase() === "open") || null;
 
-  return openAccount || accounts[0] || null;
+  return openAccount || compatibleAccounts[0] || null;
 }
 
 async function ensureSession(ownerUserId, accountId, options = {}) {
@@ -1770,6 +1810,7 @@ module.exports = {
   initializeWhatsApp,
   createWhatsAppConnection,
   shouldAutoInitializeAccount,
+  isRuntimeCompatibleWhatsAppAccount,
   sendMessageToPhone,
   sendAttachmentToPhone,
   sendLocationToPhone,
