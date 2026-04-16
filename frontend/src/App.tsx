@@ -24,7 +24,7 @@ import {
   type WhatsAppQr,
   type WhatsAppStatus
 } from "./lib/api";
-import { getConversationIdentifier, getResolvedPhone } from "./lib/display";
+import { getConversationIdentifier, getConversationSortTimestamp, getResolvedPhone } from "./lib/display";
 import { clearPasswordRecoveryCallback, getEmailVerificationRedirectUrl, getPasswordRecoveryRedirectUrl, isPasswordRecoveryCallback, supabase } from "./lib/supabase";
 
 type AuthMode = "login" | "register";
@@ -33,6 +33,12 @@ type SidebarView = "inbox" | "pipeline" | "broadcast";
 const conversationPollMs = 8000;
 const whatsAppStatePollMs = 5000;
 const dashboardSessionStorageKey = "whatsapp-crm-dashboard-session-id";
+
+function sortConversationsByLatestReceived(conversations: Conversation[]) {
+  return [...conversations].sort(
+    (left, right) => new Date(getConversationSortTimestamp(right)).getTime() - new Date(getConversationSortTimestamp(left)).getTime()
+  );
+}
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -424,13 +430,14 @@ function App() {
 
       try {
         const data = await api.getConversations(activeToken, selectedWhatsAppAccountId);
-        setConversations(data);
+        const sortedData = sortConversationsByLatestReceived(data);
+        setConversations(sortedData);
         setSelectedPhone((current) => {
-          if (!data.length) {
+          if (!sortedData.length) {
             return null;
           }
 
-          if (current && data.some((item) => getConversationIdentifier(item.phone, item.chatJid) === current)) {
+          if (current && sortedData.some((item) => getConversationIdentifier(item.phone, item.chatJid) === current)) {
             return current;
           }
 
@@ -442,7 +449,7 @@ function App() {
             return current;
           }
 
-          return getConversationIdentifier(data[0]?.phone, data[0]?.chatJid) || null;
+          return getConversationIdentifier(sortedData[0]?.phone, sortedData[0]?.chatJid) || null;
       });
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to load conversations.");
@@ -1922,7 +1929,8 @@ function App() {
         return next;
       });
       setConversations((current) =>
-        current
+        sortConversationsByLatestReceived(
+          current
           .map((item) =>
             item.phone === selectedPhone
               ? {
@@ -1933,7 +1941,7 @@ function App() {
                 }
               : item
           )
-          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        )
       );
     } catch (error) {
       setMessages((current) => {
@@ -1971,7 +1979,8 @@ function App() {
         return next;
       });
       setConversations((current) =>
-        current
+        sortConversationsByLatestReceived(
+          current
           .map((item) =>
             item.phone === optimisticMessage.phone
               ? {
@@ -1982,7 +1991,7 @@ function App() {
                 }
               : item
           )
-          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        )
       );
     } catch (error) {
       setMessages((current) => {

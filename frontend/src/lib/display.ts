@@ -129,3 +129,8 @@ export function formatPhoneDisplay(phone: string | null | undefined, chatJid?: s
 export function formatWhatsAppIdDisplay(phone: string | null | undefined, chatJid?: string | null | undefined): string {
   return getDisplayWhatsAppId(phone, chatJid) || "Unavailable";
 }
+
+export function getConversationSortTimestamp(conversation: { latestReceivedAt?: string | null; timestamp: string }): string {
+  const latestReceivedAt = String(conversation.latestReceivedAt || "").trim();
+  return latestReceivedAt || conversation.timestamp;
+}

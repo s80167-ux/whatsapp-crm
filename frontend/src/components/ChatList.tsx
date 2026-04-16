@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CUSTOMER_STATUS_LABELS, type Conversation, type CustomerStatus, type WhatsAppAccount } from "../lib/api";
-import { getConversationIdentifier, getDisplayName, getDisplayPhone, getResolvedPhone, formatPhoneDisplay } from "../lib/display";
+import { getConversationIdentifier, getConversationSortTimestamp, getDisplayName, getDisplayPhone, getResolvedPhone, formatPhoneDisplay } from "../lib/display";
 
 const STATUS_ORDER: CustomerStatus[] = ["new_lead", "interested", "processing", "closed_won", "closed_lost"];
 const CONVERSATIONS_PAGE_SIZE = 10;
@@ -143,7 +143,7 @@ export function ChatList({
           return false;
         }
 
-        const timestamp = new Date(conversation.timestamp);
+        const timestamp = new Date(getConversationSortTimestamp(conversation));
 
         if (filter === "today") {
           return timestamp.toDateString() === now.toDateString();
@@ -155,7 +155,7 @@ export function ChatList({
 
         return true;
       })
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      .sort((a, b) => new Date(getConversationSortTimestamp(b)).getTime() - new Date(getConversationSortTimestamp(a)).getTime());
   }, [conversations, filter, query]);
 
   const totalPages = Math.max(1, Math.ceil(filteredConversations.length / CONVERSATIONS_PAGE_SIZE));

@@ -38,6 +38,7 @@ export type Conversation = {
   profilePictureUrl?: string | null;
   lastMessage: string;
   timestamp: string;
+  latestReceivedAt?: string | null;
   lastDirection: "incoming" | "outgoing";
   status: CustomerStatus | null;
   status_counts?: Record<CustomerStatus, number>;
