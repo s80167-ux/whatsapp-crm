@@ -289,6 +289,230 @@ function shouldPreserveExistingPhone(existingPhone, nextPhone, chatJid) {
   );
 }
 
+
+function normalizeComparableContactName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function getPhoneDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function looksLikePhoneLikeName(name, phone) {
+  const candidateDigits = getPhoneDigits(name);
+  if (!candidateDigits || candidateDigits.length < 7) {
+    return false;
+  }
+
+  const phoneDigits = getPhoneDigits(phone);
+  if (phoneDigits && candidateDigits === phoneDigits) {
+    return true;
+  }
+
+  return candidateDigits.length >= 9;
+}
+
+function isGenericContactName(name, phone) {
+  const normalized = normalizeComparableContactName(name);
+
+  if (!normalized) {
+    return true;
+  }
+
+  const genericValues = new Set([
+    "unknown",
+    "no name",
+    "whatsapp user",
+    "contact",
+    "user",
+    "null",
+    "undefined",
+    "n/a",
+    "-"
+  ]);
+
+  if (genericValues.has(normalized)) {
+    return true;
+  }
+
+  return looksLikePhoneLikeName(normalized, phone);
+}
+
+function isValidContactName(name, phone) {
+  const trimmed = String(name || "").trim();
+
+  if (trimmed.length < 2) {
+    return false;
+  }
+
+  if (isGenericContactName(trimmed, phone)) {
+    return false;
+  }
+
+  return /[A-Za-z\u00C0-\u024F\u1E00-\u1EFF]/.test(trimmed);
+}
+
+function normalizeNameSource(source) {
+  const normalized = String(source || "").trim().toLowerCase();
+
+  switch (normalized) {
+    case "manual":
+    case "crm_manual":
+      return "manual";
+    case "verified_business":
+    case "verifiedbizname":
+    case "verified_biz_name":
+      return "verified_business";
+    case "contact":
+    case "wa_contact":
+    case "contact_message":
+      return "contact";
+    case "profile":
+    case "wa_profile":
+    case "profile_name":
+      return "profile";
+    case "pushname":
+    case "push_name":
+      return "push_name";
+    case "history":
+    case "history_sync":
+      return "history_sync";
+    default:
+      return normalized || "unknown";
+  }
+}
+
+function scoreContactName(name, source, phone) {
+  if (!isValidContactName(name, phone)) {
+    return 0;
+  }
+
+  const normalizedSource = normalizeNameSource(source);
+  let score = 40;
+
+  switch (normalizedSource) {
+    case "manual":
+      score = 100;
+      break;
+    case "verified_business":
+      score = 90;
+      break;
+    case "contact":
+      score = 80;
+      break;
+    case "profile":
+      score = 75;
+      break;
+    case "history_sync":
+      score = 65;
+      break;
+    case "push_name":
+      score = 55;
+      break;
+    default:
+      score = 45;
+      break;
+  }
+
+  const trimmed = String(name || "").trim();
+  if (trimmed.split(/\s+/).length >= 2) {
+    score += 5;
+  }
+  if (/[a-z]/.test(trimmed) && /[A-Z]/.test(trimmed)) {
+    score += 3;
+  }
+
+  return Math.min(score, 100);
+}
+
+function deriveStoredAnchorFields(existingCustomer, nextCustomer) {
+  const resolvedPhone = nextCustomer.phone || existingCustomer?.phone || null;
+  const existingName = existingCustomer?.contact_name;
+  const nextName = nextCustomer.contact_name;
+  const existingSource = normalizeNameSource(existingCustomer?.name_source);
+  const nextSource = normalizeNameSource(nextCustomer?.name_source);
+  const existingQuality =
+    Number.isFinite(Number(existingCustomer?.quality_score)) && Number(existingCustomer?.quality_score) > 0
+      ? Number(existingCustomer.quality_score)
+      : scoreContactName(existingName, existingSource, resolvedPhone);
+  const incomingQuality =
+    nextCustomer.quality_score !== undefined && Number.isFinite(Number(nextCustomer.quality_score))
+      ? Number(nextCustomer.quality_score)
+      : scoreContactName(nextName, nextSource, resolvedPhone);
+  const hasExistingValidName = isValidContactName(existingName, resolvedPhone);
+  const hasIncomingValidName = isValidContactName(nextName, resolvedPhone);
+  const existingAnchor = Boolean(existingCustomer?.is_contact_anchor && hasExistingValidName);
+
+  let finalName = existingName ?? null;
+  let finalSource = existingCustomer?.name_source ?? null;
+  let finalQuality = existingQuality;
+  let finalAnchor = existingAnchor;
+
+  if (!existingCustomer) {
+    finalName = hasIncomingValidName ? String(nextName).trim() : null;
+    finalSource = hasIncomingValidName ? (nextSource || "unknown") : null;
+    finalQuality = hasIncomingValidName ? incomingQuality : 0;
+    finalAnchor = finalQuality >= 75;
+  } else if (nextName !== undefined) {
+    if (hasIncomingValidName) {
+      const existingComparable = normalizeComparableContactName(existingName);
+      const incomingComparable = normalizeComparableContactName(nextName);
+
+      if (!hasExistingValidName) {
+        finalName = String(nextName).trim();
+        finalSource = nextSource || "unknown";
+        finalQuality = incomingQuality;
+      } else if (incomingComparable === existingComparable) {
+        if (incomingQuality > existingQuality) {
+          finalSource = nextSource || existingSource || "unknown";
+          finalQuality = incomingQuality;
+        }
+      } else if (!existingAnchor && incomingQuality >= existingQuality) {
+        finalName = String(nextName).trim();
+        finalSource = nextSource || "unknown";
+        finalQuality = incomingQuality;
+      } else if (existingAnchor && incomingQuality > existingQuality) {
+        finalName = String(nextName).trim();
+        finalSource = nextSource || "unknown";
+        finalQuality = incomingQuality;
+      }
+    }
+  }
+
+  if (!isValidContactName(finalName, resolvedPhone)) {
+    finalName = null;
+    finalSource = null;
+    finalQuality = 0;
+    finalAnchor = false;
+  } else {
+    finalAnchor = Boolean(finalAnchor || finalQuality >= 75);
+  }
+
+  return {
+    contact_name: finalName,
+    name_source: finalSource,
+    quality_score: finalQuality,
+    is_contact_anchor: finalAnchor
+  };
+}
+
+function mergeProfilePictureUrl(existingValue, nextValue) {
+  if (nextValue === undefined) {
+    return existingValue;
+  }
+
+  const normalizedNext = String(nextValue || "").trim();
+  if (!normalizedNext) {
+    return existingValue;
+  }
+
+  return normalizedNext;
+}
+
+
 function tenantSchemaError(error) {
   const wrappedError = new Error(
     "Database tenant isolation is not configured. Run backend/sql/tenant_isolation.sql in Supabase and backfill owner_user_id before using the dashboard."
@@ -648,18 +872,33 @@ function mergeCustomerWritePayload({ primaryCustomer, secondaryCustomer, nextCus
   const mergedPhone = shouldPreserveExistingPhone(primaryCustomer?.phone, nextCustomer.phone, chatJid)
     ? primaryCustomer.phone
     : nextCustomer.phone;
+  const anchorFields = deriveStoredAnchorFields(
+    {
+      ...secondaryCustomer,
+      ...primaryCustomer,
+      contact_name: primaryCustomer?.contact_name || secondaryCustomer?.contact_name || null,
+      name_source: primaryCustomer?.name_source || secondaryCustomer?.name_source || null,
+      quality_score:
+        primaryCustomer?.quality_score !== undefined
+          ? primaryCustomer.quality_score
+          : secondaryCustomer?.quality_score,
+      is_contact_anchor: Boolean(primaryCustomer?.is_contact_anchor || secondaryCustomer?.is_contact_anchor),
+      phone: mergedPhone
+    },
+    {
+      ...nextCustomer,
+      phone: mergedPhone
+    }
+  );
 
   return {
     ...nextCustomer,
+    ...anchorFields,
     phone: mergedPhone,
     chat_jid:
       nextCustomer.chat_jid !== undefined
         ? nextCustomer.chat_jid
         : primaryCustomer?.chat_jid || secondaryCustomer?.chat_jid || null,
-    contact_name:
-      nextCustomer.contact_name !== undefined
-        ? nextCustomer.contact_name
-        : primaryCustomer?.contact_name || secondaryCustomer?.contact_name || null,
     status:
       nextCustomer.status !== undefined
         ? nextCustomer.status
@@ -668,10 +907,10 @@ function mergeCustomerWritePayload({ primaryCustomer, secondaryCustomer, nextCus
       nextCustomer.notes !== undefined
         ? nextCustomer.notes
         : primaryCustomer?.notes || secondaryCustomer?.notes || "",
-    profile_picture_url:
-      nextCustomer.profile_picture_url !== undefined
-        ? nextCustomer.profile_picture_url
-        : primaryCustomer?.profile_picture_url || secondaryCustomer?.profile_picture_url || null,
+    profile_picture_url: mergeProfilePictureUrl(
+      primaryCustomer?.profile_picture_url || secondaryCustomer?.profile_picture_url || null,
+      nextCustomer.profile_picture_url
+    ),
     about:
       nextCustomer.about !== undefined
         ? nextCustomer.about
@@ -1565,14 +1804,47 @@ async function deleteConversation({ owner_user_id, whatsapp_account_id, phone, c
   };
 }
 
-async function upsertCustomer({ owner_user_id, whatsapp_account_id, phone, chat_jid, contact_name, status, notes, profile_picture_url, about, unread_count, premise_address, business_type, age, email_address }) {
+async function upsertCustomer({
+  owner_user_id,
+  whatsapp_account_id,
+  phone,
+  chat_jid,
+  contact_name,
+  name_source,
+  is_contact_anchor,
+  quality_score,
+  status,
+  notes,
+  profile_picture_url,
+  about,
+  unread_count,
+  premise_address,
+  business_type,
+  age,
+  email_address
+}) {
   const canonicalPhone = await resolveWhatsAppPhone(phone, chat_jid || null);
+  const normalizedSource = normalizeNameSource(name_source);
+  const sanitizedContactName =
+    contact_name !== undefined
+      ? (isValidContactName(contact_name, canonicalPhone || phone) ? String(contact_name).trim() : null)
+      : undefined;
+  const incomingQualityScore =
+    quality_score !== undefined && Number.isFinite(Number(quality_score))
+      ? Number(quality_score)
+      : sanitizedContactName !== undefined
+        ? scoreContactName(sanitizedContactName, normalizedSource, canonicalPhone || phone)
+        : undefined;
+
   const payload = {
     owner_user_id,
     ...(whatsapp_account_id ? { whatsapp_account_id } : {}),
     phone: canonicalPhone || phone,
     ...(chat_jid !== undefined ? { chat_jid } : {}),
-    ...(contact_name !== undefined ? { contact_name } : {}),
+    ...(sanitizedContactName !== undefined ? { contact_name: sanitizedContactName } : {}),
+    ...(name_source !== undefined ? { name_source: normalizedSource || null } : {}),
+    ...(incomingQualityScore !== undefined ? { quality_score: incomingQualityScore } : {}),
+    ...(is_contact_anchor !== undefined ? { is_contact_anchor: Boolean(is_contact_anchor) } : {}),
     ...(status !== undefined ? { status } : {}),
     ...(notes !== undefined ? { notes } : {}),
     ...(profile_picture_url !== undefined ? { profile_picture_url } : {}),
@@ -1627,6 +1899,13 @@ async function upsertCustomer({ owner_user_id, whatsapp_account_id, phone, chat_
     };
   }
 
+  const resolvedAnchorFields = deriveStoredAnchorFields(existingCustomer, writePayload);
+  writePayload = {
+    ...writePayload,
+    ...resolvedAnchorFields,
+    profile_picture_url: mergeProfilePictureUrl(existingCustomer?.profile_picture_url, writePayload.profile_picture_url)
+  };
+
   let data;
   let error;
 
@@ -1674,11 +1953,46 @@ async function upsertCustomer({ owner_user_id, whatsapp_account_id, phone, chat_
   }
 
   if (
+    isMissingColumnError(error, "customers.name_source") ||
+    isMissingColumnError(error, "customers.is_contact_anchor") ||
+    isMissingColumnError(error, "customers.quality_score")
+  ) {
+    const {
+      name_source: _ns,
+      is_contact_anchor: _ica,
+      quality_score: _qs,
+      ...fallbackPayload
+    } = writePayload;
+    writePayload = fallbackPayload;
+
+    if (existingCustomer?.id) {
+      ({ data, error } = await supabase
+        .from("customers")
+        .update(writePayload)
+        .eq("id", existingCustomer.id)
+        .select("*")
+        .single());
+    } else {
+      ({ data, error } = await supabase
+        .from("customers")
+        .insert(writePayload)
+        .select("*")
+        .single());
+    }
+
+    throwIfTenantSchemaError(error, "customers.owner_user_id");
+  }
+
+  if (
     isMissingColumnError(error, "customers.profile_picture_url") ||
     isMissingColumnError(error, "customers.about") ||
     isMissingColumnError(error, "customers.whatsapp_account_id")
   ) {
-    const { profile_picture_url: _p, about: _a, ...fallbackPayload } = writePayload;
+    const {
+      profile_picture_url: _p,
+      about: _a,
+      ...fallbackPayload
+    } = writePayload;
     writePayload = fallbackPayload;
 
     if (existingCustomer?.id) {

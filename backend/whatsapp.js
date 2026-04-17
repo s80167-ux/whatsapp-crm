@@ -651,22 +651,28 @@ async function extractIncomingMedia(session, message) {
   }
 }
 
-function extractContactName(msg) {
+function extractContactIdentity(msg) {
   const candidates = [
-    msg?.pushName,
-    msg?.verifiedBizName,
-    msg?.message?.contactMessage?.displayName,
-    msg?.message?.contactsArrayMessage?.displayName
+    { value: msg?.verifiedBizName, source: "verified_business" },
+    { value: msg?.message?.contactMessage?.displayName, source: "contact" },
+    { value: msg?.message?.contactsArrayMessage?.displayName, source: "contact" },
+    { value: msg?.pushName, source: "push_name" }
   ];
 
   for (const candidate of candidates) {
-    const normalized = String(candidate || "").trim();
+    const normalized = String(candidate?.value || "").trim();
     if (normalized) {
-      return normalized;
+      return {
+        name: normalized,
+        source: candidate.source
+      };
     }
   }
 
-  return null;
+  return {
+    name: null,
+    source: null
+  };
 }
 
 function extractMessageTimestampSeconds(value) {
@@ -801,6 +807,7 @@ async function upsertHistoryCustomer({
   phone,
   chatJid,
   contactName,
+  nameSource,
   unreadCount,
   profilePictureUrl,
   about
@@ -815,6 +822,7 @@ async function upsertHistoryCustomer({
     phone,
     chat_jid: chatJid,
     contact_name: contactName || undefined,
+    name_source: nameSource || undefined,
     unread_count: unreadCount,
     profile_picture_url: profilePictureUrl || undefined,
     about: about || undefined
@@ -858,6 +866,7 @@ async function hydrateSessionFromLocalHistoryCache(session) {
       phone,
       chatJid: chat.id,
       contactName,
+      nameSource: contactName ? "history_sync" : undefined,
       unreadCount: typeof chat.unreadCount === "number" ? chat.unreadCount : undefined
     });
 
@@ -886,7 +895,8 @@ async function persistIncomingMessage(session, msg) {
   const phone = await resolveWhatsAppPhone(msg.key.remoteJid, msg.key.remoteJid);
   const text = buildIncomingMessagePreview(msg.message);
   const media = await extractIncomingMedia(session, msg.message);
-  const contactName = extractContactName(msg);
+  const contactIdentity = extractContactIdentity(msg);
+  const contactName = contactIdentity.name;
   if (!phone || !text) return;
   if (isConnectedWhatsAppPhone(session, phone)) return;
 
@@ -908,6 +918,7 @@ async function persistIncomingMessage(session, msg) {
     phone,
     chat_jid: msg.key.remoteJid,
     contact_name: contactName && !msg.key.fromMe ? contactName : undefined,
+    name_source: contactName && !msg.key.fromMe ? contactIdentity.source : undefined,
     profile_picture_url: profileInfo.profilePictureUrl || undefined,
     about: profileInfo.about || undefined
   });
@@ -1436,6 +1447,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
                     phone,
                     chatJid: contact.id,
                     contactName,
+                    nameSource: contact.verifiedName ? "verified_business" : contact.name ? "contact" : contact.notify ? "push_name" : "history_sync",
                     profilePictureUrl: profileInfo.profilePictureUrl,
                     about: profileInfo.about
                   });
@@ -1461,6 +1473,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
                 phone,
                 chatJid: chat.id,
                 contactName,
+                nameSource: linkedContact?.verifiedName ? "verified_business" : linkedContact?.name ? "contact" : linkedContact?.notify ? "push_name" : "history_sync",
                 unreadCount: typeof chat.unreadCount === "number" ? chat.unreadCount : undefined
               });
             }
@@ -1830,6 +1843,7 @@ async function repopulateConversationFromWhatsApp(ownerUserId, accountId, option
         phone: targetPhone,
         chat_jid: targetChatJid,
         contact_name: options.contactName || undefined,
+        name_source: options.contactName ? "manual" : undefined,
         profile_picture_url: profile.profilePictureUrl || undefined,
         about: profile.about || undefined
       }).catch((error) => {
