@@ -206,8 +206,13 @@ function shouldAutoInitializeAccount(account) {
     return false;
   }
 
+  if (account?.is_active === false) {
+    return false;
+  }
+
   const state = String(account?.connection_state || "").trim().toLowerCase();
-  return ["open", "qr", "connecting", "disconnecting"].includes(state);
+  // Platform restarts can persist a recoverable session as "disconnected".
+  return ["open", "qr", "connecting", "disconnecting", "disconnected", ""].includes(state);
 }
 
 function normalizeStoredAuthDir(configuredDir, accountId) {
@@ -296,6 +301,7 @@ function getOrCreateSessionFromAccount(account) {
     qrData: null,
     connectionState: String(account?.connection_state || "disconnected"),
     manualDisconnectRequested: false,
+    shutdownRequested: false,
     historySyncObserved: false,
     pendingHistorySyncRequests: new Set(),
     reconnectTimer: null,
@@ -372,6 +378,7 @@ async function disposeSession(session, options = {}) {
     session.pendingHistorySyncRequests.clear();
   }
   session.manualDisconnectRequested = true;
+  session.shutdownRequested = false;
   session.qrData = null;
   session.connectionState = options.connectionState || "disconnected";
 
@@ -1208,6 +1215,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
   }
 
   session.initializingPromise = (async () => {
+    session.shutdownRequested = false;
     session.connectionState = "connecting";
     session.qrData = null;
     session.historySyncObserved = false;
@@ -1392,8 +1400,14 @@ async function initializeWhatsApp(ownerUserId, accountId) {
             statusCode: statusCode ?? null,
             message: disconnectMessage,
             data: disconnectData,
-            manualDisconnectRequested: session.manualDisconnectRequested
+            manualDisconnectRequested: session.manualDisconnectRequested,
+            shutdownRequested: session.shutdownRequested
           });
+
+          if (session.shutdownRequested) {
+            console.warn(`Ignoring disconnect transition during process shutdown for ${session.accountId}.`);
+            return;
+          }
 
           if (session.manualDisconnectRequested) {
             session.connectionState = "disconnected";
@@ -2309,6 +2323,37 @@ async function disconnectWhatsApp(ownerUserId, accountId) {
   return defaultStatus(session.connectionState, session.qrData);
 }
 
+async function prepareForProcessShutdown() {
+  const activeSessions = Array.from(sessions.values());
+
+  await Promise.allSettled(
+    activeSessions.map(async (session) => {
+      clearReconnectTimer(session);
+      clearFallbackSyncTimer(session);
+      clearConnectingRecoveryTimer(session);
+      session.shutdownRequested = true;
+      session.qrData = null;
+
+      // Preserve a restart-friendly state so the next boot auto-recovers.
+      await syncSessionAccountState(session, { connection_state: "connecting" }).catch(() => {});
+
+      const currentSock = session.sock;
+      session.sock = null;
+
+      try {
+        if (currentSock?.end) {
+          currentSock.end(undefined);
+        }
+      } catch (error) {
+        console.warn(
+          `Failed to close WhatsApp socket during shutdown for ${session.accountId}:`,
+          error?.message || error
+        );
+      }
+    })
+  );
+}
+
 module.exports = {
   initializeWhatsApp,
   createWhatsAppConnection,
@@ -2328,5 +2373,6 @@ module.exports = {
   getCurrentWhatsAppAccountContext,
   disconnectWhatsApp,
   removeWhatsAppSessions,
+  prepareForProcessShutdown,
   normalizePhone: normalizeCustomerPhone
 };

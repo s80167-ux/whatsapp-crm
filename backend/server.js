@@ -68,6 +68,7 @@ const {
   rebuildAllConversationsFromWhatsApp,
   getCurrentWhatsAppAccountContext,
   removeWhatsAppSessions,
+  prepareForProcessShutdown,
   normalizePhone
 } = require("./whatsapp");
 
@@ -1222,13 +1223,17 @@ server.on("error", (error) => {
 
 let shuttingDown = false;
 
-function shutdown(signal) {
+async function shutdown(signal) {
   if (shuttingDown) {
     return;
   }
 
   shuttingDown = true;
   console.log(`Received ${signal}. Shutting down backend server...`);
+
+  await prepareForProcessShutdown().catch((error) => {
+    console.warn("Failed to prepare WhatsApp runtime for shutdown:", error?.message || error);
+  });
 
   server.close((error) => {
     if (error) {
@@ -1246,5 +1251,9 @@ function shutdown(signal) {
   }, 5000).unref();
 }
 
-process.once("SIGINT", () => shutdown("SIGINT"));
-process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => {
+  void shutdown("SIGINT");
+});
+process.once("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
