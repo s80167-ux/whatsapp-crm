@@ -44,6 +44,7 @@ const {
   getWhatsAppAccounts,
   getAllWhatsAppAccounts,
   cleanupStaleWhatsAppAccounts,
+  cleanupContactDuplicates,
   getWhatsAppSettings,
   upsertWhatsAppProfile,
   getProfileByUserId
@@ -346,6 +347,16 @@ whatsappRouter.post("/cleanup-stale-accounts", requireAuth, async (req, res) => 
   }
 });
 
+whatsappRouter.post("/cleanup-contacts", requireAuth, async (req, res) => {
+  try {
+    const summary = await cleanupContactDuplicates(req.user.sub);
+    return res.json(summary);
+  } catch (error) {
+    console.error("Failed to cleanup duplicate contact data:", error);
+    return res.status(500).json({ error: "Failed to cleanup duplicate contact data." });
+  }
+});
+
 whatsappRouter.get("/settings", requireAuth, async (req, res) => {
   try {
     const settings = await getWhatsAppSettings(req.user.sub);
@@ -545,8 +556,7 @@ app.get("/conversations", requireAuth, bindAuthenticatedWhatsAppOwner, async (re
     const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
     const conversations = await getConversations(req.user.sub, whatsappAccountId);
     const accounts = await getWhatsAppAccounts(req.user.sub);
-    const liveAccounts = await resolveLiveWhatsAppAccounts(req.user.sub, accounts);
-    return res.json(resolveLiveConversationStates(conversations, liveAccounts));
+    return res.json(resolveLiveConversationStates(conversations, accounts));
   } catch (error) {
     console.error("Failed to fetch conversations:", error);
     return res.status(500).json({ error: "Failed to fetch conversations." });
@@ -704,28 +714,10 @@ app.get("/customers/by-id/:contact_id", requireAuth, bindAuthenticatedWhatsAppOw
     if (!customer) {
       return res.status(404).json({ error: "Customer not found." });
     }
-    const sourceWhatsAppAccountId = customer.whatsapp_account_id || null;
-    const profile = await getContactProfile(req.user.sub, sourceWhatsAppAccountId, customer.phone, customer.chat_jid || null);
-
-    // Update DB cache if we got live data from WhatsApp
-    if (profile.profilePictureUrl || profile.about) {
-      await upsertCustomer({
-        owner_user_id: req.user.sub,
-        whatsapp_account_id: sourceWhatsAppAccountId,
-        phone: customer.phone,
-        chat_jid: customer.chat_jid || null,
-        profile_picture_url: profile.profilePictureUrl,
-        about: profile.about
-      }).catch((err) => {
-        console.warn(`[PROFILE CACHE] Failed for contact_id ${contactId}. If you haven't run the SQL migration yet, this is expected:`, err.message);
-      });
-    }
 
     return res.json({
       ...customer,
-      id: customer.id, // Ensure UUID is always present
-      profile_picture_url: profile.profilePictureUrl || customer.profile_picture_url || null,
-      about: profile.about || customer.about || null
+      id: customer.id
     });
   } catch (error) {
     console.error("Failed to fetch customer by contact_id:", error);
@@ -739,42 +731,9 @@ app.get("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
     const chatJid = typeof req.query?.chatJid === "string" ? req.query.chatJid.trim() || null : null;
     const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
     const customer = await getCustomerInsights(phone, req.user.sub, chatJid, whatsappAccountId);
-    const sourceWhatsAppAccountId = customer.whatsapp_account_id || null;
-    let profile = { profilePictureUrl: null, about: null };
-
-    try {
-      profile = await getContactProfile(
-        req.user.sub,
-        sourceWhatsAppAccountId,
-        customer.phone || phone,
-        customer.chat_jid || chatJid || null
-      );
-    } catch (profileError) {
-      console.warn(
-        `[PROFILE LOOKUP] Failed for ${customer.phone || phone || "unknown"}. Returning cached customer data instead:`,
-        profileError?.message || profileError
-      );
-    }
-
-    // Update DB cache if we got live data from WhatsApp
-    if (profile.profilePictureUrl || profile.about) {
-      await upsertCustomer({
-        owner_user_id: req.user.sub,
-        whatsapp_account_id: sourceWhatsAppAccountId,
-        phone: customer.phone || phone,
-        chat_jid: customer.chat_jid || chatJid || null,
-        profile_picture_url: profile.profilePictureUrl,
-        about: profile.about
-      }).catch((err) => {
-        console.warn(`[PROFILE CACHE] Failed for ${customer.phone || phone}. If you haven't run the SQL migration yet, this is expected:`, err.message);
-      });
-    }
-
     return res.json({
       ...customer,
-      id: customer.id, // Ensure UUID is always present
-      profile_picture_url: profile.profilePictureUrl || customer.profile_picture_url || null,
-      about: profile.about || customer.about || null
+      id: customer.id
     });
   } catch (error) {
     console.error("Failed to fetch customer:", error);
@@ -854,13 +813,7 @@ app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
     });
 
     const customer = await getCustomerInsights(phone, req.user.sub, chatJid, whatsappAccountId);
-    const profile = await getContactProfile(req.user.sub, whatsappAccountId, phone, customer.chat_jid || chatJid || null);
-
-    return res.json({
-      ...customer,
-      profile_picture_url: profile.profilePictureUrl,
-      about: profile.about
-    });
+    return res.json(customer);
   } catch (error) {
     console.error("Failed to save customer:", error);
     return res.status(500).json({ error: "Failed to save customer." });
