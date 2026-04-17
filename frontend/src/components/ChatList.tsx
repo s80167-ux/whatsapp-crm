@@ -39,8 +39,14 @@ type ChatListProps = {
   onSelect: (conversationId: string, chatJid?: string | null) => void;
 };
 
-function formatTimestamp(value: string) {
-  return new Date(value).toLocaleTimeString([], {
+function formatTimestamp(value?: string | null) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return date.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit"
   });
@@ -144,7 +150,11 @@ export function ChatList({
           return false;
         }
 
-        const timestamp = new Date(getConversationSortTimestamp(conversation));
+        const timestampValue = getConversationSortTimestamp(conversation);
+        const timestamp = new Date(timestampValue);
+        if (Number.isNaN(timestamp.getTime())) {
+          return filter === "all";
+    }
 
         if (filter === "today") {
           return timestamp.toDateString() === now.toDateString();
@@ -158,9 +168,11 @@ export function ChatList({
       })
       .sort((a, b) => {
         const leftTimestamp = new Date(getConversationSortTimestamp(a)).getTime();
-        const rightTimestamp = new Date(getConversationSortTimestamp(b)).getTime();
-        return sortOrder === "latest" ? rightTimestamp - leftTimestamp : leftTimestamp - rightTimestamp;
-      });
+const rightTimestamp = new Date(getConversationSortTimestamp(b)).getTime();
+const safeLeftTimestamp = Number.isNaN(leftTimestamp) ? 0 : leftTimestamp;
+const safeRightTimestamp = Number.isNaN(rightTimestamp) ? 0 : rightTimestamp;
+return sortOrder === "latest" ? safeRightTimestamp - safeLeftTimestamp : safeLeftTimestamp - safeRightTimestamp;
+                    });
   }, [conversations, filter, query, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(filteredConversations.length / CONVERSATIONS_PAGE_SIZE));
@@ -202,6 +214,7 @@ export function ChatList({
 
           <div className="relative mt-3">
             <select
+              aria-label="Select WhatsApp account"
               className="w-full appearance-none rounded-2xl border border-white/70 bg-white/92 px-3 py-3 pr-10 text-sm font-medium text-ink outline-none transition focus:border-whatsapp-deep/30"
               onChange={(event) => onSelectWhatsAppAccount(event.target.value)}
               value={selectedWhatsAppAccountId || ""}
@@ -398,7 +411,9 @@ export function ChatList({
                             )}
                             <span className="icon-hover-label">{deleting ? "Deleting chat" : "Delete chat"}</span>
                           </button>
-                          <span className={`shrink-0 text-[10px] font-medium transition-colors sm:text-[10px] ${active ? "text-whatsapp-dark" : "text-whatsapp-muted"}`}>{formatTimestamp(conversation.timestamp)}</span>
+                          <span className={`shrink-0 text-[10px] font-medium transition-colors sm:text-[10px] ${active ? "text-whatsapp-dark" : "text-whatsapp-muted"}`}>
+  {formatTimestamp(getConversationSortTimestamp(conversation))}
+</span>
                         </div>
                       </div>
                       <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors sm:text-[11px] ${active ? "text-whatsapp-dark/80" : "text-whatsapp-muted"}`}>
