@@ -31,7 +31,9 @@ const HISTORY_CONTACTS_FILE = "hist_contacts.json";
 const HISTORY_MESSAGES_FILE = "hist_messages.json";
 const HISTORY_CACHE_MAX_MESSAGES = 5000;
 const CONNECTING_RECOVERY_TIMEOUT_MS = 25000;
-const MAX_CONNECTING_TIMEOUTS_BEFORE_AUTH_RESET = 3;
+const RECONNECT_BASE_DELAY_MS = 3000;
+const RECONNECT_MAX_DELAY_MS = 60000;
+const MAX_RECONNECT_ATTEMPTS = 8;
 
 function isExplicitAbsoluteAuthDir(value) {
   const rawValue = String(value || "").trim();
@@ -212,6 +214,7 @@ function shouldAutoInitializeAccount(account) {
 
   const state = String(account?.connection_state || "").trim().toLowerCase();
   // Platform restarts can persist a recoverable session as "disconnected".
+  // `reconnect_failed` is intentionally excluded so we do not loop forever.
   return ["open", "qr", "connecting", "disconnecting", "disconnected", ""].includes(state);
 }
 
@@ -318,6 +321,7 @@ function getOrCreateSessionFromAccount(account) {
     fallbackSyncTimer: null,
     connectingRecoveryTimer: null,
     consecutiveConnectingTimeouts: 0,
+    reconnectAttempts: 0,
     initializingPromise: null,
     contactIdentityCache: new Map()
   };
@@ -362,6 +366,24 @@ function safelyRunSocketTask(label, task) {
     .catch((error) => {
       console.error(`WhatsApp socket task failed (${label}):`, error?.message || error);
     });
+}
+
+function resetReconnectState(session) {
+  session.consecutiveConnectingTimeouts = 0;
+  session.reconnectAttempts = 0;
+}
+
+async function markReconnectFailed(session, reason) {
+  clearReconnectTimer(session);
+  clearConnectingRecoveryTimer(session);
+  clearFallbackSyncTimer(session);
+  session.connectionState = "reconnect_failed";
+  session.qrData = null;
+  await syncSessionAccountState(session, { connection_state: "reconnect_failed" }).catch(() => {});
+
+  console.warn(
+    `WhatsApp reconnect paused for ${session.accountId} after ${session.reconnectAttempts} attempt(s). Reason: ${reason}.`
+  );
 }
 
 async function disposeSession(session, options = {}) {
@@ -1187,11 +1209,20 @@ async function getLiveWhatsAppProfile(session) {
 function scheduleReconnect(session, options = {}) {
   clearReconnectTimer(session);
 
+  const nextAttempt = (Number.isFinite(session.reconnectAttempts) ? session.reconnectAttempts : 0) + 1;
+  if (!options.force && nextAttempt > MAX_RECONNECT_ATTEMPTS) {
+    void markReconnectFailed(session, options.reason || "retry_limit_reached");
+    return;
+  }
+
+  session.reconnectAttempts = nextAttempt;
+  const delayMs = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** (nextAttempt - 1), RECONNECT_MAX_DELAY_MS);
+
   session.connectionState = "connecting";
   void syncSessionAccountState(session, { connection_state: "connecting" });
 
   console.warn(
-    `Scheduling WhatsApp reconnect for ${session.accountId} in 3000ms${options.resetAuth ? " with auth reset" : ""}.`
+    `Scheduling WhatsApp reconnect for ${session.accountId} in ${delayMs}ms (attempt ${session.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})${options.resetAuth ? " with auth reset" : ""}.`
   );
 
   session.reconnectTimer = setTimeout(async () => {
@@ -1205,8 +1236,15 @@ function scheduleReconnect(session, options = {}) {
       console.error(`Failed to reinitialize WhatsApp for ${session.accountId}:`, error);
       session.connectionState = "disconnected";
       await syncSessionAccountState(session, { connection_state: "disconnected" }).catch(() => {});
+      if (session.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        await markReconnectFailed(session, options.reason || "reinitialize_failed");
+        return;
+      }
+      scheduleReconnect(session, {
+        reason: options.reason || "reinitialize_failed"
+      });
     }
-  }, 3000);
+  }, delayMs);
 }
 
 async function initializeWhatsApp(ownerUserId, accountId) {
@@ -1265,11 +1303,9 @@ async function initializeWhatsApp(ownerUserId, accountId) {
 
         session.consecutiveConnectingTimeouts =
           Number.isFinite(session.consecutiveConnectingTimeouts) ? session.consecutiveConnectingTimeouts + 1 : 1;
-        const shouldResetAuth =
-          session.consecutiveConnectingTimeouts >= MAX_CONNECTING_TIMEOUTS_BEFORE_AUTH_RESET;
 
         console.warn(
-          `WhatsApp session ${session.accountId} stayed in connecting for more than ${CONNECTING_RECOVERY_TIMEOUT_MS}ms. Attempt ${session.consecutiveConnectingTimeouts}/${MAX_CONNECTING_TIMEOUTS_BEFORE_AUTH_RESET}${shouldResetAuth ? " will reset auth for QR recovery." : " will retry without resetting auth."}`
+          `WhatsApp session ${session.accountId} stayed in connecting for more than ${CONNECTING_RECOVERY_TIMEOUT_MS}ms. Timeout count ${session.consecutiveConnectingTimeouts}. Retrying without resetting auth.`
         );
 
         clearConnectingRecoveryTimer(session);
@@ -1288,7 +1324,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
 
         session.connectionState = "disconnected";
         await syncSessionAccountState(session, { connection_state: "disconnected" }).catch(() => {});
-        scheduleReconnect(session, { resetAuth: shouldResetAuth });
+        scheduleReconnect(session, { reason: "connecting_timeout" });
       });
     }, CONNECTING_RECOVERY_TIMEOUT_MS);
 
@@ -1315,6 +1351,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
 
         if (qr) {
           clearConnectingRecoveryTimer(session);
+          resetReconnectState(session);
 
           if (shouldIgnoreQrDowngrade(session)) {
             console.warn(`Ignoring QR update for recently connected account ${session.accountId}.`);
@@ -1328,7 +1365,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
 
         if (connection === "open") {
           clearConnectingRecoveryTimer(session);
-          session.consecutiveConnectingTimeouts = 0;
+          resetReconnectState(session);
           session.connectionState = "open";
           session.qrData = null;
           console.log(`WhatsApp (Baileys) is ready for account ${session.accountId}.`);
@@ -1427,14 +1464,15 @@ async function initializeWhatsApp(ownerUserId, accountId) {
 
           if (statusCode === DisconnectReason.loggedOut) {
             console.warn(`WhatsApp session ${session.accountId} was logged out. Resetting auth state for a fresh QR.`);
-            scheduleReconnect(session, { resetAuth: true });
+            resetReconnectState(session);
+            scheduleReconnect(session, { force: true, reason: "logged_out", resetAuth: true });
             return;
           }
 
           session.connectionState = "disconnected";
           await syncSessionAccountState(session, { connection_state: "disconnected" }).catch(() => {});
           if (statusCode !== DisconnectReason.loggedOut) {
-            scheduleReconnect(session);
+            scheduleReconnect(session, { reason: disconnectMessage || "connection_closed" });
           }
         }
       });
@@ -2329,7 +2367,8 @@ async function disconnectWhatsApp(ownerUserId, accountId) {
     session.manualDisconnectRequested = false;
   }
 
-  scheduleReconnect(session, { resetAuth: true });
+  resetReconnectState(session);
+  scheduleReconnect(session, { force: true, reason: "manual_disconnect", resetAuth: true });
   return defaultStatus(session.connectionState, session.qrData);
 }
 

@@ -94,6 +94,8 @@ function formatAccountState(value: string | null | undefined) {
       return "Connecting";
     case "qr":
       return "Awaiting QR";
+    case "reconnect_failed":
+      return "Reconnect Paused";
     case "disconnecting":
       return "Disconnecting";
     default:
@@ -111,6 +113,8 @@ function getAccountStateBadgeClasses(value: string | null | undefined) {
       return "bg-amber-100 text-amber-700";
     case "qr":
       return "bg-sky-100 text-sky-700";
+    case "reconnect_failed":
+      return "bg-rose-100 text-rose-700";
     case "disconnecting":
       return "bg-orange-100 text-orange-700";
     default:

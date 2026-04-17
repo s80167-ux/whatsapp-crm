@@ -959,7 +959,7 @@ function App() {
       const visibleAccounts = accounts.filter((account) => {
         const hasPhone = Boolean(normalizePhoneValue(account.account_phone));
         const state = String(account.connection_state || "").trim().toLowerCase();
-        return hasPhone || state === "connecting" || state === "qr" || state === "open";
+        return hasPhone || state === "connecting" || state === "qr" || state === "open" || state === "reconnect_failed";
       });
 
       setWhatsAppAccounts(visibleAccounts);
@@ -1090,7 +1090,7 @@ function App() {
       const visibleAccounts = result.accounts.filter((account) => {
         const normalizedPhone = normalizePhoneValue(account.account_phone);
         const state = String(account.connection_state || "").trim().toLowerCase();
-        return Boolean(normalizedPhone) || state === "connecting" || state === "qr" || state === "open";
+        return Boolean(normalizedPhone) || state === "connecting" || state === "qr" || state === "open" || state === "reconnect_failed";
       });
 
       setWhatsAppAccounts(visibleAccounts);
