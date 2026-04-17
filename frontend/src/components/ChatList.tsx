@@ -39,17 +39,41 @@ type ChatListProps = {
   onSelect: (conversationId: string, chatJid?: string | null) => void;
 };
 
-function formatTimestamp(value?: string | null) {
-  const normalized = String(value || "").trim();
+function formatTimestamp(value?: string | number | null) {
+  if (value === null || value === undefined) return "";
+
+  if (typeof value === "number") {
+    const date = new Date(value < 1e12 ? value * 1000 : value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
+
+  const normalized = String(value).trim();
   if (!normalized) return "";
 
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) return "";
+  const directDate = new Date(normalized);
+  if (!Number.isNaN(directDate.getTime())) {
+    return directDate.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
 
-  return date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+  const numeric = Number(normalized);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    const numericDate = new Date(numeric < 1e12 ? numeric * 1000 : numeric);
+    if (!Number.isNaN(numericDate.getTime())) {
+      return numericDate.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+  }
+
+  return "";
 }
 
 function formatAccountPhone(value: string | null | undefined) {
@@ -154,7 +178,7 @@ export function ChatList({
         const timestamp = new Date(timestampValue);
         if (Number.isNaN(timestamp.getTime())) {
           return filter === "all";
-    }
+        }
 
         if (filter === "today") {
           return timestamp.toDateString() === now.toDateString();
@@ -168,11 +192,11 @@ export function ChatList({
       })
       .sort((a, b) => {
         const leftTimestamp = new Date(getConversationSortTimestamp(a)).getTime();
-const rightTimestamp = new Date(getConversationSortTimestamp(b)).getTime();
-const safeLeftTimestamp = Number.isNaN(leftTimestamp) ? 0 : leftTimestamp;
-const safeRightTimestamp = Number.isNaN(rightTimestamp) ? 0 : rightTimestamp;
-return sortOrder === "latest" ? safeRightTimestamp - safeLeftTimestamp : safeLeftTimestamp - safeRightTimestamp;
-                    });
+        const rightTimestamp = new Date(getConversationSortTimestamp(b)).getTime();
+        const safeLeftTimestamp = Number.isNaN(leftTimestamp) ? 0 : leftTimestamp;
+        const safeRightTimestamp = Number.isNaN(rightTimestamp) ? 0 : rightTimestamp;
+        return sortOrder === "latest" ? safeRightTimestamp - safeLeftTimestamp : safeLeftTimestamp - safeRightTimestamp;
+      });
   }, [conversations, filter, query, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(filteredConversations.length / CONVERSATIONS_PAGE_SIZE));
@@ -323,126 +347,124 @@ return sortOrder === "latest" ? safeRightTimestamp - safeLeftTimestamp : safeLef
         <>
           <div className="custom-scrollbar scrollbar-hidden flex min-h-0 flex-1 flex-col space-y-2 overflow-y-auto pr-1">
             {paginatedConversations.map((conversation) => {
-            const resolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid);
-            const conversationId = getConversationIdentifier(conversation.phone, conversation.chatJid);
-            const displayPhone = getDisplayPhone(conversation.phone, conversation.chatJid);
-            const activeStatuses = STATUS_ORDER.filter((status) => (conversation.status_counts?.[status] ?? 0) > 0);
-            // Use activeConversationId prop for highlight, fallback to selectedPhone for backward compatibility
-            const active =
-              selectedPhone === conversationId &&
-              (!selectedChatJid || String(conversation.chatJid || "").trim() === String(selectedChatJid).trim());
-            const conversationKey = conversation.chatJid || conversationId || conversation.timestamp;
-            const deleting = deletingConversationKey === conversationKey;
+              const resolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid);
+              const conversationId = getConversationIdentifier(conversation.phone, conversation.chatJid);
+              const displayPhone = getDisplayPhone(conversation.phone, conversation.chatJid);
+              const activeStatuses = STATUS_ORDER.filter((status) => (conversation.status_counts?.[status] ?? 0) > 0);
+              const active =
+                selectedPhone === conversationId &&
+                (!selectedChatJid || String(conversation.chatJid || "").trim() === String(selectedChatJid).trim());
+              const conversationKey = conversation.chatJid || conversationId || conversation.timestamp;
+              const deleting = deletingConversationKey === conversationKey;
 
-            return (
-              <div key={conversationKey} className="group relative">
-                <button
-                  className={`relative w-full max-w-full min-w-0 overflow-hidden rounded-lg border px-3 py-3 text-left transition-colors duration-200 sm:px-4 sm:py-3 ${
-                    active
-                      ? "border-transparent bg-[#e9edef] shadow-none"
-                      : "border-transparent bg-white hover:bg-[#f5f6f6] shadow-none"
-                  }`}
-                  disabled={!conversationId || deleting}
-                  onClick={() => {
-                    if (conversationId) {
-                      onSelect(conversationId, conversation.chatJid);
-                    }
-                  }}
-                  type="button"
-                >
-                  <div className="min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className={`truncate text-sm font-bold leading-5 transition-colors sm:text-sm ${active ? "text-whatsapp-deep" : "text-ink group-hover:text-whatsapp-deep"}`}>
-                          {getDisplayName(conversation.contactName, displayPhone)}
-                        </p>
-                        <div className="flex items-center gap-2">
-                          {activeStatuses.length ? (
-                            <div className="flex items-center gap-1">
-                              {activeStatuses.map((status) => (
-                                <div
-                                  key={status}
-                                  className={`icon-hover-trigger chat-status-dot h-3 w-3 shrink-0 shadow-sm transition-transform hover:scale-110 active:scale-95 ${getStatusDotClass(status)}`}
-                                >
-                                  <span className="icon-hover-label">{`${CUSTOMER_STATUS_LABELS[status]}: ${conversation.status_counts?.[status] ?? 0}`}</span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : null}
-                          {conversation.unreadCount && conversation.unreadCount > 0 ? (
-                            <span
-                              className="icon-hover-trigger chat-unread-badge flex h-5 min-w-[20px] items-center justify-center bg-blue-500 px-1 text-[10px] font-bold text-white shadow-sm"
-                            >
-                              {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
-                              <span className="icon-hover-label">
-                                {`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
+              return (
+                <div key={conversationKey} className="group relative">
+                  <button
+                    className={`relative w-full max-w-full min-w-0 overflow-hidden rounded-lg border px-3 py-3 text-left transition-colors duration-200 sm:px-4 sm:py-3 ${
+                      active
+                        ? "border-transparent bg-[#e9edef] shadow-none"
+                        : "border-transparent bg-white hover:bg-[#f5f6f6] shadow-none"
+                    }`}
+                    disabled={!conversationId || deleting}
+                    onClick={() => {
+                      if (conversationId) {
+                        onSelect(conversationId, conversation.chatJid);
+                      }
+                    }}
+                    type="button"
+                  >
+                    <div className="min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className={`truncate text-sm font-bold leading-5 transition-colors sm:text-sm ${active ? "text-whatsapp-deep" : "text-ink group-hover:text-whatsapp-deep"}`}>
+                            {getDisplayName(conversation.contactName, displayPhone)}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            {activeStatuses.length ? (
+                              <div className="flex items-center gap-1">
+                                {activeStatuses.map((status) => (
+                                  <div
+                                    key={status}
+                                    className={`icon-hover-trigger chat-status-dot h-3 w-3 shrink-0 shadow-sm transition-transform hover:scale-110 active:scale-95 ${getStatusDotClass(status)}`}
+                                  >
+                                    <span className="icon-hover-label">{`${CUSTOMER_STATUS_LABELS[status]}: ${conversation.status_counts?.[status] ?? 0}`}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                            {conversation.unreadCount && conversation.unreadCount > 0 ? (
+                              <span
+                                className="icon-hover-trigger chat-unread-badge flex h-5 min-w-[20px] items-center justify-center bg-blue-500 px-1 text-[10px] font-bold text-white shadow-sm"
+                              >
+                                {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+                                <span className="icon-hover-label">
+                                  {`${conversation.unreadCount} unread message${conversation.unreadCount === 1 ? "" : "s"}`}
+                                </span>
                               </span>
+                            ) : null}
+                            <button
+                              aria-label={deleting ? "Deleting chat" : "Delete chat"}
+                              className="icon-hover-trigger flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-whatsapp-muted transition hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+                              disabled={deleting || !conversationId}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+
+                                if (!conversationId) {
+                                  return;
+                                }
+
+                                if (!window.confirm(`Delete chat with ${getDisplayName(conversation.contactName, displayPhone)}? This will remove the conversation from the database.`)) {
+                                  return;
+                                }
+
+                                onDeleteConversation(conversationId, conversation.chatJid);
+                              }}
+                              type="button"
+                            >
+                              {deleting ? (
+                                <span className="text-[10px] font-semibold">...</span>
+                              ) : (
+                                <svg aria-hidden="true" fill="none" height="15" viewBox="0 0 24 24" width="15">
+                                  <path d="M3 6h18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                                  <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                                  <path d="M10 11v6M14 11v6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                                </svg>
+                              )}
+                              <span className="icon-hover-label">{deleting ? "Deleting chat" : "Delete chat"}</span>
+                            </button>
+                            <span className={`shrink-0 text-[10px] font-medium transition-colors sm:text-[10px] ${active ? "text-whatsapp-dark" : "text-whatsapp-muted"}`}>
+                              {formatTimestamp(getConversationSortTimestamp(conversation))}
                             </span>
-                          ) : null}
-                          <button
-                            aria-label={deleting ? "Deleting chat" : "Delete chat"}
-                            className="icon-hover-trigger flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-whatsapp-muted transition hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
-                            disabled={deleting || !conversationId}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-
-                              if (!conversationId) {
-                                return;
-                              }
-
-                              if (!window.confirm(`Delete chat with ${getDisplayName(conversation.contactName, displayPhone)}? This will remove the conversation from the database.`)) {
-                                return;
-                              }
-
-                              onDeleteConversation(conversationId, conversation.chatJid);
-                            }}
-                            type="button"
-                          >
-                            {deleting ? (
-                              <span className="text-[10px] font-semibold">...</span>
-                            ) : (
-                              <svg aria-hidden="true" fill="none" height="15" viewBox="0 0 24 24" width="15">
-                                <path d="M3 6h18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-                                <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-                                <path d="M10 11v6M14 11v6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-                              </svg>
-                            )}
-                            <span className="icon-hover-label">{deleting ? "Deleting chat" : "Delete chat"}</span>
-                          </button>
-                          <span className={`shrink-0 text-[10px] font-medium transition-colors sm:text-[10px] ${active ? "text-whatsapp-dark" : "text-whatsapp-muted"}`}>
-  {formatTimestamp(getConversationSortTimestamp(conversation))}
-</span>
+                          </div>
                         </div>
+                        <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors sm:text-[11px] ${active ? "text-whatsapp-dark/80" : "text-whatsapp-muted"}`}>
+                          {formatPhoneDisplay(conversation.phone, conversation.chatJid)}
+                        </p>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          {conversation.sourceConnectionState ? (
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getAccountStateBadgeClasses(conversation.sourceConnectionState)}`}>
+                              {getConversationSourceLabel(conversation)} - {formatAccountState(conversation.sourceConnectionState)}
+                            </span>
+                          ) : conversation.sourceAccountPhone || conversation.sourceDisplayName ? (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
+                              {getConversationSourceLabel(conversation)}
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
+                              Historical source unavailable
+                            </span>
+                          )}
+                        </div>
+                        <p className={`mt-1.5 hidden truncate text-xs leading-4 transition-colors md:block ${active ? "text-ink/80" : "text-whatsapp-muted group-hover:text-ink/80"}`}>
+                          {conversation.lastMessage}
+                        </p>
                       </div>
-                      <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors sm:text-[11px] ${active ? "text-whatsapp-dark/80" : "text-whatsapp-muted"}`}>
-                        {formatPhoneDisplay(conversation.phone, conversation.chatJid)}
-                      </p>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        {conversation.sourceConnectionState ? (
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getAccountStateBadgeClasses(conversation.sourceConnectionState)}`}>
-                            {getConversationSourceLabel(conversation)} - {formatAccountState(conversation.sourceConnectionState)}
-                          </span>
-                        ) : conversation.sourceAccountPhone || conversation.sourceDisplayName ? (
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
-                            {getConversationSourceLabel(conversation)}
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
-                            Historical source unavailable
-                          </span>
-                        )}
-                      </div>
-                      <p className={`mt-1.5 hidden truncate text-xs leading-4 transition-colors md:block ${active ? "text-ink/80" : "text-whatsapp-muted group-hover:text-ink/80"}`}>
-                        {conversation.lastMessage}
-                      </p>
                     </div>
-                  </div>
-                </button>
-
-              </div>
-            );
+                  </button>
+                </div>
+              );
             })}
           </div>
 
