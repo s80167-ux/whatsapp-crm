@@ -1854,6 +1854,102 @@ async function repopulateConversationFromWhatsApp(ownerUserId, accountId, option
 
   return result;
 }
+async function rebuildAllConversationsFromWhatsApp(ownerUserId, accountId, options = {}) {
+  const session = await ensureSession(ownerUserId, accountId, { initialize: false });
+
+  if (!session) {
+    const error = new Error("WhatsApp account not found.");
+    error.status = 404;
+    throw error;
+  }
+
+  if (!session.sock || session.connectionState !== "open") {
+    await initializeWhatsApp(ownerUserId, session.accountId);
+  }
+
+  const refreshedSession = await ensureSession(ownerUserId, session.accountId, { initialize: false });
+
+  if (!refreshedSession?.sock || refreshedSession.connectionState !== "open") {
+    const error = new Error("WhatsApp must be connected before rebuilding conversations.");
+    error.status = 409;
+    throw error;
+  }
+
+  const activeSession = refreshedSession;
+  const waitMs =
+    Number.isFinite(Number(options.waitMs)) && Number(options.waitMs) > 0
+      ? Number(options.waitMs)
+      : 12000;
+
+  let restored = { restoredChats: 0, restoredMessages: 0 };
+  let fallbackResyncTriggered = false;
+  let fallbackResyncError = null;
+
+  activeSession.historySyncObserved = false;
+
+  try {
+    restored = await hydrateSessionFromLocalHistoryCache(activeSession);
+  } catch (error) {
+    console.warn(
+      `Failed to hydrate local history cache for ${activeSession.accountId}:`,
+      error?.message || error
+    );
+  }
+
+  const waitForHistorySync = new Promise((resolve) => {
+    const startedAt = Date.now();
+
+    const interval = setInterval(() => {
+      if (activeSession.historySyncObserved) {
+        clearInterval(interval);
+        resolve({
+          historySyncObserved: true,
+          timedOut: false,
+          waitedMs: Date.now() - startedAt
+        });
+        return;
+      }
+
+      if (Date.now() - startedAt >= waitMs) {
+        clearInterval(interval);
+        resolve({
+          historySyncObserved: Boolean(activeSession.historySyncObserved),
+          timedOut: !activeSession.historySyncObserved,
+          waitedMs: Date.now() - startedAt
+        });
+      }
+    }, 500);
+  });
+
+  if (typeof activeSession.sock.resyncAppState === "function") {
+    try {
+      const { ALL_WA_PATCH_NAMES } = await loadBaileys();
+      fallbackResyncTriggered = true;
+      await activeSession.sock.resyncAppState(ALL_WA_PATCH_NAMES, true);
+    } catch (error) {
+      fallbackResyncError = error instanceof Error ? error.message : String(error || "Unknown resync error");
+      console.error(
+        `Failed to trigger fallback app-state resync for ${activeSession.accountId}:`,
+        error?.message || error
+      );
+    }
+  }
+
+  const waitResult = await waitForHistorySync;
+
+  return {
+    success: true,
+    whatsappAccountId: activeSession.accountId,
+    connectionState: activeSession.connectionState,
+    restoredChats: restored.restoredChats || 0,
+    restoredMessages: restored.restoredMessages || 0,
+    historySyncObserved: waitResult.historySyncObserved,
+    fallbackResyncTriggered,
+    fallbackResyncError,
+    waitedMs: waitResult.waitedMs,
+    timedOut: waitResult.timedOut
+  };
+}
 
 async function disconnectWhatsApp(ownerUserId, accountId) {
   const session = await ensureSession(ownerUserId, accountId, { initialize: false });
@@ -1903,6 +1999,7 @@ module.exports = {
   getWhatsAppProfile,
   getContactProfile,
   repopulateConversationFromWhatsApp,
+  rebuildAllConversationsFromWhatsApp,
   getCurrentWhatsAppAccountContext,
   disconnectWhatsApp,
   removeWhatsAppSessions,

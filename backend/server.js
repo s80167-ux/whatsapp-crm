@@ -62,6 +62,7 @@ const {
   disconnectWhatsApp,
   getContactProfile,
   repopulateConversationFromWhatsApp,
+  rebuildAllConversationsFromWhatsApp,
   getCurrentWhatsAppAccountContext,
   removeWhatsAppSessions,
   normalizePhone
@@ -383,23 +384,72 @@ whatsappRouter.post("/disconnect", requireAuth, bindAuthenticatedWhatsAppOwner, 
 whatsappRouter.delete("/clear", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const owner_user_id = req.user?.sub;
-    if (!owner_user_id) throw new Error("No user ID found");
+    if (!owner_user_id) {
+      throw new Error("No user ID found");
+    }
 
-    console.log(`[CLEAR DB] Wiping tables for owner: ${owner_user_id}`);
-    const { supabase } = require('./supabase');
+    const requestedWhatsAppAccountId = await resolveRequestWhatsAppAccountId(req);
+    console.log(
+      `[CLEAR DB] Wiping tables for owner: ${owner_user_id}, account: ${requestedWhatsAppAccountId || "auto"}`
+    );
 
-    const messageResult = await supabase.from('messages').delete().eq('owner_user_id', owner_user_id);
-    if (messageResult.error) console.error(`[CLEAR DB] Message deletion error:`, messageResult.error);
-    else console.log(`[CLEAR DB] Messages wiped successfully.`);
+    const { supabase } = require("./supabase");
 
-    const customerResult = await supabase.from('customers').delete().eq('owner_user_id', owner_user_id);
-    if (customerResult.error) console.error(`[CLEAR DB] Customer deletion error:`, customerResult.error);
-    else console.log(`[CLEAR DB] Customers wiped successfully.`);
+    let deleteMessagesQuery = supabase.from("messages").delete().eq("owner_user_id", owner_user_id);
+    let deleteCustomersQuery = supabase.from("customers").delete().eq("owner_user_id", owner_user_id);
 
-    res.json({ success: true, message: "Database cleared successfully" });
+    if (requestedWhatsAppAccountId) {
+      deleteMessagesQuery = deleteMessagesQuery.eq("whatsapp_account_id", requestedWhatsAppAccountId);
+      deleteCustomersQuery = deleteCustomersQuery.eq("whatsapp_account_id", requestedWhatsAppAccountId);
+    }
+
+    const [messageResult, customerResult] = await Promise.all([
+      deleteMessagesQuery,
+      deleteCustomersQuery
+    ]);
+
+    if (messageResult.error) {
+      console.error(`[CLEAR DB] Message deletion error:`, messageResult.error);
+      throw messageResult.error;
+    } else {
+      console.log(`[CLEAR DB] Messages wiped successfully.`);
+    }
+
+    if (customerResult.error) {
+      console.error(`[CLEAR DB] Customer deletion error:`, customerResult.error);
+      throw customerResult.error;
+    } else {
+      console.log(`[CLEAR DB] Customers wiped successfully.`);
+    }
+
+    let rebuild = null;
+    let rebuildError = null;
+
+    try {
+      const context = await getCurrentWhatsAppAccountContext(owner_user_id, requestedWhatsAppAccountId);
+      const rebuildAccountId = context?.id || requestedWhatsAppAccountId || null;
+
+      if (rebuildAccountId) {
+        rebuild = await rebuildAllConversationsFromWhatsApp(owner_user_id, rebuildAccountId, {
+          waitMs: 15000
+        });
+      } else {
+        rebuildError = "No WhatsApp account available to rebuild after clear.";
+      }
+    } catch (error) {
+      rebuildError = error?.message || "Failed to rebuild conversations from WhatsApp.";
+      console.error(`[CLEAR DB] Rebuild error:`, error);
+    }
+
+    return res.json({
+      success: true,
+      message: "Database cleared successfully",
+      rebuild,
+      rebuildError
+    });
   } catch (error) {
     console.error(`[CLEAR DB] Unhandled error:`, error);
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message || "Failed to clear database." });
   }
 });
 
