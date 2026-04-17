@@ -222,10 +222,6 @@ function normalizeStoredAuthDir(configuredDir, accountId) {
     return null;
   }
 
-  if (isExplicitAbsoluteAuthDir(rawValue)) {
-    return rawValue;
-  }
-
   const pathTokens = rawValue.split(/[\\/]+/).filter(Boolean);
   const lastToken = pathTokens[pathTokens.length - 1] || "";
   const accountDirToken =
