@@ -103,7 +103,7 @@ function buildSelectedWhatsAppStatus(
 
 function buildAccountScopedCacheKey(phone: string, chatJid?: string | null, whatsappAccountId?: string | null) {
   const conversationId = getConversationIdentifier(phone, chatJid) || phone;
-  return `${conversationId}`;
+  return `${whatsappAccountId || "no-account"}::${conversationId}`;
 }
 
 function App() {
@@ -168,6 +168,7 @@ function App() {
   const conversationsRefreshTimerRef = useRef<number | null>(null);
   const activeSelectionRef = useRef<{
     dashboardTab: DashboardTab;
+    selectedWhatsAppAccountId: string | null;
     selectedPhone: string | null;
     selectedConversationChatJid: string | null;
     selectedContactConversationId: string | null;
@@ -176,6 +177,7 @@ function App() {
     activeContactChatJid: string | null;
   }>({
     dashboardTab: "inbox",
+    selectedWhatsAppAccountId: null,
     selectedPhone: null,
     selectedConversationChatJid: null,
     selectedContactConversationId: null,
@@ -421,6 +423,7 @@ function App() {
   }
 
   async function loadConversations(activeToken: string, silent = false) {
+    const requestedAccountId = selectedWhatsAppAccountId;
     if (!silent) {
       setLoadingChats(true);
       setDashboardError("");
@@ -430,6 +433,9 @@ function App() {
 
       try {
         const data = await api.getConversations(activeToken, selectedWhatsAppAccountId);
+        if (activeSelectionRef.current.selectedWhatsAppAccountId !== requestedAccountId) {
+          return;
+        }
         const sortedData = sortConversationsByLatestMessage(data);
         setConversations(sortedData);
         setSelectedPhone((current) => {
@@ -463,7 +469,8 @@ function App() {
   }
 
   async function loadMessages(phone: string, activeToken: string, chatJid?: string | null, silent = false, force = false) {
-    const cacheKey = buildAccountScopedCacheKey(phone, chatJid, selectedWhatsAppAccountId);
+    const requestedAccountId = selectedWhatsAppAccountId;
+    const cacheKey = buildAccountScopedCacheKey(phone, chatJid, requestedAccountId);
     const cached = messagesCacheRef.current[cacheKey];
 
     // Always show cached messages instantly if available (unless force)
@@ -481,7 +488,11 @@ function App() {
       messagesCacheRef.current[cacheKey] = data;
       const activeSelection = activeSelectionRef.current;
 
-      if (activeSelection.dashboardTab !== "inbox" || activeSelection.selectedPhone !== phone) {
+      if (
+        activeSelection.selectedWhatsAppAccountId !== requestedAccountId ||
+        activeSelection.dashboardTab !== "inbox" ||
+        activeSelection.selectedPhone !== phone
+      ) {
         return;
       }
 
@@ -511,6 +522,7 @@ function App() {
   }
 
   async function loadCustomer(phone: string, activeToken: string, chatJid?: string | null, silent = false) {
+    const requestedAccountId = selectedWhatsAppAccountId;
     if (!silent) {
       setLoadingCustomer(true);
     }
@@ -518,6 +530,9 @@ function App() {
     try {
       const data = await api.getCustomer(phone, activeToken, chatJid, selectedWhatsAppAccountId);
       const activeSelection = activeSelectionRef.current;
+      if (activeSelection.selectedWhatsAppAccountId !== requestedAccountId) {
+        return;
+      }
       const isInboxTarget = activeSelection.dashboardTab === "inbox" && activeSelection.selectedPhone === phone;
       const isContactTarget =
         activeSelection.dashboardTab === "contacts" && activeSelection.selectedContactConversationId === phone;
@@ -555,6 +570,7 @@ function App() {
   }
 
   async function loadCustomerSalesItems(phone: string, activeToken: string, chatJid?: string | null, silent = false) {
+    const requestedAccountId = selectedWhatsAppAccountId;
     if (!silent) {
       setLoadingSalesLeadItems(true);
     }
@@ -562,6 +578,9 @@ function App() {
     try {
       const data = await api.getCustomerSalesItems(phone, activeToken, chatJid, selectedWhatsAppAccountId);
       const activeSelection = activeSelectionRef.current;
+      if (activeSelection.selectedWhatsAppAccountId !== requestedAccountId) {
+        return;
+      }
       const isInboxTarget = activeSelection.dashboardTab === "inbox" && activeSelection.selectedPhone === phone;
       const isContactTarget =
         activeSelection.dashboardTab === "contacts" && activeSelection.selectedContactConversationId === phone;
@@ -1183,6 +1202,7 @@ function App() {
   useEffect(() => {
     activeSelectionRef.current = {
       dashboardTab: activeDashboardTab,
+      selectedWhatsAppAccountId,
       selectedPhone,
       selectedConversationChatJid,
       selectedContactConversationId,
@@ -1190,7 +1210,7 @@ function App() {
       activeChatJid,
       activeContactChatJid
     };
-  }, [activeChatJid, activeContactChatJid, activeDashboardTab, selectedContactChatJid, selectedContactConversationId, selectedConversationChatJid, selectedPhone]);
+  }, [activeChatJid, activeContactChatJid, activeDashboardTab, selectedContactChatJid, selectedContactConversationId, selectedConversationChatJid, selectedPhone, selectedWhatsAppAccountId]);
 
   useEffect(() => {
     let mounted = true;
@@ -1422,6 +1442,9 @@ function App() {
       }
       return;
     }
+
+    setCustomerDraft(null);
+    setSalesLeadItems([]);
 
     if (activeDashboardTab === "contacts") {
       loadCustomer(activeSelectionId, token, activeContactChatJid);

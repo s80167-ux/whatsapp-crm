@@ -302,7 +302,8 @@ function getOrCreateSessionFromAccount(account) {
     fallbackSyncTimer: null,
     connectingRecoveryTimer: null,
     consecutiveConnectingTimeouts: 0,
-    initializingPromise: null
+    initializingPromise: null,
+    contactIdentityCache: new Map()
   };
 
   sessions.set(accountId, session);
@@ -675,6 +676,133 @@ function extractContactIdentity(msg) {
   };
 }
 
+function normalizeComparableName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function isUsefulContactName(name, phone) {
+  const trimmed = String(name || "").trim();
+
+  if (trimmed.length < 2) {
+    return false;
+  }
+
+  const genericValues = new Set([
+    "unknown",
+    "no name",
+    "whatsapp user",
+    "contact",
+    "user",
+    "null",
+    "undefined",
+    "n/a",
+    "-"
+  ]);
+  const normalized = normalizeComparableName(trimmed);
+  if (genericValues.has(normalized)) {
+    return false;
+  }
+
+  const nameDigits = extractDigits(trimmed);
+  const phoneDigits = extractDigits(phone);
+  if (nameDigits && nameDigits.length >= 7 && (nameDigits === phoneDigits || nameDigits.length >= 9)) {
+    return false;
+  }
+
+  return /[A-Za-z\u00C0-\u024F\u1E00-\u1EFF]/.test(trimmed);
+}
+
+function getNameSourcePriority(source) {
+  switch (String(source || "").trim().toLowerCase()) {
+    case "manual":
+      return 100;
+    case "verified_business":
+      return 90;
+    case "contact":
+      return 80;
+    case "profile":
+      return 75;
+    case "history_sync":
+      return 65;
+    case "push_name":
+      return 55;
+    default:
+      return 0;
+  }
+}
+
+function extractContactIdentityFromEntity(entity) {
+  const candidates = [
+    { value: entity?.verifiedName || entity?.verifiedBizName, source: "verified_business" },
+    { value: entity?.name, source: "contact" },
+    { value: entity?.notify || entity?.pushName, source: "push_name" },
+    { value: entity?.fullName, source: "profile" }
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = String(candidate?.value || "").trim();
+    if (normalized) {
+      return {
+        name: normalized,
+        source: candidate.source
+      };
+    }
+  }
+
+  return {
+    name: null,
+    source: null
+  };
+}
+
+function cacheContactIdentity(session, { chatJid, phone, contactName, nameSource }) {
+  const normalizedName = String(contactName || "").trim();
+  if (!isUsefulContactName(normalizedName, phone)) {
+    return;
+  }
+
+  const nextEntry = {
+    name: normalizedName,
+    source: nameSource || "history_sync",
+    priority: getNameSourcePriority(nameSource),
+    updatedAt: Date.now()
+  };
+  const keys = [String(chatJid || "").trim(), String(phone || "").trim()].filter(Boolean);
+
+  for (const key of keys) {
+    const existing = session.contactIdentityCache.get(key);
+    if (
+      !existing ||
+      nextEntry.priority > existing.priority ||
+      (nextEntry.priority === existing.priority && nextEntry.updatedAt >= existing.updatedAt)
+    ) {
+      session.contactIdentityCache.set(key, nextEntry);
+    }
+  }
+}
+
+function getCachedContactIdentity(session, { chatJid, phone }) {
+  const keys = [String(chatJid || "").trim(), String(phone || "").trim()].filter(Boolean);
+
+  for (const key of keys) {
+    const cached = session.contactIdentityCache.get(key);
+    if (cached?.name) {
+      return {
+        name: cached.name,
+        source: cached.source || "history_sync"
+      };
+    }
+  }
+
+  return {
+    name: null,
+    source: null
+  };
+}
+
 function extractMessageTimestampSeconds(value) {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : 0;
@@ -816,6 +944,13 @@ async function upsertHistoryCustomer({
     return;
   }
 
+  cacheContactIdentity(session, {
+    chatJid,
+    phone,
+    contactName,
+    nameSource
+  });
+
   await upsertCustomer({
     owner_user_id: session.ownerUserId,
     whatsapp_account_id: session.accountId,
@@ -895,7 +1030,15 @@ async function persistIncomingMessage(session, msg) {
   const phone = await resolveWhatsAppPhone(msg.key.remoteJid, msg.key.remoteJid);
   const text = buildIncomingMessagePreview(msg.message);
   const media = await extractIncomingMedia(session, msg.message);
-  const contactIdentity = extractContactIdentity(msg);
+  const extractedIdentity = extractContactIdentity(msg);
+  const fallbackIdentity = getCachedContactIdentity(session, {
+    chatJid: msg.key.remoteJid,
+    phone
+  });
+  const contactIdentity =
+    extractedIdentity.name && isUsefulContactName(extractedIdentity.name, phone)
+      ? extractedIdentity
+      : fallbackIdentity;
   const contactName = contactIdentity.name;
   if (!phone || !text) return;
   if (isConnectedWhatsAppPhone(session, phone)) return;
@@ -910,6 +1053,15 @@ async function persistIncomingMessage(session, msg) {
     } catch (e) {
       console.warn("Failed to fetch profile info for incoming message:", e.message);
     }
+  }
+
+  if (contactName) {
+    cacheContactIdentity(session, {
+      chatJid: msg.key.remoteJid,
+      phone,
+      contactName,
+      nameSource: contactIdentity.source
+    });
   }
 
   await upsertCustomer({
@@ -1275,11 +1427,22 @@ async function initializeWhatsApp(ownerUserId, accountId) {
           if (chat.id && chat.unreadCount !== undefined && !chat.id.endsWith("@g.us") && chat.id !== "status@broadcast") {
             const phone = await resolveWhatsAppPhone(chat.id, chat.id);
             if (phone && !isConnectedWhatsAppPhone(session, phone)) {
+              const contactIdentity = extractContactIdentityFromEntity(chat);
+              if (contactIdentity.name) {
+                cacheContactIdentity(session, {
+                  chatJid: chat.id,
+                  phone,
+                  contactName: contactIdentity.name,
+                  nameSource: contactIdentity.source || "history_sync"
+                });
+              }
               await upsertCustomer({
                 owner_user_id: session.ownerUserId,
                 whatsapp_account_id: session.accountId,
                 phone,
                 chat_jid: chat.id,
+                contact_name: contactIdentity.name || undefined,
+                name_source: contactIdentity.name ? contactIdentity.source : undefined,
                 unread_count: chat.unreadCount
               }).catch(() => {});
             }
@@ -1303,11 +1466,22 @@ async function initializeWhatsApp(ownerUserId, accountId) {
           ) {
             const phone = await resolveWhatsAppPhone(update.id, update.id);
             if (phone && !isConnectedWhatsAppPhone(session, phone)) {
+              const contactIdentity = extractContactIdentityFromEntity(update);
+              if (contactIdentity.name) {
+                cacheContactIdentity(session, {
+                  chatJid: update.id,
+                  phone,
+                  contactName: contactIdentity.name,
+                  nameSource: contactIdentity.source || "history_sync"
+                });
+              }
               await upsertCustomer({
                 owner_user_id: session.ownerUserId,
                 whatsapp_account_id: session.accountId,
                 phone,
                 chat_jid: update.id,
+                contact_name: contactIdentity.name || undefined,
+                name_source: contactIdentity.name ? contactIdentity.source : undefined,
                 unread_count: update.unreadCount
               }).catch(() => {});
             }
@@ -1371,6 +1545,29 @@ async function initializeWhatsApp(ownerUserId, accountId) {
 
         if (!Array.isArray(contacts)) return;
         for (const contact of contacts) {
+          if (contact.id && !contact.id.endsWith("@g.us") && contact.id !== "status@broadcast") {
+            const phone = await resolveWhatsAppPhone(contact.id, contact.id);
+            const contactIdentity = extractContactIdentityFromEntity(contact);
+
+            if (phone && contactIdentity.name && !isConnectedWhatsAppPhone(session, phone)) {
+              cacheContactIdentity(session, {
+                chatJid: contact.id,
+                phone,
+                contactName: contactIdentity.name,
+                nameSource: contactIdentity.source || "contact"
+              });
+
+              await upsertCustomer({
+                owner_user_id: session.ownerUserId,
+                whatsapp_account_id: session.accountId,
+                phone,
+                chat_jid: contact.id,
+                contact_name: contactIdentity.name,
+                name_source: contactIdentity.source || "contact"
+              }).catch((err) => console.warn("Failed to upsert contact from contacts.upsert", err.message));
+            }
+          }
+
           if (contact.id && contact.lid && !contact.id.endsWith("@g.us") && contact.id !== "status@broadcast") {
             const phone = extractDigits(contact.id);
             const lidDigits = extractDigits(contact.lid);
@@ -1742,6 +1939,133 @@ async function getContactProfile(ownerUserId, accountId, phone, chatJid) {
   }
 }
 
+async function resyncContactNamesFromWhatsApp(ownerUserId, accountId) {
+  let session = await ensureSession(ownerUserId, accountId, {
+    initialize: false
+  });
+
+  if (!session) {
+    const error = new Error("WhatsApp account not found.");
+    error.status = 404;
+    throw error;
+  }
+
+  if (!session.sock && shouldAutoInitializeAccount(session.account)) {
+    session = await ensureSession(ownerUserId, session.accountId, {
+      initialize: true
+    });
+  }
+
+  if (!session) {
+    const error = new Error("WhatsApp account not found.");
+    error.status = 404;
+    throw error;
+  }
+
+  const contacts = await readHistoryCacheFile(session, HISTORY_CONTACTS_FILE, []);
+  const chats = await readHistoryCacheFile(session, HISTORY_CHATS_FILE, []);
+  const contactsByJid = new Map();
+  let processedContacts = 0;
+  let processedChats = 0;
+  let upsertedCandidates = 0;
+
+  for (const contact of Array.isArray(contacts) ? contacts : []) {
+    const chatJid = String(contact?.id || "").trim();
+    if (!chatJid || chatJid.endsWith("@g.us") || chatJid === "status@broadcast") {
+      continue;
+    }
+
+    processedContacts += 1;
+    contactsByJid.set(chatJid, contact);
+
+    const phone = await resolveWhatsAppPhone(chatJid, chatJid);
+    const contactIdentity = extractContactIdentityFromEntity(contact);
+    if (!phone || isConnectedWhatsAppPhone(session, phone) || !isUsefulContactName(contactIdentity.name, phone)) {
+      continue;
+    }
+
+    await upsertHistoryCustomer({
+      session,
+      phone,
+      chatJid,
+      contactName: contactIdentity.name,
+      nameSource: contactIdentity.source || "history_sync"
+    });
+    upsertedCandidates += 1;
+  }
+
+  for (const chat of Array.isArray(chats) ? chats : []) {
+    const chatJid = String(chat?.id || "").trim();
+    if (!chatJid || chatJid.endsWith("@g.us") || chatJid === "status@broadcast") {
+      continue;
+    }
+
+    processedChats += 1;
+
+    const phone = await resolveWhatsAppPhone(chatJid, chatJid);
+    const chatIdentity = extractContactIdentityFromEntity(chat);
+    const linkedContactIdentity = extractContactIdentityFromEntity(contactsByJid.get(chatJid));
+    const chosenIdentity =
+      getNameSourcePriority(linkedContactIdentity.source) >= getNameSourcePriority(chatIdentity.source)
+        ? linkedContactIdentity
+        : chatIdentity;
+
+    if (!phone || isConnectedWhatsAppPhone(session, phone) || !isUsefulContactName(chosenIdentity.name, phone)) {
+      continue;
+    }
+
+    await upsertHistoryCustomer({
+      session,
+      phone,
+      chatJid,
+      contactName: chosenIdentity.name,
+      nameSource: chosenIdentity.source || "history_sync",
+      unreadCount: typeof chat.unreadCount === "number" ? chat.unreadCount : undefined
+    });
+    upsertedCandidates += 1;
+  }
+
+  const seenCacheCandidates = new Set();
+
+  for (const [key, identity] of session.contactIdentityCache.entries()) {
+    const rawKey = String(key || "").trim();
+    if (!rawKey || !isUsefulContactName(identity?.name, rawKey)) {
+      continue;
+    }
+
+    const chatJid = rawKey.includes("@") ? rawKey : null;
+    const phone = chatJid ? await resolveWhatsAppPhone(rawKey, rawKey) : normalizeCustomerPhone(rawKey);
+    if (!phone || isConnectedWhatsAppPhone(session, phone) || !isUsefulContactName(identity?.name, phone)) {
+      continue;
+    }
+
+    const dedupeKey = `${phone}:${chatJid || ""}:${normalizeComparableName(identity.name)}`;
+    if (seenCacheCandidates.has(dedupeKey)) {
+      continue;
+    }
+
+    seenCacheCandidates.add(dedupeKey);
+    await upsertHistoryCustomer({
+      session,
+      phone,
+      chatJid,
+      contactName: identity.name,
+      nameSource: identity.source || "history_sync"
+    });
+    upsertedCandidates += 1;
+  }
+
+  return {
+    success: true,
+    whatsappAccountId: session.accountId,
+    connectionState: session.connectionState,
+    processedContacts,
+    processedChats,
+    cachedIdentityCount: session.contactIdentityCache.size,
+    upsertedCandidates
+  };
+}
+
 async function repopulateConversationFromWhatsApp(ownerUserId, accountId, options = {}) {
   const session = await ensureSession(ownerUserId, accountId);
 
@@ -1998,6 +2322,7 @@ module.exports = {
   getWhatsAppQr,
   getWhatsAppProfile,
   getContactProfile,
+  resyncContactNamesFromWhatsApp,
   repopulateConversationFromWhatsApp,
   rebuildAllConversationsFromWhatsApp,
   getCurrentWhatsAppAccountContext,

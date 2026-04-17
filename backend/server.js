@@ -63,6 +63,7 @@ const {
   getWhatsAppProfile,
   disconnectWhatsApp,
   getContactProfile,
+  resyncContactNamesFromWhatsApp,
   repopulateConversationFromWhatsApp,
   rebuildAllConversationsFromWhatsApp,
   getCurrentWhatsAppAccountContext,
@@ -354,6 +355,23 @@ whatsappRouter.post("/cleanup-contacts", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Failed to cleanup duplicate contact data:", error);
     return res.status(500).json({ error: "Failed to cleanup duplicate contact data." });
+  }
+});
+
+whatsappRouter.post("/resync-contact-names", requireAuth, async (req, res) => {
+  try {
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
+    const summary = await resyncContactNamesFromWhatsApp(req.user.sub, whatsappAccountId);
+    return res.json(summary);
+  } catch (error) {
+    console.error("Failed to resync contact names from WhatsApp:", error);
+    const statusCode = Number(error?.status) || 500;
+    return res.status(statusCode).json({
+      error:
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to resync contact names from WhatsApp."
+    });
   }
 });
 
