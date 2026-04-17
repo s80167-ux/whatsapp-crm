@@ -131,6 +131,7 @@ export function formatWhatsAppIdDisplay(phone: string | null | undefined, chatJi
 }
 
 export function getConversationSortTimestamp(conversation: { latestReceivedAt?: string | null; timestamp: string }): string {
+  const latestMessageAt = String(conversation.timestamp || "").trim();
   const latestReceivedAt = String(conversation.latestReceivedAt || "").trim();
-  return latestReceivedAt || conversation.timestamp;
+  return latestMessageAt || latestReceivedAt;
 }

@@ -34,7 +34,7 @@ const conversationPollMs = 8000;
 const whatsAppStatePollMs = 5000;
 const dashboardSessionStorageKey = "whatsapp-crm-dashboard-session-id";
 
-function sortConversationsByLatestReceived(conversations: Conversation[]) {
+function sortConversationsByLatestMessage(conversations: Conversation[]) {
   return [...conversations].sort(
     (left, right) => new Date(getConversationSortTimestamp(right)).getTime() - new Date(getConversationSortTimestamp(left)).getTime()
   );
@@ -430,7 +430,7 @@ function App() {
 
       try {
         const data = await api.getConversations(activeToken, selectedWhatsAppAccountId);
-        const sortedData = sortConversationsByLatestReceived(data);
+        const sortedData = sortConversationsByLatestMessage(data);
         setConversations(sortedData);
         setSelectedPhone((current) => {
           if (!sortedData.length) {
@@ -1929,7 +1929,7 @@ function App() {
         return next;
       });
       setConversations((current) =>
-        sortConversationsByLatestReceived(
+        sortConversationsByLatestMessage(
           current
           .map((item) =>
             item.phone === selectedPhone
@@ -1979,7 +1979,7 @@ function App() {
         return next;
       });
       setConversations((current) =>
-        sortConversationsByLatestReceived(
+        sortConversationsByLatestMessage(
           current
           .map((item) =>
             item.phone === optimisticMessage.phone

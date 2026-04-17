@@ -1181,6 +1181,8 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
   const customerChatJidMap = new Map();
   const statusCountsByPhone = new Map();
   const statusCountsByChatJid = new Map();
+  const latestIncomingTimestampByPhone = new Map();
+  const latestIncomingTimestampByChatJid = new Map();
 
   for (const customer of customerRows || []) {
     const resolvedPhone = await resolveWhatsAppPhone(customer.phone, customer.chat_jid || null);
@@ -1213,6 +1215,22 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
       const statusCounts = statusCountsByChatJid.get(row.chat_jid) || createEmptyStatusCounts();
       incrementStatusCount(statusCounts, row.lead_status);
       statusCountsByChatJid.set(row.chat_jid, statusCounts);
+    }
+  }
+
+  for (const row of messageRows || []) {
+    if (row.direction !== "incoming") {
+      continue;
+    }
+
+    const resolvedPhone = await resolveWhatsAppPhone(row.phone, row.chat_jid || null);
+
+    if (resolvedPhone && !latestIncomingTimestampByPhone.has(resolvedPhone)) {
+      latestIncomingTimestampByPhone.set(resolvedPhone, row.created_at);
+    }
+
+    if (row.chat_jid && !latestIncomingTimestampByChatJid.has(row.chat_jid)) {
+      latestIncomingTimestampByChatJid.set(row.chat_jid, row.created_at);
     }
   }
 
@@ -1250,6 +1268,10 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
       profilePictureUrl: matchedCustomer?.profile_picture_url || null,
       lastMessage: row.message,
       timestamp: row.created_at,
+      latestReceivedAt:
+        latestIncomingTimestampByChatJid.get(matchedCustomer?.chat_jid || row.chat_jid || "") ||
+        (resolvedPhone ? latestIncomingTimestampByPhone.get(resolvedPhone) : null) ||
+        null,
       lastDirection: row.direction,
       status: activeStatuses[0] || null,
       status_counts: statusCounts,
@@ -1287,6 +1309,10 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
       profilePictureUrl: customer.profile_picture_url || null,
       lastMessage: "No synced messages yet",
       timestamp: customer.updated_at || new Date().toISOString(),
+      latestReceivedAt:
+        latestIncomingTimestampByChatJid.get(customer.chat_jid || "") ||
+        (resolvedPhone ? latestIncomingTimestampByPhone.get(resolvedPhone) : null) ||
+        null,
       lastDirection: "incoming",
       status: activeStatuses[0] || null,
       status_counts: statusCounts,
@@ -1294,7 +1320,11 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
     });
   }
 
-  return conversations;
+  return conversations.sort((left, right) => {
+    const leftTimestamp = new Date(left.timestamp || left.latestReceivedAt || 0).getTime();
+    const rightTimestamp = new Date(right.timestamp || right.latestReceivedAt || 0).getTime();
+    return rightTimestamp - leftTimestamp;
+  });
 }
 
 async function getCustomerByPhone(phone, ownerUserId, chatJid, whatsappAccountId = null) {

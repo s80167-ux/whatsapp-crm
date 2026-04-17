@@ -110,6 +110,7 @@ export function ChatList({
 }: ChatListProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "today" | "recent">("all");
+  const [sortOrder, setSortOrder] = useState<"latest" | "oldest">("latest");
   const [page, setPage] = useState(1);
   const visibleWhatsAppAccounts = useMemo(
     () =>
@@ -155,15 +156,19 @@ export function ChatList({
 
         return true;
       })
-      .sort((a, b) => new Date(getConversationSortTimestamp(b)).getTime() - new Date(getConversationSortTimestamp(a)).getTime());
-  }, [conversations, filter, query]);
+      .sort((a, b) => {
+        const leftTimestamp = new Date(getConversationSortTimestamp(a)).getTime();
+        const rightTimestamp = new Date(getConversationSortTimestamp(b)).getTime();
+        return sortOrder === "latest" ? rightTimestamp - leftTimestamp : leftTimestamp - rightTimestamp;
+      });
+  }, [conversations, filter, query, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(filteredConversations.length / CONVERSATIONS_PAGE_SIZE));
   const paginatedConversations = filteredConversations.slice((page - 1) * CONVERSATIONS_PAGE_SIZE, page * CONVERSATIONS_PAGE_SIZE);
 
   useEffect(() => {
     setPage(1);
-  }, [filter, query, selectedWhatsAppAccountId]);
+  }, [filter, query, selectedWhatsAppAccountId, sortOrder]);
 
   useEffect(() => {
     if (page > totalPages) {
@@ -267,6 +272,13 @@ export function ChatList({
                 {item}
               </button>
             ))}
+            <button
+              className="rounded-full border border-whatsapp-line bg-white px-3 py-1.5 text-xs font-semibold text-whatsapp-muted transition-all duration-200 hover:bg-whatsapp-soft"
+              onClick={() => setSortOrder((current) => (current === "latest" ? "oldest" : "latest"))}
+              type="button"
+            >
+              {sortOrder === "latest" ? "Latest first" : "Oldest first"}
+            </button>
           </div>
         </div>
       </div>

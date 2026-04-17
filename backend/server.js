@@ -99,6 +99,12 @@ const upload = multer({
   }
 });
 
+if (process.env.NODE_ENV === "production" && !process.env.WHATSAPP_AUTH_DIR) {
+  console.warn(
+    "WHATSAPP_AUTH_DIR is not set in production. WhatsApp auth state may be ephemeral and can be lost after restarts."
+  );
+}
+
 function isStickerAttachment(mimeType, fileName) {
   const normalizedMimeType = String(mimeType || "").trim().toLowerCase();
   return normalizedMimeType === "image/webp" || /\.webp$/i.test(String(fileName || "").trim());

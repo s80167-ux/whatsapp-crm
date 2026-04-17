@@ -1008,6 +1008,10 @@ function scheduleReconnect(session, options = {}) {
   session.connectionState = "connecting";
   void syncSessionAccountState(session, { connection_state: "connecting" });
 
+  console.warn(
+    `Scheduling WhatsApp reconnect for ${session.accountId} in 3000ms${options.resetAuth ? " with auth reset" : ""}.`
+  );
+
   session.reconnectTimer = setTimeout(async () => {
     session.reconnectTimer = null;
     try {
@@ -1196,12 +1200,29 @@ async function initializeWhatsApp(ownerUserId, accountId) {
           clearConnectingRecoveryTimer(session);
           const statusCode =
             lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output.statusCode : undefined;
+          const disconnectMessage =
+            lastDisconnect?.error instanceof Error
+              ? lastDisconnect.error.message
+              : String(lastDisconnect?.error?.message || lastDisconnect?.error || "").trim() || null;
+          const disconnectData =
+            lastDisconnect?.error instanceof Boom
+              ? lastDisconnect.error?.data || lastDisconnect.error?.output?.payload || null
+              : null;
           session.qrData = null;
           if (isCurrentSocket()) {
             session.sock = null;
           }
           session.historySyncObserved = false;
           clearFallbackSyncTimer(session);
+
+          console.warn("WhatsApp connection closed:", {
+            accountId: session.accountId,
+            ownerUserId: session.ownerUserId,
+            statusCode: statusCode ?? null,
+            message: disconnectMessage,
+            data: disconnectData,
+            manualDisconnectRequested: session.manualDisconnectRequested
+          });
 
           if (session.manualDisconnectRequested) {
             session.connectionState = "disconnected";
