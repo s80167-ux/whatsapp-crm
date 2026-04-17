@@ -428,6 +428,21 @@ function applyWhatsAppAccountFilter(query, whatsappAccountId, columnName = "what
 
   return query.eq(columnName, whatsappAccountId);
 }
+function buildConversationKey(whatsappAccountId, phone, chatJid) {
+  const normalizedAccountId = String(whatsappAccountId || "").trim() || "no-account";
+  const normalizedPhone = String(phone || "").trim();
+  const normalizedChatJid = String(chatJid || "").trim();
+
+  if (normalizedPhone) {
+    return `${normalizedAccountId}::${normalizedPhone}`;
+  }
+
+  if (normalizedChatJid) {
+    return `${normalizedAccountId}::jid::${normalizedChatJid}`;
+  }
+
+  return null;
+}
 
 async function findMessageByWhatsAppId(owner_user_id, wa_message_id, whatsapp_account_id = null) {
   if (!owner_user_id || !wa_message_id) {
@@ -1177,12 +1192,10 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
       .map((account) => [account.id, account])
   );
 
-  const customerMap = new Map();
-  const customerChatJidMap = new Map();
-  const statusCountsByPhone = new Map();
-  const statusCountsByChatJid = new Map();
-  const latestIncomingTimestampByPhone = new Map();
-  const latestIncomingTimestampByChatJid = new Map();
+const customerMap = new Map();
+const customerChatJidMap = new Map();
+const statusCountsByConversation = new Map();
+const latestIncomingTimestampByConversation = new Map();
 
   for (const customer of customerRows || []) {
     const resolvedPhone = await resolveWhatsAppPhone(customer.phone, customer.chat_jid || null);
@@ -1203,128 +1216,163 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
   }
 
   for (const row of salesItemsRows || []) {
-    const resolvedPhone = await resolveWhatsAppPhone(row.phone, row.chat_jid || null);
+  const resolvedPhone = await resolveWhatsAppPhone(row.phone, row.chat_jid || null);
+  const conversationKey = buildConversationKey(
+    row.whatsapp_account_id,
+    resolvedPhone || row.phone,
+    row.chat_jid
+  );
 
-    if (resolvedPhone) {
-      const statusCounts = statusCountsByPhone.get(resolvedPhone) || createEmptyStatusCounts();
-      incrementStatusCount(statusCounts, row.lead_status);
-      statusCountsByPhone.set(resolvedPhone, statusCounts);
-    }
-
-    if (row.chat_jid) {
-      const statusCounts = statusCountsByChatJid.get(row.chat_jid) || createEmptyStatusCounts();
-      incrementStatusCount(statusCounts, row.lead_status);
-      statusCountsByChatJid.set(row.chat_jid, statusCounts);
-    }
+  if (!conversationKey) {
+    continue;
   }
+
+  const statusCounts = statusCountsByConversation.get(conversationKey) || createEmptyStatusCounts();
+  incrementStatusCount(statusCounts, row.lead_status);
+  statusCountsByConversation.set(conversationKey, statusCounts);
+}
 
   for (const row of messageRows || []) {
-    if (row.direction !== "incoming") {
-      continue;
-    }
-
-    const resolvedPhone = await resolveWhatsAppPhone(row.phone, row.chat_jid || null);
-
-    if (resolvedPhone && !latestIncomingTimestampByPhone.has(resolvedPhone)) {
-      latestIncomingTimestampByPhone.set(resolvedPhone, row.created_at);
-    }
-
-    if (row.chat_jid && !latestIncomingTimestampByChatJid.has(row.chat_jid)) {
-      latestIncomingTimestampByChatJid.set(row.chat_jid, row.created_at);
-    }
+  if (row.direction !== "incoming") {
+    continue;
   }
+
+  const resolvedPhone = await resolveWhatsAppPhone(row.phone, row.chat_jid || null);
+  const conversationKey = buildConversationKey(
+    row.whatsapp_account_id,
+    resolvedPhone || row.phone,
+    row.chat_jid
+  );
+
+  if (conversationKey && !latestIncomingTimestampByConversation.has(conversationKey)) {
+    latestIncomingTimestampByConversation.set(conversationKey, row.created_at);
+  }
+}
 
   const seen = new Set();
   const conversations = [];
 
   for (const row of messageRows || []) {
-    const resolvedPhone = await resolveWhatsAppPhone(row.phone, row.chat_jid || null);
-    const matchedCustomer = customerMap.get(resolvedPhone) || customerChatJidMap.get(row.chat_jid) || null;
-    const conversationKey = resolvedPhone || row.chat_jid || matchedCustomer?.chat_jid || null;
+  const resolvedPhone = await resolveWhatsAppPhone(row.phone, row.chat_jid || null);
+  const conversationKey = buildConversationKey(
+    row.whatsapp_account_id,
+    resolvedPhone || row.phone,
+    row.chat_jid
+  );
 
-    if (!conversationKey || seen.has(conversationKey)) {
-      continue;
-    }
+  const matchedCustomer =
+    customerMap.get(conversationKey) ||
+    customerChatJidMap.get(`${String(row.whatsapp_account_id || "").trim() || "no-account"}::${row.chat_jid || ""}`) ||
+    null;
 
-    seen.add(conversationKey);
-    const statusCounts =
-      statusCountsByChatJid.get(matchedCustomer?.chat_jid || row.chat_jid || "") ||
-      (resolvedPhone ? statusCountsByPhone.get(resolvedPhone) : null) ||
-      createEmptyStatusCounts();
-    const activeStatuses = Object.entries(statusCounts)
-      .filter(([, count]) => count > 0)
-      .map(([status]) => status);
-    const sourceAccountId = matchedCustomer?.whatsapp_account_id || row.whatsapp_account_id || null;
-    const sourceAccount = sourceAccountId ? accountMap.get(sourceAccountId) || null : null;
-
-    conversations.push({
-      phone: resolvedPhone || matchedCustomer?.phone || row.phone || "",
-      chatJid: matchedCustomer?.chat_jid || row.chat_jid || null,
-      whatsappAccountId: sourceAccountId,
-      sourceAccountPhone: sourceAccount?.account_phone || null,
-      sourceDisplayName: sourceAccount?.display_name || null,
-      sourceConnectionState: sourceAccount?.connection_state || null,
-      contactName: matchedCustomer?.contact_name || null,
-      profilePictureUrl: matchedCustomer?.profile_picture_url || null,
-      lastMessage: row.message,
-      timestamp: row.created_at,
-      latestReceivedAt:
-        latestIncomingTimestampByChatJid.get(matchedCustomer?.chat_jid || row.chat_jid || "") ||
-        (resolvedPhone ? latestIncomingTimestampByPhone.get(resolvedPhone) : null) ||
-        null,
-      lastDirection: row.direction,
-      status: activeStatuses[0] || null,
-      status_counts: statusCounts,
-      unreadCount: matchedCustomer?.unread_count || 0
-    });
+  if (!conversationKey || seen.has(conversationKey)) {
+    continue;
   }
 
-  for (const customer of customerRows || []) {
-    const resolvedPhone = await resolveWhatsAppPhone(customer.phone, customer.chat_jid || null);
-    const conversationKey = resolvedPhone || customer.chat_jid || customer.phone || null;
+  seen.add(conversationKey);
 
-    if (!conversationKey || seen.has(conversationKey)) {
-      continue;
-    }
+  const statusCounts = statusCountsByConversation.get(conversationKey) || createEmptyStatusCounts();
+  const activeStatuses = Object.entries(statusCounts)
+    .filter(([, count]) => count > 0)
+    .map(([status]) => status);
 
-    seen.add(conversationKey);
-    const statusCounts =
-      statusCountsByChatJid.get(customer.chat_jid || "") ||
-      (resolvedPhone ? statusCountsByPhone.get(resolvedPhone) : null) ||
-      createEmptyStatusCounts();
-    const activeStatuses = Object.entries(statusCounts)
-      .filter(([, count]) => count > 0)
-      .map(([status]) => status);
-    const sourceAccountId = customer.whatsapp_account_id || null;
-    const sourceAccount = sourceAccountId ? accountMap.get(sourceAccountId) || null : null;
+  const sourceAccountId = matchedCustomer?.whatsapp_account_id || row.whatsapp_account_id || null;
+  const sourceAccount = sourceAccountId ? accountMap.get(sourceAccountId) || null : null;
 
-    conversations.push({
-      phone: resolvedPhone || customer.phone || "",
-      chatJid: customer.chat_jid || null,
-      whatsappAccountId: sourceAccountId,
-      sourceAccountPhone: sourceAccount?.account_phone || null,
-      sourceDisplayName: sourceAccount?.display_name || null,
-      sourceConnectionState: sourceAccount?.connection_state || null,
-      contactName: customer.contact_name || null,
-      profilePictureUrl: customer.profile_picture_url || null,
-      lastMessage: "No synced messages yet",
-      timestamp: customer.updated_at || new Date().toISOString(),
-      latestReceivedAt:
-        latestIncomingTimestampByChatJid.get(customer.chat_jid || "") ||
-        (resolvedPhone ? latestIncomingTimestampByPhone.get(resolvedPhone) : null) ||
-        null,
-      lastDirection: "incoming",
-      status: activeStatuses[0] || null,
-      status_counts: statusCounts,
-      unreadCount: customer.unread_count || 0
-    });
+  conversations.push({
+    phone: resolvedPhone || matchedCustomer?.phone || row.phone || "",
+    chatJid: matchedCustomer?.chat_jid || row.chat_jid || null,
+    whatsappAccountId: sourceAccountId,
+    sourceAccountPhone: sourceAccount?.account_phone || null,
+    sourceDisplayName: sourceAccount?.display_name || null,
+    sourceConnectionState: sourceAccount?.connection_state || null,
+    contactName: matchedCustomer?.contact_name || null,
+    profilePictureUrl: matchedCustomer?.profile_picture_url || null,
+    lastMessage: row.message,
+    timestamp: row.created_at,
+    last_message_at: row.created_at,
+    latestReceivedAt: latestIncomingTimestampByConversation.get(conversationKey) || null,
+    lastDirection: row.direction,
+    status: activeStatuses[0] || null,
+    status_counts: statusCounts,
+    unreadCount: matchedCustomer?.unread_count || 0
+  });
+}
+
+for (const customer of customerRows || []) {
+  const resolvedPhone = await resolveWhatsAppPhone(customer.phone, customer.chat_jid || null);
+  const conversationKey = buildConversationKey(
+    customer.whatsapp_account_id,
+    resolvedPhone || customer.phone,
+    customer.chat_jid
+  );
+
+  if (!conversationKey || seen.has(conversationKey)) {
+    continue;
+  }
+
+  seen.add(conversationKey);
+
+  const statusCounts = statusCountsByConversation.get(conversationKey) || createEmptyStatusCounts();
+  const activeStatuses = Object.entries(statusCounts)
+    .filter(([, count]) => count > 0)
+    .map(([status]) => status);
+
+  const sourceAccountId = customer.whatsapp_account_id || null;
+  const sourceAccount = sourceAccountId ? accountMap.get(sourceAccountId) || null : null;
+  const fallbackTimestamp = customer.updated_at || new Date().toISOString();
+
+  conversations.push({
+    phone: resolvedPhone || customer.phone || "",
+    chatJid: customer.chat_jid || null,
+    whatsappAccountId: sourceAccountId,
+    sourceAccountPhone: sourceAccount?.account_phone || null,
+    sourceDisplayName: sourceAccount?.display_name || null,
+    sourceConnectionState: sourceAccount?.connection_state || null,
+    contactName: customer.contact_name || null,
+    profilePictureUrl: customer.profile_picture_url || null,
+    lastMessage: "No synced messages yet",
+    timestamp: fallbackTimestamp,
+    last_message_at: fallbackTimestamp,
+    latestReceivedAt: latestIncomingTimestampByConversation.get(conversationKey) || null,
+    lastDirection: "incoming",
+    status: activeStatuses[0] || null,
+    status_counts: statusCounts,
+    unreadCount: customer.unread_count || 0
+  });
+
+
+    for (const customer of customerRows || []) {
+  const resolvedPhone = await resolveWhatsAppPhone(customer.phone, customer.chat_jid || null);
+  const normalizedCustomer = {
+    ...normalizeCustomerRecord(customer),
+    phone: resolvedPhone || customer.phone
+  };
+
+  const conversationKey = buildConversationKey(
+    customer.whatsapp_account_id,
+    resolvedPhone || customer.phone,
+    customer.chat_jid
+  );
+
+  if (conversationKey) {
+    customerMap.set(conversationKey, normalizedCustomer);
+  }
+
+  if (customer.chat_jid) {
+    customerChatJidMap.set(
+      `${String(customer.whatsapp_account_id || "").trim() || "no-account"}::${customer.chat_jid}`,
+      normalizedCustomer
+    );
+  }
+};
   }
 
   return conversations.sort((left, right) => {
-    const leftTimestamp = new Date(left.timestamp || left.latestReceivedAt || 0).getTime();
-    const rightTimestamp = new Date(right.timestamp || right.latestReceivedAt || 0).getTime();
-    return rightTimestamp - leftTimestamp;
-  });
+  const leftTimestamp = new Date(left.last_message_at || left.timestamp || left.latestReceivedAt || 0).getTime();
+  const rightTimestamp = new Date(right.last_message_at || right.timestamp || right.latestReceivedAt || 0).getTime();
+  return rightTimestamp - leftTimestamp;
+});
 }
 
 async function getCustomerByPhone(phone, ownerUserId, chatJid, whatsappAccountId = null) {
