@@ -2129,6 +2129,19 @@ async function getWhatsAppAccounts(ownerUserId) {
   return data || [];
 }
 
+async function getAllWhatsAppAccounts() {
+  const { data, error } = await supabase
+    .from("whatsapp_accounts")
+    .select("*")
+    .order("updated_at", { ascending: false });
+
+  if (error && error.code !== "42P01") {
+    throw error;
+  }
+
+  return data || [];
+}
+
 async function getWhatsAppAccountById(ownerUserId, accountId) {
   if (!ownerUserId || !accountId) {
     return null;
@@ -2688,6 +2701,7 @@ module.exports = {
   getWhatsAppSettings,
   upsertWhatsAppProfile,
   getWhatsAppAccounts,
+  getAllWhatsAppAccounts,
   getWhatsAppAccountById,
   cleanupStaleWhatsAppAccounts,
   getLatestWhatsAppAccount,
