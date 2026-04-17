@@ -31,6 +31,7 @@ const HISTORY_CONTACTS_FILE = "hist_contacts.json";
 const HISTORY_MESSAGES_FILE = "hist_messages.json";
 const HISTORY_CACHE_MAX_MESSAGES = 5000;
 const CONNECTING_RECOVERY_TIMEOUT_MS = 25000;
+const MAX_CONNECTING_TIMEOUTS_BEFORE_AUTH_RESET = 3;
 
 function isExplicitAbsoluteAuthDir(value) {
   const rawValue = String(value || "").trim();
@@ -300,6 +301,7 @@ function getOrCreateSessionFromAccount(account) {
     reconnectTimer: null,
     fallbackSyncTimer: null,
     connectingRecoveryTimer: null,
+    consecutiveConnectingTimeouts: 0,
     initializingPromise: null
   };
 
@@ -1080,8 +1082,13 @@ async function initializeWhatsApp(ownerUserId, accountId) {
           return;
         }
 
+        session.consecutiveConnectingTimeouts =
+          Number.isFinite(session.consecutiveConnectingTimeouts) ? session.consecutiveConnectingTimeouts + 1 : 1;
+        const shouldResetAuth =
+          session.consecutiveConnectingTimeouts >= MAX_CONNECTING_TIMEOUTS_BEFORE_AUTH_RESET;
+
         console.warn(
-          `WhatsApp session ${session.accountId} stayed in connecting for more than ${CONNECTING_RECOVERY_TIMEOUT_MS}ms. Resetting for QR recovery.`
+          `WhatsApp session ${session.accountId} stayed in connecting for more than ${CONNECTING_RECOVERY_TIMEOUT_MS}ms. Attempt ${session.consecutiveConnectingTimeouts}/${MAX_CONNECTING_TIMEOUTS_BEFORE_AUTH_RESET}${shouldResetAuth ? " will reset auth for QR recovery." : " will retry without resetting auth."}`
         );
 
         clearConnectingRecoveryTimer(session);
@@ -1100,7 +1107,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
 
         session.connectionState = "disconnected";
         await syncSessionAccountState(session, { connection_state: "disconnected" }).catch(() => {});
-        scheduleReconnect(session, { resetAuth: true });
+        scheduleReconnect(session, { resetAuth: shouldResetAuth });
       });
     }, CONNECTING_RECOVERY_TIMEOUT_MS);
 
@@ -1140,6 +1147,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
 
         if (connection === "open") {
           clearConnectingRecoveryTimer(session);
+          session.consecutiveConnectingTimeouts = 0;
           session.connectionState = "open";
           session.qrData = null;
           console.log(`WhatsApp (Baileys) is ready for account ${session.accountId}.`);
