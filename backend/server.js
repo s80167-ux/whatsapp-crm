@@ -42,6 +42,7 @@ const {
   deleteMessage,
   upsertCustomer,
   getWhatsAppAccounts,
+  getAllWhatsAppAccounts,
   cleanupStaleWhatsAppAccounts,
   getWhatsAppSettings,
   upsertWhatsAppProfile,
@@ -1189,8 +1190,50 @@ console.log(
     .join(" | ")
 );
 
+async function initializePersistedWhatsAppAccounts() {
+  try {
+    const allAccounts = await getAllWhatsAppAccounts();
+    const accountsToInitialize = allAccounts.filter(
+      (account) =>
+        isRuntimeCompatibleWhatsAppAccount(account) && shouldAutoInitializeAccount(account)
+    );
+
+    console.log(
+      `[startup] Found ${allAccounts.length} WhatsApp account(s) in DB; ` +
+        `${accountsToInitialize.length} eligible for auto-initialization.`
+    );
+
+    const results = await Promise.allSettled(
+      accountsToInitialize.map((account) =>
+        initializeWhatsApp(account.owner_user_id, account.id)
+      )
+    );
+
+    const succeeded = results.filter((r) => r.status === "fulfilled").length;
+    const failed = results.filter((r) => r.status === "rejected").length;
+
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        const account = accountsToInitialize[index];
+        console.warn(
+          `[startup] Failed to initialize WhatsApp account ${account?.id} ` +
+            `(owner: ${account?.owner_user_id}):`,
+          result.reason?.message || result.reason
+        );
+      }
+    });
+
+    console.log(
+      `[startup] WhatsApp auto-initialization complete: ${succeeded} succeeded, ${failed} failed.`
+    );
+  } catch (error) {
+    console.error("[startup] Failed to auto-initialize WhatsApp accounts:", error?.message || error);
+  }
+}
+
 const server = app.listen(port, async () => {
   console.log(`Backend listening on http://localhost:${port}`);
+  await initializePersistedWhatsAppAccounts();
 });
 
 server.on("error", (error) => {
