@@ -110,6 +110,21 @@ function getStatusLabel(status: CustomerStatus): string {
 }
 
 export function ContactList({ contacts, selectedConversationId, selectedChatJid, loading, refreshing, activeStatusFilter, page, pageSize, total, onPageChange, query, onQueryChange, onRefresh, onSelect }: ContactListProps) {
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  const sortedContacts = useMemo(() => {
+    return [...contacts].sort((a, b) => {
+      const aResolvedPhone = getResolvedPhone(a.phone, a.chat_jid);
+      const bResolvedPhone = getResolvedPhone(b.phone, b.chat_jid);
+      const aDisplayPhone = getDisplayPhone(a.phone, a.chat_jid);
+      const bDisplayPhone = getDisplayPhone(b.phone, b.chat_jid);
+      const aLabel = getDisplayName(a.contact_name, aDisplayPhone || aResolvedPhone).trim();
+      const bLabel = getDisplayName(b.contact_name, bDisplayPhone || bResolvedPhone).trim();
+      const comparison = aLabel.localeCompare(bLabel, undefined, { sensitivity: "base", numeric: true });
+      return sortDirection === "asc" ? comparison : -comparison;
+    });
+  }, [contacts, sortDirection]);
+
   return (
     <section className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-3xl bg-white p-4 shadow-soft">
       {/* Title and description */}
@@ -120,7 +135,7 @@ export function ContactList({ contacts, selectedConversationId, selectedChatJid,
           {activeStatusFilter ? `Filtered by ${getStatusLabel(activeStatusFilter)}` : "Browse and manage synced contacts"}
         </p>
       </div>
-      {/* Controls row: Refresh, count, search */}
+      {/* Controls row: Refresh, count, sort, search */}
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <div className="flex items-center gap-2">
           <button
@@ -133,6 +148,13 @@ export function ContactList({ contacts, selectedConversationId, selectedChatJid,
           <div className="shrink-0 rounded-full border border-whatsapp-line bg-white px-3 py-1 text-xs font-medium text-whatsapp-muted shadow-soft">
             {contacts.length}
           </div>
+          <button
+            className="shrink-0 rounded-full border border-whatsapp-line bg-white px-3 py-1 text-xs font-medium text-whatsapp-muted shadow-soft transition hover:bg-whatsapp-soft"
+            onClick={() => setSortDirection((current) => (current === "asc" ? "desc" : "asc"))}
+            type="button"
+          >
+            {sortDirection === "asc" ? "A-Z" : "Z-A"}
+          </button>
         </div>
         <div className="flex-1">
           <input
@@ -156,7 +178,7 @@ export function ContactList({ contacts, selectedConversationId, selectedChatJid,
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="custom-scrollbar scrollbar-hidden min-h-0 flex-1 overflow-y-auto pr-1">
               <div className="flex flex-col space-y-2">
-                {contacts.map((contact) => {
+                {sortedContacts.map((contact) => {
                   const resolvedPhone = getResolvedPhone(contact.phone, contact.chat_jid);
                   const conversationId = getConversationIdentifier(contact.phone, contact.chat_jid);
                   const displayPhone = getDisplayPhone(contact.phone, contact.chat_jid);
