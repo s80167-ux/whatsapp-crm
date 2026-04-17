@@ -44,8 +44,8 @@ async function getMessagesByContactId(contact_id, owner_user_id, chat_jid = null
   let customerQuery = supabase
   .from("customer_canonical_profiles")
   .select("phone, chat_jid, status, contact_name, unread_count, profile_picture_url, updated_at, whatsapp_account_id")
-  .eq("owner_user_id", ownerUserId);
-    .eq("contact_id", contact_id);
+  .eq("owner_user_id", ownerUserId)
+  .eq("contact_id", contact_id);
   customerQuery = applyWhatsAppAccountFilter(customerQuery, whatsappAccountId);
   const { data: customer, error: customerError } = await customerQuery.maybeSingle();
   throwIfTenantSchemaError(customerError, "customers.owner_user_id");
