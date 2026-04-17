@@ -165,7 +165,9 @@ export function ChatList({
   const [page, setPage] = useState(1);
   const visibleWhatsAppAccounts = useMemo(
     () =>
-      [...whatsAppAccounts].sort(
+      whatsAppAccounts
+        .filter((account) => Boolean(String(account.account_phone || "").replace(/\D/g, "")))
+        .sort(
         (left, right) => new Date(right.updated_at || 0).getTime() - new Date(left.updated_at || 0).getTime()
       ),
     [whatsAppAccounts]
@@ -243,6 +245,16 @@ export function ChatList({
   }, [filter, query, selectedWhatsAppAccountId, sortOrder]);
 
   useEffect(() => {
+    if (!visibleWhatsAppAccounts.length) {
+      return;
+    }
+
+    if (!selectedWhatsAppAccountId || !visibleWhatsAppAccounts.some((account) => account.id === selectedWhatsAppAccountId)) {
+      onSelectWhatsAppAccount(visibleWhatsAppAccounts[0].id);
+    }
+  }, [onSelectWhatsAppAccount, selectedWhatsAppAccountId, visibleWhatsAppAccounts]);
+
+  useEffect(() => {
     if (page > totalPages) {
       setPage(totalPages);
     }
@@ -277,7 +289,7 @@ export function ChatList({
               aria-label="Select WhatsApp account"
               className="w-full appearance-none rounded-2xl border border-white/70 bg-white/92 px-3 py-3 pr-10 text-sm font-medium text-ink outline-none transition focus:border-whatsapp-deep/30"
               onChange={(event) => onSelectWhatsAppAccount(event.target.value)}
-              value={selectedWhatsAppAccountId || ""}
+              value={selectedAccount?.id || ""}
             >
               {visibleWhatsAppAccounts.length ? null : <option value="">No WhatsApp accounts yet</option>}
               {visibleWhatsAppAccounts.map((account) => {
