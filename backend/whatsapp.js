@@ -235,9 +235,23 @@ function normalizeStoredAuthDir(configuredDir, accountId) {
     "";
 
   const preferredToken = accountDirToken || lastToken;
+  const looksLikePerAccountDir =
+    /^account-[0-9a-f-]{36}$/i.test(preferredToken) || /^[0-9a-f-]{36}$/i.test(preferredToken);
+  const normalizedSlashes = rawValue.replace(/\\/g, "/").toLowerCase();
+  const isLegacyContainerAuthPath =
+    normalizedSlashes.includes("/baileys_auth/") ||
+    normalizedSlashes.endsWith("/baileys_auth") ||
+    normalizedSlashes.includes("/.whatsapp-auth/");
 
-  if (/^account-[0-9a-f-]{36}$/i.test(preferredToken) || /^[0-9a-f-]{36}$/i.test(preferredToken)) {
+  if (looksLikePerAccountDir) {
     return path.join(baseAuthDir, preferredToken);
+  }
+
+  // Railway auth roots have moved over time. If we see an older absolute
+  // container path, remap it to the current configured auth root so persisted
+  // sessions remain usable after deploys and volume path changes.
+  if (isExplicitAbsoluteAuthDir(rawValue) && isLegacyContainerAuthPath && accountId) {
+    return path.join(baseAuthDir, `account-${accountId}`);
   }
 
   if (path.isAbsolute(rawValue)) {
