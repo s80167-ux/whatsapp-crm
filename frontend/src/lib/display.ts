@@ -130,8 +130,25 @@ export function formatWhatsAppIdDisplay(phone: string | null | undefined, chatJi
   return getDisplayWhatsAppId(phone, chatJid) || "Unavailable";
 }
 
-export function getConversationSortTimestamp(conversation: { latestReceivedAt?: string | null; timestamp: string }): string {
-  const latestMessageAt = String(conversation.timestamp || "").trim();
-  const latestReceivedAt = String(conversation.latestReceivedAt || "").trim();
-  return latestMessageAt || latestReceivedAt;
+export function getConversationSortTimestamp(conversation: {
+  latestReceivedAt?: string | number | null;
+  timestamp?: string | number | null;
+  created_at?: string | number | null;
+  updated_at?: string | number | null;
+  last_message_at?: string | number | null;
+  lastMessageAt?: string | number | null;
+  lastMessage?: { created_at?: string | number | null } | string | null;
+  last_message?: { created_at?: string | number | null } | string | null;
+}): string | number {
+  return (
+    conversation?.timestamp ??
+    conversation?.latestReceivedAt ??
+    conversation?.last_message_at ??
+    conversation?.lastMessageAt ??
+    conversation?.created_at ??
+    conversation?.updated_at ??
+    (typeof conversation?.lastMessage === "object" ? conversation.lastMessage?.created_at : null) ??
+    (typeof conversation?.last_message === "object" ? conversation.last_message?.created_at : null) ??
+    ""
+  );
 }
