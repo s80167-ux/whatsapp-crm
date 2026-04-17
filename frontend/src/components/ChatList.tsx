@@ -122,6 +122,22 @@ function getConversationSourceLabel(conversation: Conversation) {
   return conversation.sourceDisplayName || conversation.sourceAccountPhone || "Historical source";
 }
 
+function normalizeSearchValue(value: string | null | undefined) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compareConversationAlphabetically(left: Conversation, right: Conversation) {
+  const leftDisplayPhone = getDisplayPhone(left.phone, left.chatJid) || getResolvedPhone(left.phone, left.chatJid) || "";
+  const rightDisplayPhone = getDisplayPhone(right.phone, right.chatJid) || getResolvedPhone(right.phone, right.chatJid) || "";
+  const leftLabel = normalizeSearchValue(getDisplayName(left.contactName, leftDisplayPhone));
+  const rightLabel = normalizeSearchValue(getDisplayName(right.contactName, rightDisplayPhone));
+
+  return leftLabel.localeCompare(rightLabel, undefined, { sensitivity: "base", numeric: true });
+}
+
 export function ChatList({
   activeView,
   conversations,
@@ -140,7 +156,8 @@ export function ChatList({
 }: ChatListProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "today" | "recent">("all");
-  const [sortOrder, setSortOrder] = useState<"latest" | "oldest">("latest");
+  const [sortField, setSortField] = useState<"timestamp" | "alphabet">("timestamp");
+  const [sortOrder, setSortOrder] = useState<"latest" | "oldest" | "asc" | "desc">("latest");
   const [page, setPage] = useState(1);
   const visibleWhatsAppAccounts = useMemo(
     () =>
@@ -159,16 +176,26 @@ export function ChatList({
 
   const filteredConversations = useMemo(() => {
     const now = new Date();
+    const normalizedQuery = normalizeSearchValue(query);
 
     return conversations
       .filter((conversation) => {
         const resolvedPhone = getResolvedPhone(conversation.phone, conversation.chatJid) || "";
         const conversationId = getConversationIdentifier(conversation.phone, conversation.chatJid) || "";
+        const displayPhone = getDisplayPhone(conversation.phone, conversation.chatJid) || "";
+        const searchableFields = [
+          resolvedPhone,
+          displayPhone,
+          conversationId,
+          conversation.chatJid,
+          getDisplayName(conversation.contactName, displayPhone || resolvedPhone),
+          conversation.lastMessage,
+          getConversationSourceLabel(conversation)
+        ]
+          .map((value) => normalizeSearchValue(value))
+          .filter(Boolean);
         const matchesQuery =
-          resolvedPhone.toLowerCase().includes(query.toLowerCase()) ||
-          conversationId.toLowerCase().includes(query.toLowerCase()) ||
-          getDisplayName(conversation.contactName, resolvedPhone).toLowerCase().includes(query.toLowerCase()) ||
-          conversation.lastMessage.toLowerCase().includes(query.toLowerCase());
+          !normalizedQuery || searchableFields.some((value) => value.includes(normalizedQuery));
 
         if (!matchesQuery) {
           return false;
@@ -191,13 +218,18 @@ export function ChatList({
         return true;
       })
       .sort((a, b) => {
+        if (sortField === "alphabet") {
+          const alphabeticalComparison = compareConversationAlphabetically(a, b);
+          return sortOrder === "desc" ? alphabeticalComparison * -1 : alphabeticalComparison;
+        }
+
         const leftTimestamp = new Date(getConversationSortTimestamp(a)).getTime();
         const rightTimestamp = new Date(getConversationSortTimestamp(b)).getTime();
         const safeLeftTimestamp = Number.isNaN(leftTimestamp) ? 0 : leftTimestamp;
         const safeRightTimestamp = Number.isNaN(rightTimestamp) ? 0 : rightTimestamp;
-        return sortOrder === "latest" ? safeRightTimestamp - safeLeftTimestamp : safeLeftTimestamp - safeRightTimestamp;
+        return sortOrder === "oldest" ? safeLeftTimestamp - safeRightTimestamp : safeRightTimestamp - safeLeftTimestamp;
       });
-  }, [conversations, filter, query, sortOrder]);
+  }, [conversations, filter, query, sortField, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(filteredConversations.length / CONVERSATIONS_PAGE_SIZE));
   const paginatedConversations = filteredConversations.slice((page - 1) * CONVERSATIONS_PAGE_SIZE, page * CONVERSATIONS_PAGE_SIZE);
@@ -289,14 +321,14 @@ export function ChatList({
           </div>
         </div>
 
-        <div className="mt-3 hidden space-y-3 md:block">
+        <div className="mt-3 space-y-3">
           <input
             className="input-glass"
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search phone or message..."
+            placeholder="Search name, phone, message..."
             value={query}
           />
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {(["all", "today", "recent"] as const).map((item) => (
               <button
                 key={item}
@@ -311,10 +343,27 @@ export function ChatList({
             ))}
             <button
               className="rounded-full border border-whatsapp-line bg-white px-3 py-1.5 text-xs font-semibold text-whatsapp-muted transition-all duration-200 hover:bg-whatsapp-soft"
-              onClick={() => setSortOrder((current) => (current === "latest" ? "oldest" : "latest"))}
+              onClick={() => {
+                setSortField("timestamp");
+                setSortOrder((current) => (current === "oldest" ? "latest" : "oldest"));
+              }}
               type="button"
             >
-              {sortOrder === "latest" ? "Latest first" : "Oldest first"}
+              {sortField === "timestamp" && sortOrder === "oldest" ? "Oldest first" : "Latest first"}
+            </button>
+            <button
+              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all duration-200 ${
+                sortField === "alphabet"
+                  ? "bg-whatsapp-dark text-white shadow-soft"
+                  : "border border-whatsapp-line bg-white text-whatsapp-muted hover:bg-whatsapp-soft"
+              }`}
+              onClick={() => {
+                setSortField("alphabet");
+                setSortOrder((current) => (current === "asc" ? "desc" : "asc"));
+              }}
+              type="button"
+            >
+              {sortField === "alphabet" && sortOrder === "desc" ? "Z-A" : "A-Z"}
             </button>
           </div>
         </div>
