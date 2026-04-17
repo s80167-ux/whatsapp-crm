@@ -1875,6 +1875,23 @@ async function disconnectWhatsApp(ownerUserId, accountId) {
   return defaultStatus(session.connectionState, session.qrData);
 }
 
+function getWhatsAppConnectionHealth() {
+  const healthEntries = [];
+
+  for (const [accountId, session] of sessions) {
+    healthEntries.push({
+      accountId,
+      ownerUserId: session.ownerUserId || null,
+      connectionState: session.connectionState || "disconnected",
+      isSocketConnected: Boolean(session.sock),
+      hasQr: Boolean(session.qrData),
+      lastActivity: session.account?.last_connected_at || null
+    });
+  }
+
+  return healthEntries;
+}
+
 module.exports = {
   initializeWhatsApp,
   createWhatsAppConnection,
@@ -1892,5 +1909,6 @@ module.exports = {
   getCurrentWhatsAppAccountContext,
   disconnectWhatsApp,
   removeWhatsAppSessions,
+  getWhatsAppConnectionHealth,
   normalizePhone: normalizeCustomerPhone
 };

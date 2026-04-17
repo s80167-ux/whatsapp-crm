@@ -64,6 +64,7 @@ const {
   repopulateConversationFromWhatsApp,
   getCurrentWhatsAppAccountContext,
   removeWhatsAppSessions,
+  getWhatsAppConnectionHealth,
   normalizePhone
 } = require("./whatsapp");
 
@@ -1139,8 +1140,59 @@ console.log(
     .join(" | ")
 );
 
+const WHATSAPP_HEALTH_CHECK_INTERVAL_MS = Number(process.env.WHATSAPP_HEALTH_CHECK_INTERVAL_MS) || 300000;
+const CONNECTING_STUCK_THRESHOLD_MS = 2 * 60 * 1000;
+
+function runWhatsAppHealthCheck() {
+  try {
+    const sessions = getWhatsAppConnectionHealth();
+
+    if (sessions.length === 0) {
+      console.log("[WhatsApp Health] No active sessions.");
+      return;
+    }
+
+    const connected = sessions.filter((s) => s.connectionState === "open").length;
+    const connecting = sessions.filter((s) => s.connectionState === "connecting" || s.connectionState === "qr").length;
+    const disconnected = sessions.filter((s) => s.connectionState === "disconnected" || s.connectionState === "disconnecting").length;
+
+    console.log(
+      `[WhatsApp Health] Summary — total: ${sessions.length}, connected: ${connected}, connecting/qr: ${connecting}, disconnected: ${disconnected}`
+    );
+
+    const now = Date.now();
+
+    for (const session of sessions) {
+      console.log(
+        `[WhatsApp Health] account=${session.accountId} owner=${session.ownerUserId} state=${session.connectionState} socketConnected=${session.isSocketConnected} hasQr=${session.hasQr} lastActivity=${session.lastActivity || "unknown"}`
+      );
+
+      if ((session.connectionState === "connecting" || session.connectionState === "qr") && session.lastActivity) {
+        const lastActivityMs = new Date(session.lastActivity).getTime();
+        if (!isNaN(lastActivityMs) && now - lastActivityMs > CONNECTING_STUCK_THRESHOLD_MS) {
+          console.warn(
+            `[WhatsApp Health] account=${session.accountId} has been in "${session.connectionState}" state for more than ${CONNECTING_STUCK_THRESHOLD_MS / 1000}s — may be stuck.`
+          );
+        }
+      }
+
+      if (!session.isSocketConnected && session.connectionState === "open") {
+        console.warn(
+          `[WhatsApp Health] account=${session.accountId} reports state "open" but has no active socket — connection may be stale.`
+        );
+      }
+    }
+  } catch (error) {
+    console.error("[WhatsApp Health] Health check failed:", error?.message || error);
+  }
+}
+
 const server = app.listen(port, async () => {
   console.log(`Backend listening on http://localhost:${port}`);
+
+  const healthCheckInterval = setInterval(runWhatsAppHealthCheck, WHATSAPP_HEALTH_CHECK_INTERVAL_MS);
+  healthCheckInterval.unref();
+  console.log(`[WhatsApp Health] Monitoring started — interval: ${WHATSAPP_HEALTH_CHECK_INTERVAL_MS}ms`);
 });
 
 server.on("error", (error) => {
