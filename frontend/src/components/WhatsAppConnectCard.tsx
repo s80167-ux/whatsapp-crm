@@ -123,6 +123,7 @@ export function WhatsAppConnectCard({
   const [savingSync, setSavingSync] = useState(false);
   const [clearingDb, setClearingDb] = useState(false);
   const [cleaningAccounts, setCleaningAccounts] = useState(false);
+  const [resyncingContactNames, setResyncingContactNames] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showQrOverlay, setShowQrOverlay] = useState(false);
   const [qrOverlayPosition, setQrOverlayPosition] = useState<{ left: number; top: number } | null>(null);
@@ -191,6 +192,27 @@ export function WhatsAppConnectCard({
       await onCleanupAccounts();
     } finally {
       setCleaningAccounts(false);
+    }
+  }
+
+  async function handleResyncContactNames(e: React.MouseEvent) {
+    e.stopPropagation();
+
+    if (resyncingContactNames) {
+      return;
+    }
+
+    setResyncingContactNames(true);
+    try {
+      const summary = await api.resyncContactNames(token, selectedWhatsAppAccountId);
+      alert(
+        `Contact name resync complete.\n\nProcessed contacts: ${summary.processedContacts}\nProcessed chats: ${summary.processedChats}\nCached identities: ${summary.cachedIdentityCount}\nUpserted candidates: ${summary.upsertedCandidates}`
+      );
+      window.location.reload();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to resync contact names.");
+    } finally {
+      setResyncingContactNames(false);
     }
   }
 
@@ -669,6 +691,22 @@ export function WhatsAppConnectCard({
             </select>
           </div>
           <p className="text-[10px] leading-4 text-whatsapp-muted">Timeframe for fetching past messages during handshake.</p>
+        </div>
+
+        <div className="whatsapp-popover-card px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-whatsapp-muted">Contact names</p>
+              <p className="mt-1 text-[10px] leading-4 text-whatsapp-muted">Re-read cached WhatsApp identities and restore missing contact names.</p>
+            </div>
+            <button
+              className="rounded-[12px] bg-whatsapp-dark px-3 py-2 text-[10px] font-semibold text-white transition hover:bg-whatsapp-deep disabled:opacity-50"
+              onClick={handleResyncContactNames}
+              disabled={resyncingContactNames}
+            >
+              {resyncingContactNames ? "Resyncing..." : "Resync names"}
+            </button>
+          </div>
         </div>
 
         <div className="whatsapp-popover-card border-rose-200 bg-rose-50 px-3 py-3">

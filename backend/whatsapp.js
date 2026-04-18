@@ -10,6 +10,7 @@ const {
   upsertWhatsAppAccount,
   getWhatsAppAccounts,
   getWhatsAppAccountById,
+  cleanupStaleWhatsAppAccounts,
   getWhatsAppSettings,
   upsertWhatsAppProfile
 } = require("./supabase");
@@ -496,6 +497,11 @@ async function createWhatsAppConnection(ownerUserId) {
     throw new Error("Owner user id is required to create a WhatsApp connection.");
   }
 
+  const cleanupSummary = await cleanupStaleWhatsAppAccounts(normalizedOwnerId);
+  if (Array.isArray(cleanupSummary?.removedIds) && cleanupSummary.removedIds.length) {
+    await removeWhatsAppSessions(cleanupSummary.removedIds);
+  }
+
   const authDir = path.join(baseAuthDir, `account-${crypto.randomUUID()}`);
   const account = await upsertWhatsAppAccount({
     owner_user_id: normalizedOwnerId,
@@ -775,6 +781,25 @@ function extractContactIdentityFromEntity(entity) {
   };
 }
 
+function choosePreferredContactIdentity(...identities) {
+  let selectedIdentity = {
+    name: null,
+    source: null
+  };
+
+  for (const identity of identities) {
+    if (!identity?.name) {
+      continue;
+    }
+
+    if (getNameSourcePriority(identity.source) >= getNameSourcePriority(selectedIdentity.source)) {
+      selectedIdentity = identity;
+    }
+  }
+
+  return selectedIdentity;
+}
+
 function cacheContactIdentity(session, { chatJid, phone, contactName, nameSource }) {
   const normalizedName = String(contactName || "").trim();
   if (!isUsefulContactName(normalizedName, phone)) {
@@ -1005,9 +1030,11 @@ async function hydrateSessionFromLocalHistoryCache(session) {
 
     const phone = await resolveWhatsAppPhone(chat.id, chat.id);
     const linkedContact = contactsByJid.get(chat.id);
-    const contactName = String(
-      linkedContact?.name || linkedContact?.notify || linkedContact?.verifiedName || chat.name || ""
-    ).trim();
+    const chosenIdentity = choosePreferredContactIdentity(
+      extractContactIdentityFromEntity(linkedContact),
+      extractContactIdentityFromEntity(chat)
+    );
+    const contactName = chosenIdentity.name;
 
     if (!phone) {
       continue;
@@ -1018,7 +1045,7 @@ async function hydrateSessionFromLocalHistoryCache(session) {
       phone,
       chatJid: chat.id,
       contactName,
-      nameSource: contactName ? "history_sync" : undefined,
+      nameSource: contactName ? chosenIdentity.source || "history_sync" : undefined,
       unreadCount: typeof chat.unreadCount === "number" ? chat.unreadCount : undefined
     });
 
@@ -1655,7 +1682,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
                     continue;
                   }
 
-                  const contactName = String(contact.name || contact.notify || contact.verifiedName || "").trim();
+                  const contactIdentity = extractContactIdentityFromEntity(contact);
                   let profileInfo = { profilePictureUrl: null, about: null };
                   try {
                     profileInfo = await getContactProfile(session.ownerUserId, session.accountId, phone, contact.id);
@@ -1667,8 +1694,8 @@ async function initializeWhatsApp(ownerUserId, accountId) {
                     session,
                     phone,
                     chatJid: contact.id,
-                    contactName,
-                    nameSource: contact.verifiedName ? "verified_business" : contact.name ? "contact" : contact.notify ? "push_name" : "history_sync",
+                    contactName: contactIdentity.name,
+                    nameSource: contactIdentity.name ? contactIdentity.source || "history_sync" : undefined,
                     profilePictureUrl: profileInfo.profilePictureUrl,
                     about: profileInfo.about
                   });
@@ -1685,16 +1712,18 @@ async function initializeWhatsApp(ownerUserId, accountId) {
 
               const phone = await resolveWhatsAppPhone(chat.id, chat.id);
               const linkedContact = contactsByJid.get(chat.id);
-              const contactName = String(
-                linkedContact?.name || linkedContact?.notify || linkedContact?.verifiedName || chat.name || ""
-              ).trim();
+              const chosenIdentity = choosePreferredContactIdentity(
+                extractContactIdentityFromEntity(linkedContact),
+                extractContactIdentityFromEntity(chat)
+              );
+              const contactName = chosenIdentity.name;
 
               await upsertHistoryCustomer({
                 session,
                 phone,
                 chatJid: chat.id,
                 contactName,
-                nameSource: linkedContact?.verifiedName ? "verified_business" : linkedContact?.name ? "contact" : linkedContact?.notify ? "push_name" : "history_sync",
+                nameSource: contactName ? chosenIdentity.source || "history_sync" : undefined,
                 unreadCount: typeof chat.unreadCount === "number" ? chat.unreadCount : undefined
               });
             }

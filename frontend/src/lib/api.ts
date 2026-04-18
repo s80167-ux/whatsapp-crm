@@ -229,6 +229,16 @@ export type ConversationRepopulateResponse = {
   customer?: Customer | null;
 };
 
+export type ContactNameResyncResponse = {
+  success: boolean;
+  whatsappAccountId: string | null;
+  connectionState: string | null;
+  processedContacts: number;
+  processedChats: number;
+  cachedIdentityCount: number;
+  upsertedCandidates: number;
+};
+
 const configuredApiUrl = import.meta.env.VITE_API_URL;
 const isLocalhost =
   typeof window !== "undefined" &&
@@ -456,6 +466,15 @@ export const api = {
       {
         method: "PUT",
         body: JSON.stringify({ history_sync_days })
+      },
+      token
+    );
+  },
+  resyncContactNames(token: string, whatsappAccountId?: string | null) {
+    return request<ContactNameResyncResponse>(
+      withWhatsAppAccountParam("/whatsapp/resync-contact-names", whatsappAccountId),
+      {
+        method: "POST"
       },
       token
     );

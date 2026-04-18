@@ -84,6 +84,10 @@ function formatAccountPhone(value: string | null | undefined) {
   return value.startsWith("+") ? value : `+${value}`;
 }
 
+function hasAccountPhone(value: string | null | undefined) {
+  return /\d/.test(String(value || ""));
+}
+
 function formatAccountState(value: string | null | undefined) {
   const normalized = String(value || "disconnected").trim().toLowerCase();
 
@@ -161,10 +165,12 @@ export function ChatList({
   const [page, setPage] = useState(1);
   const visibleWhatsAppAccounts = useMemo(
     () =>
-      [...whatsAppAccounts].sort(
-        (left, right) => new Date(right.updated_at || 0).getTime() - new Date(left.updated_at || 0).getTime()
-      ),
-    [whatsAppAccounts]
+      whatsAppAccounts
+        .filter((account) => hasAccountPhone(account.account_phone) || account.id === selectedWhatsAppAccountId)
+        .sort(
+          (left, right) => new Date(right.updated_at || 0).getTime() - new Date(left.updated_at || 0).getTime()
+        ),
+    [selectedWhatsAppAccountId, whatsAppAccounts]
   );
   const selectedAccount =
     visibleWhatsAppAccounts.find((account) => account.id === selectedWhatsAppAccountId) ||
