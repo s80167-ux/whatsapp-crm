@@ -10,7 +10,7 @@ process.on("uncaughtException", (error) => {
   console.error("Uncaught exception:", error);
 });
 
-const { getCustomers, ...otherSupabaseExports } = require("./supabase");
+const { getCustomers, countCustomers, ...otherSupabaseExports } = require("./supabase");
 // ...existing code...
 
 const cors = require("cors");
@@ -712,24 +712,14 @@ app.get("/customers", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, r
     const limit = pageSize;
     const offset = (page - 1) * pageSize;
     const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
-    // Get paginated data
     const data = await getCustomers({
       owner_user_id: req.user.sub,
       whatsapp_account_id: whatsappAccountId,
       limit,
       offset
     });
-    // Get total count (for pagination)
-    let countQuery = require("./supabase").supabase
-      .from("customers")
-      .select("*", { count: "exact", head: true })
-      .eq("owner_user_id", req.user.sub);
-    if (whatsappAccountId) {
-      countQuery = countQuery.eq("whatsapp_account_id", whatsappAccountId);
-    }
-    const { count, error: countError } = await countQuery;
-    if (countError) throw countError;
-    res.json({ data, total: count || 0 });
+    const total = await countCustomers({ owner_user_id: req.user.sub });
+    res.json({ data, total });
   } catch (error) {
     console.error("Failed to fetch customers:", error);
     res.status(500).json({ error: "Failed to fetch customers." });
@@ -781,15 +771,15 @@ app.post("/customers/:phone/repopulate", requireAuth, bindAuthenticatedWhatsAppO
     }
 
     const customer = await getCustomerByPhone(phone, req.user.sub, chatJid, requestedWhatsAppAccountId);
-    const sourceWhatsAppAccountId = customer?.whatsapp_account_id || requestedWhatsAppAccountId || null;
     const targetPhone = customer?.phone || phone;
     const targetChatJid = customer?.chat_jid || chatJid || null;
     const anchorMessage = await getConversationHistoryAnchor(
       targetPhone,
       req.user.sub,
       targetChatJid,
-      sourceWhatsAppAccountId
+      requestedWhatsAppAccountId
     );
+    const sourceWhatsAppAccountId = requestedWhatsAppAccountId || anchorMessage?.whatsapp_account_id || null;
 
     const repopulation = await repopulateConversationFromWhatsApp(req.user.sub, sourceWhatsAppAccountId, {
       phone: targetPhone,

@@ -9,13 +9,10 @@ async function getCustomers({ owner_user_id, whatsapp_account_id, phone, contact
     .order("updated_at", { ascending: false })
     .range(offset, offset + limit - 1);
 
-  query = applyWhatsAppAccountFilter(query, whatsapp_account_id);
-
   let { data, error } = await query;
   if (
     isMissingRelationError(error, "customer_canonical_profiles") ||
-    isMissingColumnError(error, "customer_canonical_profiles.whatsapp_account_id") ||
-    isMissingColumnError(error, "customers.whatsapp_account_id")
+    isMissingColumnError(error, "customer_canonical_profiles.whatsapp_account_id")
   ) {
     ({ data, error } = await supabase
       .from("customers")
@@ -28,6 +25,27 @@ async function getCustomers({ owner_user_id, whatsapp_account_id, phone, contact
   if (error) throw error;
   return (data || []).map(normalizeCustomerRecord);
 }
+
+async function countCustomers({ owner_user_id }) {
+  let { count, error } = await supabase
+    .from("customer_canonical_profiles")
+    .select("*", { count: "exact", head: true })
+    .eq("owner_user_id", owner_user_id);
+
+  if (
+    isMissingRelationError(error, "customer_canonical_profiles") ||
+    isMissingColumnError(error, "customer_canonical_profiles.whatsapp_account_id")
+  ) {
+    ({ count, error } = await supabase
+      .from("customers")
+      .select("*", { count: "exact", head: true })
+      .eq("owner_user_id", owner_user_id));
+  }
+
+  throwIfTenantSchemaError(error, "customers.owner_user_id");
+  if (error) throw error;
+  return count || 0;
+}
 // Fetch a customer by contact_id and owner_user_id
 async function getCustomerByContactId(contact_id, owner_user_id, whatsappAccountId = null) {
   let query = supabase
@@ -35,7 +53,6 @@ async function getCustomerByContactId(contact_id, owner_user_id, whatsappAccount
     .select("*")
     .eq("owner_user_id", owner_user_id)
     .eq("contact_id", contact_id);
-  query = applyWhatsAppAccountFilter(query, whatsappAccountId);
   let { data, error } = await query.maybeSingle();
   if (isMissingRelationError(error, "customer_canonical_profiles")) {
     query = supabase
@@ -43,7 +60,6 @@ async function getCustomerByContactId(contact_id, owner_user_id, whatsappAccount
       .select("*")
       .eq("owner_user_id", owner_user_id)
       .eq("contact_id", contact_id);
-    query = applyWhatsAppAccountFilter(query, whatsappAccountId);
     ({ data, error } = await query.maybeSingle());
   }
   throwIfTenantSchemaError(error, "customers.owner_user_id");
@@ -59,7 +75,6 @@ async function getMessagesByContactId(contact_id, owner_user_id, chat_jid = null
     .select("phone, chat_jid, status, contact_name, unread_count, profile_picture_url, updated_at, whatsapp_account_id")
     .eq("owner_user_id", owner_user_id)
     .eq("contact_id", contact_id);
-  customerQuery = applyWhatsAppAccountFilter(customerQuery, whatsappAccountId);
   let { data: customer, error: customerError } = await customerQuery.maybeSingle();
 
   if (isMissingRelationError(customerError, "customer_canonical_profiles")) {
@@ -68,7 +83,6 @@ async function getMessagesByContactId(contact_id, owner_user_id, chat_jid = null
       .select("phone, chat_jid, status, contact_name, unread_count, profile_picture_url, updated_at, whatsapp_account_id")
       .eq("owner_user_id", owner_user_id)
       .eq("contact_id", contact_id);
-    customerQuery = applyWhatsAppAccountFilter(customerQuery, whatsappAccountId);
     ({ data: customer, error: customerError } = await customerQuery.maybeSingle());
   }
 
@@ -625,8 +639,8 @@ function incrementStatusCount(statusCounts, status) {
   }
 }
 
-function getConversationCustomerMapKey(whatsappAccountId, value) {
-  return `${whatsappAccountId || "no-account"}::${String(value || "").trim()}`;
+function getConversationCustomerMapKey(_whatsappAccountId, value) {
+  return String(value || "").trim();
 }
 
 function shouldPreferConversationCustomerCandidate(currentCustomer, nextCustomer) {
@@ -857,15 +871,12 @@ async function findExistingCustomer({ owner_user_id, whatsapp_account_id, phone,
       .order("updated_at", { ascending: false })
       .limit(1);
 
-    byChatJidQuery = applyWhatsAppAccountFilter(byChatJidQuery, whatsapp_account_id);
-
     const byChatJid = await byChatJidQuery.maybeSingle();
 
     throwIfTenantSchemaError(byChatJid.error, "customers.owner_user_id");
 
     if (
-      !isMissingColumnError(byChatJid.error, "customers.chat_jid") &&
-      !isMissingColumnError(byChatJid.error, "customers.whatsapp_account_id")
+      !isMissingColumnError(byChatJid.error, "customers.chat_jid")
     ) {
       if (byChatJid.error) {
         throw byChatJid.error;
@@ -885,8 +896,6 @@ async function findExistingCustomer({ owner_user_id, whatsapp_account_id, phone,
     .in("phone", lookupValues)
     .order("updated_at", { ascending: false })
     .limit(1);
-
-  existingQuery = applyWhatsAppAccountFilter(existingQuery, whatsapp_account_id);
 
   const existing = await existingQuery.maybeSingle();
 
@@ -913,8 +922,6 @@ async function findExistingCustomerByExactPhone({ owner_user_id, whatsapp_accoun
     .eq("phone", normalizedPhone)
     .order("updated_at", { ascending: false })
     .limit(1);
-
-  existingQuery = applyWhatsAppAccountFilter(existingQuery, whatsapp_account_id);
 
   const existing = await existingQuery.maybeSingle();
 
@@ -1257,7 +1264,7 @@ async function getConversationHistoryAnchor(phone, ownerUserId, chatJid, whatsap
   if (chatJid) {
     let byChatJidQuery = supabase
       .from("messages")
-      .select("id, phone, chat_jid, wa_message_id, direction, created_at")
+      .select("id, phone, chat_jid, wa_message_id, direction, created_at, whatsapp_account_id")
       .eq("owner_user_id", ownerUserId)
       .eq("chat_jid", chatJid)
       .order("created_at", { ascending: true });
@@ -1266,7 +1273,7 @@ async function getConversationHistoryAnchor(phone, ownerUserId, chatJid, whatsap
     let byPhoneQuery = lookupValues.length
       ? supabase
           .from("messages")
-          .select("id, phone, chat_jid, wa_message_id, direction, created_at")
+          .select("id, phone, chat_jid, wa_message_id, direction, created_at, whatsapp_account_id")
           .eq("owner_user_id", ownerUserId)
           .in("phone", lookupValues)
           .order("created_at", { ascending: true })
@@ -1309,7 +1316,7 @@ async function getConversationHistoryAnchor(phone, ownerUserId, chatJid, whatsap
 
     let query = supabase
       .from("messages")
-      .select("id, phone, chat_jid, wa_message_id, direction, created_at")
+      .select("id, phone, chat_jid, wa_message_id, direction, created_at, whatsapp_account_id")
       .eq("owner_user_id", ownerUserId)
       .in("phone", lookupValues)
       .order("created_at", { ascending: true });
@@ -1405,7 +1412,6 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
   .eq("owner_user_id", ownerUserId);
 
   messageQuery = applyWhatsAppAccountFilter(messageQuery, whatsappAccountId);
-  customerQuery = applyWhatsAppAccountFilter(customerQuery, whatsappAccountId);
 
   const [
     { data: messageRows, error: messageError },
@@ -1476,7 +1482,6 @@ async function getCustomerByPhone(phone, ownerUserId, chatJid, whatsappAccountId
       .eq("chat_jid", chatJid)
       .order("updated_at", { ascending: false })
       .limit(1);
-    query = applyWhatsAppAccountFilter(query, whatsappAccountId);
     ({ data, error } = await query.maybeSingle());
 
     throwIfTenantSchemaError(error, "customers.owner_user_id");
@@ -1485,7 +1490,6 @@ async function getCustomerByPhone(phone, ownerUserId, chatJid, whatsappAccountId
       !isMissingRelationError(error, preferredRelation) &&
       !isMissingColumnError(error, "customers.chat_jid") &&
       !isMissingColumnError(error, `${preferredRelation}.whatsapp_account_id`) &&
-      !isMissingColumnError(error, "customers.whatsapp_account_id") &&
       (error || data)
     ) {
       if (error) {
@@ -1520,13 +1524,11 @@ async function getCustomerByPhone(phone, ownerUserId, chatJid, whatsappAccountId
     .in("phone", lookupValues)
     .order("updated_at", { ascending: false })
     .limit(1);
-  query = applyWhatsAppAccountFilter(query, whatsappAccountId);
   ({ data, error } = await query.maybeSingle());
 
   if (
     isMissingRelationError(error, preferredRelation) ||
-    isMissingColumnError(error, `${preferredRelation}.whatsapp_account_id`) ||
-    isMissingColumnError(error, "customers.whatsapp_account_id")
+    isMissingColumnError(error, `${preferredRelation}.whatsapp_account_id`)
   ) {
     ({ data, error } = await supabase
       .from("customers")
@@ -1914,6 +1916,10 @@ async function upsertCustomer({
   email_address
 }) {
   const canonicalPhone = await resolveWhatsAppPhone(phone, chat_jid || null);
+  if (!canonicalPhone) {
+    return null;
+  }
+
   const normalizedSource = normalizeNameSource(name_source);
   const sanitizedContactName =
     contact_name !== undefined
@@ -1929,7 +1935,7 @@ async function upsertCustomer({
   const payload = {
     owner_user_id,
     ...(whatsapp_account_id ? { whatsapp_account_id } : {}),
-    phone: canonicalPhone || phone,
+    phone: canonicalPhone,
     ...(chat_jid !== undefined ? { chat_jid } : {}),
     ...(sanitizedContactName !== undefined ? { contact_name: sanitizedContactName } : {}),
     ...(name_source !== undefined ? { name_source: normalizedSource || null } : {}),
@@ -2975,5 +2981,6 @@ module.exports = {
   getCustomerByContactId,
   getMessagesByContactId,
   getCustomers,
+  countCustomers,
   supabase
 };
