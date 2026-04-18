@@ -1654,6 +1654,13 @@ async function getCustomerInsights(phone, ownerUserId, chatJid, whatsappAccountI
   salesItemsQuery = applyWhatsAppAccountFilter(salesItemsQuery, whatsappAccountId);
   ({ data: salesItemsStatusCounts, error: salesItemsError } = await salesItemsQuery);
 
+  if (isMissingColumnError(salesItemsError, "customer_sales_items.whatsapp_account_id")) {
+    ({ data: salesItemsStatusCounts, error: salesItemsError } = await supabase
+      .from("customer_sales_items")
+      .select("lead_status, phone, chat_jid")
+      .eq("owner_user_id", ownerUserId));
+  }
+
   throwIfSalesItemsSchemaError(salesItemsError);
 
   if (salesItemsError && isMissingColumnError(salesItemsError, "customer_sales_items.lead_status")) {
