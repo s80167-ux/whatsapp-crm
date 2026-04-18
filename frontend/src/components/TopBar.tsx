@@ -27,6 +27,7 @@ type TopBarProps = {
   loadingWhatsApp: boolean;
   onChangeTab: (tab: DashboardTab) => void;
   onCleanupWhatsAppAccounts: () => Promise<void> | void;
+  connectActionLabel?: string;
   onConnectNewWhatsApp: () => void;
   onDisconnectWhatsApp: () => void;
   onLogout: () => void;
@@ -45,6 +46,7 @@ export function TopBar({
   loadingWhatsApp,
   onChangeTab,
   onCleanupWhatsAppAccounts,
+  connectActionLabel,
   onConnectNewWhatsApp,
   onDisconnectWhatsApp,
   onLogout,
@@ -308,6 +310,7 @@ export function TopBar({
             activeWhatsAppNumber={activeWhatsAppNumber}
             compact
             connectingNew={connectingNewWhatsApp}
+            connectActionLabel={connectActionLabel}
             disconnecting={disconnectingWhatsApp}
             loading={loadingWhatsApp}
             onCleanupAccounts={onCleanupWhatsAppAccounts}

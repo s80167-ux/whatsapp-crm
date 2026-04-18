@@ -1066,7 +1066,10 @@ function App() {
     setDashboardError("");
 
     try {
-      const account = await api.createWhatsAppConnection(token);
+      const account = await api.createWhatsAppConnection(token, {
+        whatsappAccountId: selectedWhatsAppAccountId,
+        addAnother: !reconnectingExistingNumber && Boolean(selectedWhatsAppAccount?.account_phone)
+      });
       await loadWhatsAppAccounts(token);
       setSelectedWhatsAppAccountId(account.id);
       await loadWhatsAppState(false, { accountId: account.id });
@@ -1132,6 +1135,15 @@ function App() {
   const selectedWhatsAppAccount =
     whatsAppAccounts.find((account) => account.id === selectedWhatsAppAccountId) || null;
   const effectiveWhatsAppStatus = buildSelectedWhatsAppStatus(selectedWhatsAppAccount, whatsAppStatus, whatsAppQr);
+  const reconnectingExistingNumber =
+    Boolean(selectedWhatsAppAccount?.account_phone) && !Boolean(effectiveWhatsAppStatus?.connected);
+  const connectActionLabel = connectingNewWhatsApp
+    ? reconnectingExistingNumber
+      ? "Reconnecting WhatsApp"
+      : "Starting new connection"
+    : reconnectingExistingNumber
+      ? "Reconnect WhatsApp"
+      : "Connect another number";
 
   const leadConversations = useMemo(() => {
     const selectedAccountPhone = selectedWhatsAppAccount?.account_phone || null;
@@ -2242,6 +2254,7 @@ function App() {
           <TopBar
             activeTab={activeDashboardTab}
             activeWhatsAppNumber={selectedWhatsAppAccount?.account_phone || null}
+            connectActionLabel={connectActionLabel}
             connectingNewWhatsApp={connectingNewWhatsApp}
             disconnectingWhatsApp={disconnectingWhatsApp}
             loadingWhatsApp={loadingWhatsApp}

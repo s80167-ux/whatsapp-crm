@@ -13,6 +13,7 @@ type WhatsAppConnectCardProps = {
   onCleanupAccounts?: () => Promise<void> | void;
   onDisconnect?: () => void;
   onConnectNew?: () => void;
+  connectActionLabel?: string;
   connectingNew?: boolean;
   disconnecting?: boolean;
 };
@@ -106,6 +107,7 @@ export function WhatsAppConnectCard({
   onCleanupAccounts,
   onDisconnect,
   onConnectNew,
+  connectActionLabel,
   connectingNew = false,
   disconnecting = false
 }: WhatsAppConnectCardProps) {
@@ -221,7 +223,7 @@ export function WhatsAppConnectCard({
   const canConnectNew = Boolean(onConnectNew);
   const canViewProfile = Boolean(status?.connected && token);
   const disconnectLabel = disconnecting ? "Disconnecting WhatsApp" : "Disconnect WhatsApp";
-  const connectLabel = connectingNew ? "Starting new connection" : "Connect another number";
+  const connectLabel = connectActionLabel || (connectingNew ? "Starting new connection" : "Connect another number");
   const activeNumberLabel = activeWhatsAppNumber ? formatPhone(activeWhatsAppNumber) : null;
   const qrPlaceholderLabel = getQrPlaceholderLabel(status, loading);
 

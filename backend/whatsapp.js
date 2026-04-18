@@ -202,6 +202,32 @@ function defaultStatus(state = "disconnected", qrData = null) {
   };
 }
 
+function getAccountConnectionState(account) {
+  return String(account?.connection_state || "").trim().toLowerCase();
+}
+
+function hasPersistedAccountPhone(account) {
+  return Boolean(String(account?.account_phone || "").replace(/\D/g, ""));
+}
+
+function getAccountUpdatedAt(account) {
+  return new Date(account?.updated_at || account?.last_connected_at || account?.created_at || 0).getTime();
+}
+
+function isPendingPlaceholderAccount(account) {
+  const state = getAccountConnectionState(account);
+  return !hasPersistedAccountPhone(account) && ["connecting", "qr"].includes(state);
+}
+
+function isReconnectableExistingAccount(account) {
+  if (!hasPersistedAccountPhone(account)) {
+    return false;
+  }
+
+  const state = getAccountConnectionState(account);
+  return state !== "open";
+}
+
 function shouldAutoInitializeAccount(account) {
   if (!isRuntimeCompatibleWhatsAppAccount(account)) {
     return false;
@@ -490,11 +516,59 @@ async function ensureSession(ownerUserId, accountId, options = {}) {
   return session;
 }
 
-async function createWhatsAppConnection(ownerUserId) {
+async function createWhatsAppConnection(ownerUserId, options = {}) {
   const normalizedOwnerId = String(ownerUserId || "").trim();
 
   if (!normalizedOwnerId) {
     throw new Error("Owner user id is required to create a WhatsApp connection.");
+  }
+
+  const requestedAccountId = String(options?.requestedAccountId || "").trim() || null;
+  const addAnother = options?.addAnother === true;
+  const accounts = (await getWhatsAppAccounts(normalizedOwnerId))
+    .filter((account) => isRuntimeCompatibleWhatsAppAccount(account))
+    .sort((left, right) => getAccountUpdatedAt(right) - getAccountUpdatedAt(left));
+  const requestedAccount =
+    (requestedAccountId && accounts.find((account) => String(account.id || "").trim() === requestedAccountId)) || null;
+  const pendingPlaceholderAccount = accounts.find((account) => isPendingPlaceholderAccount(account)) || null;
+  const reconnectCandidate =
+    (!addAnother &&
+      ((requestedAccount && (isReconnectableExistingAccount(requestedAccount) || isPendingPlaceholderAccount(requestedAccount))
+        ? requestedAccount
+        : null) ||
+        accounts.find((account) => isReconnectableExistingAccount(account)) ||
+        pendingPlaceholderAccount)) ||
+    null;
+
+  async function reuseExistingAccount(account) {
+    const session = getOrCreateSessionFromAccount(account);
+    clearReconnectTimer(session);
+    clearFallbackSyncTimer(session);
+    clearConnectingRecoveryTimer(session);
+    session.manualDisconnectRequested = false;
+    session.shutdownRequested = false;
+
+    const shouldForceConnectingState = isReconnectableExistingAccount(account) || account?.is_active === false;
+    if (shouldForceConnectingState) {
+      session.qrData = null;
+      session.connectionState = "connecting";
+    }
+
+    await syncSessionAccountState(session, {
+      is_active: true,
+      ...(shouldForceConnectingState ? { connection_state: "connecting" } : {})
+    }).catch(() => {});
+
+    await initializeWhatsApp(normalizedOwnerId, account.id);
+    return (await getWhatsAppAccountById(normalizedOwnerId, account.id)) || session.account || account;
+  }
+
+  if (reconnectCandidate) {
+    return await reuseExistingAccount(reconnectCandidate);
+  }
+
+  if (pendingPlaceholderAccount) {
+    return await reuseExistingAccount(pendingPlaceholderAccount);
   }
 
   const cleanupSummary = await cleanupStaleWhatsAppAccounts(normalizedOwnerId);
@@ -1213,6 +1287,10 @@ async function getLiveWhatsAppProfile(session) {
 
 function scheduleReconnect(session, options = {}) {
   clearReconnectTimer(session);
+
+  if (session?.account?.is_active === false) {
+    return;
+  }
 
   session.connectionState = "connecting";
   void syncSessionAccountState(session, { connection_state: "connecting" });
@@ -2337,10 +2415,11 @@ async function disconnectWhatsApp(ownerUserId, accountId) {
 
   clearReconnectTimer(session);
   clearFallbackSyncTimer(session);
+  clearConnectingRecoveryTimer(session);
   session.qrData = null;
   session.connectionState = "disconnecting";
   session.manualDisconnectRequested = true;
-  await syncSessionAccountState(session, { connection_state: "disconnecting" }).catch(() => {});
+  await syncSessionAccountState(session, { connection_state: "disconnecting", is_active: false }).catch(() => {});
 
   const currentSock = session.sock;
   session.sock = null;
@@ -2358,7 +2437,8 @@ async function disconnectWhatsApp(ownerUserId, accountId) {
     session.manualDisconnectRequested = false;
   }
 
-  scheduleReconnect(session, { resetAuth: true });
+  session.connectionState = "disconnected";
+  await syncSessionAccountState(session, { connection_state: "disconnected", is_active: false }).catch(() => {});
   return defaultStatus(session.connectionState, session.qrData);
 }
 

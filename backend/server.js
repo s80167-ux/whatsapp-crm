@@ -299,8 +299,11 @@ whatsappRouter.get("/qr", requireAuth, async (req, res) => {
 
 whatsappRouter.post("/connect", requireAuth, async (req, res) => {
   try {
-    const account = await createWhatsAppConnection(req.user.sub);
-    return res.status(201).json(account);
+    const account = await createWhatsAppConnection(req.user.sub, {
+      requestedAccountId: String(req.body?.whatsappAccountId || "").trim() || null,
+      addAnother: req.body?.addAnother === true
+    });
+    return res.json(account);
   } catch (error) {
     console.error("Failed to create WhatsApp connection:", error);
     return res.status(500).json({ error: "Failed to create WhatsApp connection." });

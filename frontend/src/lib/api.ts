@@ -416,11 +416,24 @@ export const api = {
   getWhatsAppQr(token: string, whatsappAccountId?: string | null) {
     return request<WhatsAppQr>(withWhatsAppAccountParam("/whatsapp/qr", whatsappAccountId), {}, token);
   },
-  createWhatsAppConnection(token: string) {
+  createWhatsAppConnection(
+    token: string,
+    options?: {
+      whatsappAccountId?: string | null;
+      addAnother?: boolean;
+    }
+  ) {
     return request<WhatsAppAccount>(
       "/whatsapp/connect",
       {
-        method: "POST"
+        method: "POST",
+        body:
+          options?.whatsappAccountId || options?.addAnother !== undefined
+            ? JSON.stringify({
+                whatsappAccountId: options?.whatsappAccountId || null,
+                addAnother: options?.addAnother === true
+              })
+            : undefined
       },
       token
     );

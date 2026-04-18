@@ -2345,10 +2345,21 @@ async function cleanupStaleWhatsAppAccounts(ownerUserId) {
     isRuntimeCompatibleWhatsAppAuthDir(account?.auth_dir)
   );
   const removedIds = new Set();
+  const pendingNoPhoneAccounts = accounts
+    .filter((account) => {
+      const phoneKey = normalizeAccountPhoneForKey(account?.account_phone);
+      const state = String(account?.connection_state || "").trim().toLowerCase();
+      return !phoneKey && ["connecting", "qr"].includes(state);
+    })
+    .sort((left, right) => new Date(right.updated_at || 0).getTime() - new Date(left.updated_at || 0).getTime());
+  const pendingNoPhoneToKeepId = pendingNoPhoneAccounts[0]?.id || null;
 
   for (const account of accounts) {
     const phoneKey = normalizeAccountPhoneForKey(account?.account_phone);
-    if (!phoneKey && account?.connection_state !== "open") {
+    const state = String(account?.connection_state || "").trim().toLowerCase();
+    const isPendingNoPhone = !phoneKey && ["connecting", "qr"].includes(state);
+
+    if (!phoneKey && state !== "open" && (!isPendingNoPhone || account.id !== pendingNoPhoneToKeepId)) {
       removedIds.add(account.id);
     }
   }
@@ -2370,7 +2381,8 @@ async function cleanupStaleWhatsAppAccounts(ownerUserId) {
   const invalidIds = accounts
     .filter((account) => {
       const phoneKey = normalizeAccountPhoneForKey(account?.account_phone);
-      return !phoneKey && account?.connection_state !== "open" && removedIds.has(account.id);
+      const state = String(account?.connection_state || "").trim().toLowerCase();
+      return !phoneKey && state !== "open" && removedIds.has(account.id);
     })
     .map((account) => account.id);
 
