@@ -17,9 +17,7 @@ function applyCustomerSearchFilter(query, search) {
       `contact_name.ilike.${pattern}`,
       `phone.ilike.${pattern}`,
       `about.ilike.${pattern}`,
-      `notes.ilike.${pattern}`,
-      `last_message_preview.ilike.${pattern}`,
-      `contact_id.ilike.${pattern}`
+      `notes.ilike.${pattern}`
     ].join(",")
   );
 }
