@@ -2552,6 +2552,7 @@ function App() {
                       contacts={contacts}
                       loading={contactsLoading}
                       refreshing={contactsRefreshing}
+                      whatsAppAccounts={whatsAppAccounts}
                       selectedConversationId={selectedContactConversationId}
                       selectedChatJid={selectedContactChatJid}
                       page={contactsPage}

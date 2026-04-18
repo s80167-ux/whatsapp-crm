@@ -11,6 +11,10 @@ function isMobileDevice() {
 
 interface ContactListProps {
   contacts: Customer[];
+  whatsAppAccounts: Array<{
+    id: string;
+    account_phone: string | null;
+  }>;
   selectedConversationId: string | null;
   selectedChatJid?: string | null;
   loading: boolean;
@@ -123,6 +127,7 @@ function getStatusLabel(status: CustomerStatus): string {
 
 export function ContactList({
   contacts,
+  whatsAppAccounts,
   selectedConversationId,
   selectedChatJid,
   loading,
@@ -139,6 +144,14 @@ export function ContactList({
   onEditContact
 }: ContactListProps) {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const accountPhoneById = useMemo(() => {
+    return new Map(
+      whatsAppAccounts.map((account) => [
+        account.id,
+        formatPhoneDisplay(account.account_phone, null)
+      ])
+    );
+  }, [whatsAppAccounts]);
 
   const sortedContacts = useMemo(() => {
     return [...contacts].sort((a, b) => {
@@ -210,6 +223,9 @@ export function ContactList({
                   const resolvedPhone = getResolvedPhone(contact.phone, contact.chat_jid);
                   const conversationId = getConversationIdentifier(contact.phone, contact.chat_jid);
                   const displayPhone = getDisplayPhone(contact.phone, contact.chat_jid);
+                  const ownerAccountPhone = contact.whatsapp_account_id
+                    ? accountPhoneById.get(contact.whatsapp_account_id) || "Unavailable"
+                    : "Unavailable";
                   const activeStatuses = STATUS_ORDER.filter((status) => (contact.status_counts?.[status] ?? 0) > 0);
                   // Use selectedPhone for highlight, do not auto-jump
                   const active =
@@ -256,6 +272,9 @@ export function ContactList({
                               </div>
                               <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors ${active ? "text-whatsapp-dark/80" : "text-whatsapp-muted"}`}>
                                 {formatPhoneDisplay(contact.phone, contact.chat_jid)}
+                              </p>
+                              <p className={`mt-0.5 truncate text-[10px] transition-colors ${active ? "text-whatsapp-dark/70" : "text-whatsapp-muted/90"}`}>
+                                Owner WA: {ownerAccountPhone}
                               </p>
                             </div>
 
