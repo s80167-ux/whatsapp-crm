@@ -639,8 +639,35 @@ function incrementStatusCount(statusCounts, status) {
   }
 }
 
-function getConversationCustomerMapKey(_whatsappAccountId, value) {
-  return String(value || "").trim();
+function getConversationCustomerMapKey(whatsappAccountId, value) {
+  const valueKey = getConversationCustomerValueKey(value);
+
+  if (!valueKey) {
+    return null;
+  }
+
+  const normalizedAccountId = String(whatsappAccountId || "").trim() || "no-account";
+  return `${normalizedAccountId}::${valueKey}`;
+}
+
+function getConversationCustomerValueKey(value) {
+  const rawValue = String(value || "").trim();
+
+  if (!rawValue) {
+    return null;
+  }
+
+  const { digits, server } = getJidMeta(rawValue);
+
+  if (server && digits) {
+    return `jid::${digits}@${server}`;
+  }
+
+  if (digits) {
+    return `phone::${digits}`;
+  }
+
+  return `raw::${rawValue.toLowerCase()}`;
 }
 
 function shouldPreferConversationCustomerCandidate(currentCustomer, nextCustomer) {
@@ -659,6 +686,95 @@ function shouldPreferConversationCustomerCandidate(currentCustomer, nextCustomer
   const nextUpdatedAt = new Date(nextCustomer.updated_at || 0).getTime();
 
   return nextUpdatedAt > currentUpdatedAt;
+}
+
+async function listConversationCustomerRows(ownerUserId) {
+  const relations = ["customer_canonical_profiles", "customers"];
+  const selectColumns = "id, phone, chat_jid, status, contact_name, unread_count, profile_picture_url, updated_at, whatsapp_account_id";
+  const pageSize = 1000;
+
+  for (const relation of relations) {
+    const rows = [];
+    let offset = 0;
+
+    while (true) {
+      const { data, error } = await supabase
+        .from(relation)
+        .select(selectColumns)
+        .eq("owner_user_id", ownerUserId)
+        .order("updated_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(offset, offset + pageSize - 1);
+
+      if (
+        relation === "customer_canonical_profiles" &&
+        (isMissingRelationError(error, relation) || isMissingColumnError(error, `${relation}.whatsapp_account_id`))
+      ) {
+        break;
+      }
+
+      throwIfTenantSchemaError(error, "customers.owner_user_id");
+
+      if (error) {
+        throw error;
+      }
+
+      const batch = data || [];
+      rows.push(...batch);
+
+      if (batch.length < pageSize) {
+        return rows;
+      }
+
+      offset += pageSize;
+    }
+  }
+
+  return [];
+}
+
+function findConversationCustomer(
+  customerByChatMap,
+  customerByPhoneMap,
+  sharedCustomerByChatMap,
+  sharedCustomerByPhoneMap,
+  whatsappAccountId,
+  phone,
+  chatJid
+) {
+  const scopedAccountIds = [];
+
+  if (String(whatsappAccountId || "").trim()) {
+    scopedAccountIds.push(whatsappAccountId);
+  }
+
+  for (const accountId of scopedAccountIds) {
+    const chatKey = getConversationCustomerMapKey(accountId, chatJid);
+
+    if (chatKey && customerByChatMap.has(chatKey)) {
+      return customerByChatMap.get(chatKey) || null;
+    }
+
+    const phoneKey = getConversationCustomerMapKey(accountId, phone);
+
+    if (phoneKey && customerByPhoneMap.has(phoneKey)) {
+      return customerByPhoneMap.get(phoneKey) || null;
+    }
+  }
+
+  const sharedChatKey = getConversationCustomerValueKey(chatJid);
+
+  if (sharedChatKey && sharedCustomerByChatMap.has(sharedChatKey)) {
+    return sharedCustomerByChatMap.get(sharedChatKey) || null;
+  }
+
+  const sharedPhoneKey = getConversationCustomerValueKey(phone);
+
+  if (sharedPhoneKey && sharedCustomerByPhoneMap.has(sharedPhoneKey)) {
+    return sharedCustomerByPhoneMap.get(sharedPhoneKey) || null;
+  }
+
+  return null;
 }
 
 async function upsertProfileFromAuthUser(user) {
@@ -1406,38 +1522,47 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
     .eq("owner_user_id", ownerUserId)
     .order("last_message_at", { ascending: false });
 
-  let customerQuery = supabase
-  .from("customer_canonical_profiles")
-  .select("phone, chat_jid, status, contact_name, unread_count, profile_picture_url, updated_at, whatsapp_account_id")
-  .eq("owner_user_id", ownerUserId);
-
   messageQuery = applyWhatsAppAccountFilter(messageQuery, whatsappAccountId);
 
-  const [
-    { data: messageRows, error: messageError },
-    { data: customerRows, error: customerError }
-  ] = await Promise.all([messageQuery, customerQuery]);
+  const [{ data: messageRows, error: messageError }, customerRows] = await Promise.all([
+    messageQuery,
+    listConversationCustomerRows(ownerUserId)
+  ]);
 
   if (messageError) throw messageError;
 
   const customerByChatMap = new Map();
   const customerByPhoneMap = new Map();
+  const sharedCustomerByChatMap = new Map();
+  const sharedCustomerByPhoneMap = new Map();
 
   for (const customer of customerRows || []) {
     const normalizedCustomer = normalizeCustomerRecord(customer);
     const phoneKey = getConversationCustomerMapKey(normalizedCustomer.whatsapp_account_id, normalizedCustomer.phone);
     const currentPhoneCandidate = customerByPhoneMap.get(phoneKey);
+    const sharedPhoneKey = getConversationCustomerValueKey(normalizedCustomer.phone);
+    const currentSharedPhoneCandidate = sharedCustomerByPhoneMap.get(sharedPhoneKey);
 
-    if (shouldPreferConversationCustomerCandidate(currentPhoneCandidate, normalizedCustomer)) {
+    if (phoneKey && shouldPreferConversationCustomerCandidate(currentPhoneCandidate, normalizedCustomer)) {
       customerByPhoneMap.set(phoneKey, normalizedCustomer);
+    }
+
+    if (sharedPhoneKey && shouldPreferConversationCustomerCandidate(currentSharedPhoneCandidate, normalizedCustomer)) {
+      sharedCustomerByPhoneMap.set(sharedPhoneKey, normalizedCustomer);
     }
 
     if (normalizedCustomer.chat_jid) {
       const chatKey = getConversationCustomerMapKey(normalizedCustomer.whatsapp_account_id, normalizedCustomer.chat_jid);
       const currentChatCandidate = customerByChatMap.get(chatKey);
+      const sharedChatKey = getConversationCustomerValueKey(normalizedCustomer.chat_jid);
+      const currentSharedChatCandidate = sharedCustomerByChatMap.get(sharedChatKey);
 
-      if (shouldPreferConversationCustomerCandidate(currentChatCandidate, normalizedCustomer)) {
+      if (chatKey && shouldPreferConversationCustomerCandidate(currentChatCandidate, normalizedCustomer)) {
         customerByChatMap.set(chatKey, normalizedCustomer);
+      }
+
+      if (sharedChatKey && shouldPreferConversationCustomerCandidate(currentSharedChatCandidate, normalizedCustomer)) {
+        sharedCustomerByChatMap.set(sharedChatKey, normalizedCustomer);
       }
     }
   }
@@ -1445,11 +1570,15 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
   const conversations = [];
 
   for (const row of messageRows || []) {
-    const customer =
-      (row.chat_jid
-        ? customerByChatMap.get(getConversationCustomerMapKey(row.whatsapp_account_id, row.chat_jid))
-        : null) ||
-      customerByPhoneMap.get(getConversationCustomerMapKey(row.whatsapp_account_id, row.phone));
+    const customer = findConversationCustomer(
+      customerByChatMap,
+      customerByPhoneMap,
+      sharedCustomerByChatMap,
+      sharedCustomerByPhoneMap,
+      row.whatsapp_account_id || null,
+      row.phone,
+      row.chat_jid || null
+    );
 
     conversations.push({
       phone: row.phone,
