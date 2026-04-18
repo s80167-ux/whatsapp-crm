@@ -40,6 +40,37 @@ function sortConversationsByLatestMessage(conversations: Conversation[]) {
   );
 }
 
+function isSameCustomerSelection(
+  customer: Customer | null,
+  targetPhone: string | null,
+  targetChatJid?: string | null,
+  targetWhatsAppAccountId?: string | null
+) {
+  if (!customer || !targetPhone) {
+    return false;
+  }
+
+  const customerConversationId = getConversationIdentifier(customer.phone, customer.chat_jid);
+  const normalizedCustomerChatJid = String(customer.chat_jid || "").trim();
+  const normalizedTargetChatJid = String(targetChatJid || "").trim();
+  const normalizedCustomerAccountId = String(customer.whatsapp_account_id || "").trim();
+  const normalizedTargetAccountId = String(targetWhatsAppAccountId || "").trim();
+
+  if (customerConversationId !== targetPhone) {
+    return false;
+  }
+
+  if (normalizedTargetChatJid && normalizedCustomerChatJid && normalizedTargetChatJid !== normalizedCustomerChatJid) {
+    return false;
+  }
+
+  if (normalizedTargetAccountId && normalizedCustomerAccountId && normalizedTargetAccountId !== normalizedCustomerAccountId) {
+    return false;
+  }
+
+  return true;
+}
+
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -1455,7 +1486,10 @@ function App() {
       return;
     }
 
-    setCustomerDraft(null);
+    const requestedChatJid = activeDashboardTab === "contacts" ? activeContactChatJid : activeChatJid;
+    setCustomerDraft((current) =>
+      isSameCustomerSelection(current, activeSelectionId, requestedChatJid, selectedWhatsAppAccountId) ? current : null
+    );
     setSalesLeadItems([]);
 
     if (activeDashboardTab === "contacts") {
@@ -1467,7 +1501,7 @@ function App() {
     loadMessages(activeSelectionId, token, activeChatJid);
     loadCustomer(activeSelectionId, token, activeChatJid);
     loadCustomerSalesItems(activeSelectionId, token, activeChatJid);
-  }, [activeChatJid, activeContactChatJid, activeDashboardTab, activeSelectionId, dashboardSessionId, token]);
+  }, [activeChatJid, activeContactChatJid, activeDashboardTab, activeSelectionId, dashboardSessionId, selectedWhatsAppAccountId, token]);
 
   useEffect(() => {
     if (!token || !dashboardSessionId || activeDashboardTab !== "sales") {
@@ -1716,7 +1750,7 @@ function App() {
         closed_lost: leadConversations.filter((conversation) => (conversation.status_counts?.closed_lost ?? 0) > 0).length
       },
       currentThreadMessages: messages.length,
-      activeContact: selectedConversation?.contactName || customerDraft?.contact_name || selectedPhone || "None"
+      activeContact: customerDraft?.contact_name || selectedConversation?.contactName || selectedPhone || "None"
     }),
     [customerDraft?.contact_name, leadConversations, messages.length, selectedConversation?.contactName, selectedPhone]
   );
@@ -2154,8 +2188,8 @@ function App() {
     ? {
         contactName:
           activeDashboardTab === "contacts"
-            ? selectedContact?.contact_name || customerDraft?.contact_name || null
-            : selectedConversation?.contactName || customerDraft?.contact_name || null,
+            ? customerDraft?.contact_name || selectedContact?.contact_name || null
+            : customerDraft?.contact_name || selectedConversation?.contactName || null,
         about: customerDraft?.about || selectedContact?.about || null,
         chatJid: activeCustomerChatJid,
         customerId: customerDraft?.id ?? selectedContact?.id ?? null,
@@ -2417,7 +2451,7 @@ function App() {
                   {activeDashboardTab === "inbox" ? (
                     <ChatWindow
                       canSendMessages={activeConversationCanSend}
-                      contactName={selectedConversation?.contactName || customerDraft?.contact_name || null}
+                      contactName={customerDraft?.contact_name || selectedConversation?.contactName || null}
                       customerPanelProps={customerPanelProps}
                       chatJid={selectedConversation?.chatJid || customerDraft?.chat_jid || null}
                       disconnectedSourceLabel={activeConversationCanSend ? null : activeConversationSourceLabel}
