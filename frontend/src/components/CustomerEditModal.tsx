@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import type { Customer } from "../lib/api";
 
@@ -104,32 +105,35 @@ export default function CustomerEditModal({ customer, isOpen, onClose, onSave }:
     return null;
   }
 
-  return (
-    <div className="frost-float-backdrop fixed inset-0 z-50 flex items-center justify-center px-4 py-6" onClick={onClose}>
-      <form
+  return createPortal(
+    <div
+      aria-hidden="true"
+      className="frost-float-backdrop fixed inset-0 z-[44]"
+      onClick={onClose}
+    >
+      <div
         aria-label="Edit Customer Profile"
-        className="frost-float w-full max-w-xl rounded-[18px] p-4"
+        aria-modal="true"
+        className="whatsapp-popover fixed left-1/2 top-1/2 z-[45] w-[calc(100vw-24px)] max-w-[520px] -translate-x-1/2 -translate-y-1/2 overflow-hidden max-h-[calc(100dvh-24px)]"
         onClick={(event) => event.stopPropagation()}
-        onSubmit={handleSubmit}
+        role="dialog"
       >
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">Edit Customer Profile</h2>
-            <p className="mt-1 text-xs text-whatsapp-muted">Update the fields that matter for CRM follow-up.</p>
+        <form
+          className="whatsapp-popover-content space-y-3 max-h-[calc(100dvh-24px)] overflow-y-auto overscroll-contain"
+          onSubmit={handleSubmit}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="whatsapp-popover-kicker">Customer profile</p>
+              <h2 className="whatsapp-popover-title">Edit contact details</h2>
+              <p className="whatsapp-popover-subtitle">Keep CRM data up to date without leaving the dashboard.</p>
+            </div>
+            <span className="whatsapp-popover-pill">Edit</span>
           </div>
-          <button
-            aria-label="Close editor"
-            className="rounded-full border border-whatsapp-line bg-white px-3 py-1 text-xs text-whatsapp-muted transition hover:bg-whatsapp-canvas hover:text-whatsapp-deep"
-            onClick={onClose}
-            type="button"
-          >
-            Close
-          </button>
-        </div>
 
-        {error ? <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
+          {error ? <div className="whatsapp-popover-card border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">{error}</div> : null}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1 sm:col-span-2">
             <label htmlFor="contact_name" className="text-xs font-medium">
               Name
@@ -271,17 +275,24 @@ export default function CustomerEditModal({ customer, isOpen, onClose, onSave }:
             </label>
             <input id="chat_jid" value={customer.chat_jid || ""} disabled className="input input-sm bg-gray-100" title="Chat JID" />
           </div>
-        </div>
+          </div>
 
-        <div className="mt-4 flex flex-row gap-2">
-          <button type="button" className="btn btn-sm flex-1 bg-gray-200" onClick={onClose} disabled={saving}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn-sm flex-1 bg-green-500 text-white" disabled={saving}>
-            {saving ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </form>
-    </div>
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              type="button"
+              className="secondary-button w-full rounded-[14px] px-3 py-3 text-sm font-semibold"
+              onClick={onClose}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="primary-button w-full justify-center rounded-[14px] py-3 text-sm font-semibold" disabled={saving}>
+              {saving ? "Saving..." : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
   );
 }
