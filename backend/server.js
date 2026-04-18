@@ -43,6 +43,7 @@ const {
   upsertCustomer,
   getWhatsAppAccounts,
   getAllWhatsAppAccounts,
+  cleanupInvalidWhatsAppAccounts,
   cleanupStaleWhatsAppAccounts,
   cleanupContactDuplicates,
   getWhatsAppSettings,
@@ -67,6 +68,7 @@ const {
   repopulateConversationFromWhatsApp,
   rebuildAllConversationsFromWhatsApp,
   getCurrentWhatsAppAccountContext,
+  getTransientWhatsAppAccounts,
   removeWhatsAppSessions,
   prepareForProcessShutdown,
   normalizePhone
@@ -322,7 +324,12 @@ whatsappRouter.get("/profile", requireAuth, bindAuthenticatedWhatsAppOwner, asyn
 
 whatsappRouter.get("/accounts", requireAuth, async (req, res) => {
   try {
-    const accounts = (await getWhatsAppAccounts(req.user.sub)).filter((account) =>
+    const invalidSummary = await cleanupInvalidWhatsAppAccounts(req.user.sub);
+    if (invalidSummary.removedIds.length) {
+      await removeWhatsAppSessions(invalidSummary.removedIds);
+    }
+
+    const accounts = [...getTransientWhatsAppAccounts(req.user.sub), ...(await getWhatsAppAccounts(req.user.sub))].filter((account) =>
       isRuntimeCompatibleWhatsAppAccount(account)
     );
     const accountsToInitialize = accounts.filter((account) => shouldAutoInitializeAccount(account));
@@ -1167,6 +1174,12 @@ console.log(
 
 async function initializePersistedWhatsAppAccounts() {
   try {
+    const invalidSummary = await cleanupInvalidWhatsAppAccounts();
+    if (invalidSummary.removedIds.length) {
+      await removeWhatsAppSessions(invalidSummary.removedIds);
+      console.log(`[startup] Removed ${invalidSummary.removedIds.length} invalid WhatsApp account row(s) with no phone.`);
+    }
+
     const allAccounts = await getAllWhatsAppAccounts();
     const accountsToInitialize = allAccounts.filter(
       (account) =>

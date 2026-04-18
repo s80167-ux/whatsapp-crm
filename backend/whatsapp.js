@@ -210,6 +210,10 @@ function hasPersistedAccountPhone(account) {
   return Boolean(String(account?.account_phone || "").replace(/\D/g, ""));
 }
 
+function isPersistedWhatsAppAccount(account) {
+  return account?.persisted !== false;
+}
+
 function getAccountUpdatedAt(account) {
   return new Date(account?.updated_at || account?.last_connected_at || account?.created_at || 0).getTime();
 }
@@ -230,6 +234,10 @@ function isReconnectableExistingAccount(account) {
 
 function shouldAutoInitializeAccount(account) {
   if (!isRuntimeCompatibleWhatsAppAccount(account)) {
+    return false;
+  }
+
+  if (isPersistedWhatsAppAccount(account) && !hasPersistedAccountPhone(account)) {
     return false;
   }
 
@@ -321,6 +329,7 @@ function getOrCreateSessionFromAccount(account) {
     existingSession.account = {
       ...(existingSession.account || {}),
       ...account,
+      persisted: account?.persisted !== false,
       auth_dir: getSessionAuthDir(account)
     };
     return existingSession;
@@ -331,6 +340,7 @@ function getOrCreateSessionFromAccount(account) {
     ownerUserId: account.owner_user_id || null,
     account: {
       ...account,
+      persisted: account?.persisted !== false,
       auth_dir: getSessionAuthDir(account)
     },
     authDir: getSessionAuthDir(account),
@@ -351,6 +361,21 @@ function getOrCreateSessionFromAccount(account) {
 
   sessions.set(accountId, session);
   return session;
+}
+
+function getTransientWhatsAppAccounts(ownerUserId) {
+  const normalizedOwnerId = String(ownerUserId || "").trim();
+
+  return Array.from(sessions.values())
+    .filter((session) => session?.ownerUserId === normalizedOwnerId && session?.account?.persisted === false)
+    .map((session) => ({
+      ...session.account,
+      auth_dir: session.authDir,
+      connection_state: session.connectionState || session.account?.connection_state || "disconnected",
+      updated_at: session.account?.updated_at || new Date().toISOString(),
+      persisted: false
+    }))
+    .sort((left, right) => getAccountUpdatedAt(right) - getAccountUpdatedAt(left));
 }
 
 function clearReconnectTimer(session) {
@@ -455,28 +480,58 @@ async function syncSessionAccountState(session, updates = {}) {
     return session.account || null;
   }
 
-  const nextAccount = await upsertWhatsAppAccount({
-    id: session.accountId,
-    owner_user_id: session.ownerUserId,
-    account_phone: updates.account_phone !== undefined ? updates.account_phone : session.account?.account_phone,
-    account_jid: updates.account_jid !== undefined ? updates.account_jid : session.account?.account_jid,
-    display_name: updates.display_name !== undefined ? updates.display_name : session.account?.display_name,
-    profile_picture_url:
-      updates.profile_picture_url !== undefined ? updates.profile_picture_url : session.account?.profile_picture_url,
+  const nextAccount = {
+    ...(session.account || {}),
+    ...updates,
     auth_dir: session.authDir,
-    connection_state: updates.connection_state !== undefined ? updates.connection_state : session.connectionState,
-    is_active: updates.is_active !== undefined ? updates.is_active : session.account?.is_active ?? true,
-    last_connected_at:
-      updates.last_connected_at !== undefined ? updates.last_connected_at : session.account?.last_connected_at
-  });
+    persisted: session.account?.persisted !== false,
+    updated_at: new Date().toISOString()
+  };
+  const nextPhone = normalizeCustomerPhone(nextAccount.account_phone || getSelfPhone(session) || "") || null;
 
-  if (nextAccount) {
-    session.account = nextAccount;
-    session.accountId = nextAccount.id;
-    sessions.set(nextAccount.id, session);
+  session.account = {
+    ...nextAccount,
+    account_phone: nextPhone,
+    auth_dir: session.authDir
+  };
+
+  if (updates.connection_state !== undefined) {
+    session.connectionState = updates.connection_state;
   }
 
-  return nextAccount || session.account || null;
+  if (session.account?.persisted === false && !nextPhone) {
+    return session.account;
+  }
+
+  const persistedAccount = await upsertWhatsAppAccount({
+    id: session.accountId,
+    owner_user_id: session.ownerUserId,
+    account_phone: nextPhone,
+    account_jid: nextAccount.account_jid,
+    display_name: nextAccount.display_name,
+    profile_picture_url:
+      nextAccount.profile_picture_url,
+    auth_dir: session.authDir,
+    connection_state: nextAccount.connection_state !== undefined ? nextAccount.connection_state : session.connectionState,
+    is_active: nextAccount.is_active ?? true,
+    last_connected_at:
+      nextAccount.last_connected_at
+  });
+
+  if (persistedAccount) {
+    if (persistedAccount.id && persistedAccount.id !== session.accountId) {
+      sessions.delete(session.accountId);
+      session.accountId = persistedAccount.id;
+    }
+
+    session.account = {
+      ...persistedAccount,
+      persisted: true
+    };
+    sessions.set(session.accountId, session);
+  }
+
+  return session.account || null;
 }
 
 async function resolveAccount(ownerUserId, requestedAccountId = null, options = {}) {
@@ -489,11 +544,24 @@ async function resolveAccount(ownerUserId, requestedAccountId = null, options = 
 
   if (normalizedAccountId) {
     const account = await getWhatsAppAccountById(normalizedOwnerId, normalizedAccountId);
-    return isRuntimeCompatibleWhatsAppAccount(account) ? account : null;
+    if (isRuntimeCompatibleWhatsAppAccount(account)) {
+      return account;
+    }
+
+    const transientSession = sessions.get(normalizedAccountId);
+    if (
+      transientSession?.ownerUserId === normalizedOwnerId &&
+      isRuntimeCompatibleWhatsAppAccount(transientSession.account)
+    ) {
+      return transientSession.account;
+    }
+
+    return null;
   }
 
   const accounts = await getWhatsAppAccounts(normalizedOwnerId);
-  const compatibleAccounts = accounts.filter((account) => isRuntimeCompatibleWhatsAppAccount(account));
+  const transientAccounts = getTransientWhatsAppAccounts(normalizedOwnerId);
+  const compatibleAccounts = [...transientAccounts, ...accounts].filter((account) => isRuntimeCompatibleWhatsAppAccount(account));
   const openAccount =
     compatibleAccounts.find((account) => String(account.connection_state || "").trim().toLowerCase() === "open") || null;
 
@@ -525,7 +593,7 @@ async function createWhatsAppConnection(ownerUserId, options = {}) {
 
   const requestedAccountId = String(options?.requestedAccountId || "").trim() || null;
   const addAnother = options?.addAnother === true;
-  const accounts = (await getWhatsAppAccounts(normalizedOwnerId))
+  const accounts = [...getTransientWhatsAppAccounts(normalizedOwnerId), ...(await getWhatsAppAccounts(normalizedOwnerId))]
     .filter((account) => isRuntimeCompatibleWhatsAppAccount(account))
     .sort((left, right) => getAccountUpdatedAt(right) - getAccountUpdatedAt(left));
   const requestedAccount =
@@ -576,21 +644,28 @@ async function createWhatsAppConnection(ownerUserId, options = {}) {
     await removeWhatsAppSessions(cleanupSummary.removedIds);
   }
 
-  const authDir = path.join(baseAuthDir, `account-${crypto.randomUUID()}`);
-  const account = await upsertWhatsAppAccount({
+  const transientAccountId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const authDir = path.join(baseAuthDir, `account-${transientAccountId}`);
+  const account = {
+    id: transientAccountId,
     owner_user_id: normalizedOwnerId,
+    account_phone: null,
+    account_jid: null,
     display_name: "New connection",
+    profile_picture_url: null,
     auth_dir: authDir,
     connection_state: "connecting",
-    is_active: true
-  });
+    is_active: true,
+    last_connected_at: null,
+    created_at: now,
+    updated_at: now,
+    persisted: false
+  };
 
-  if (!account?.id) {
-    throw new Error("Failed to create a WhatsApp connection record.");
-  }
-
+  getOrCreateSessionFromAccount(account);
   await initializeWhatsApp(normalizedOwnerId, account.id);
-  return await getWhatsAppAccountById(normalizedOwnerId, account.id);
+  return sessions.get(account.id)?.account || account;
 }
 
 function isStickerMimeType(mimeType) {
@@ -2490,6 +2565,7 @@ module.exports = {
   repopulateConversationFromWhatsApp,
   rebuildAllConversationsFromWhatsApp,
   getCurrentWhatsAppAccountContext,
+  getTransientWhatsAppAccounts,
   disconnectWhatsApp,
   removeWhatsAppSessions,
   prepareForProcessShutdown,

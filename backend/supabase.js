@@ -2331,6 +2331,54 @@ function normalizeAccountPhoneForKey(phone) {
   return String(phone || "").replace(/\D/g, "");
 }
 
+async function cleanupInvalidWhatsAppAccounts(ownerUserId = null) {
+  let query = supabase
+    .from("whatsapp_accounts")
+    .select("id, owner_user_id, account_phone");
+
+  if (ownerUserId) {
+    query = query.eq("owner_user_id", ownerUserId);
+  }
+
+  const { data, error } = await query;
+
+  if (error && error.code !== "42P01") {
+    throw error;
+  }
+
+  const removedIds = (data || [])
+    .filter((account) => !String(account?.account_phone || "").trim())
+    .map((account) => account.id)
+    .filter(Boolean);
+
+  if (!removedIds.length) {
+    return {
+      removedCount: 0,
+      removedIds: []
+    };
+  }
+
+  let deleteQuery = supabase
+    .from("whatsapp_accounts")
+    .delete()
+    .in("id", removedIds);
+
+  if (ownerUserId) {
+    deleteQuery = deleteQuery.eq("owner_user_id", ownerUserId);
+  }
+
+  const { error: deleteError } = await deleteQuery;
+
+  if (deleteError && deleteError.code !== "42P01") {
+    throw deleteError;
+  }
+
+  return {
+    removedCount: removedIds.length,
+    removedIds
+  };
+}
+
 async function cleanupStaleWhatsAppAccounts(ownerUserId) {
   if (!ownerUserId) {
     return {
@@ -2341,56 +2389,29 @@ async function cleanupStaleWhatsAppAccounts(ownerUserId) {
     };
   }
 
+  const invalidSummary = await cleanupInvalidWhatsAppAccounts(ownerUserId);
   const accounts = (await getWhatsAppAccounts(ownerUserId)).filter((account) =>
     isRuntimeCompatibleWhatsAppAuthDir(account?.auth_dir)
   );
   const removedIds = new Set();
-  const pendingNoPhoneAccounts = accounts
-    .filter((account) => {
-      const phoneKey = normalizeAccountPhoneForKey(account?.account_phone);
-      const state = String(account?.connection_state || "").trim().toLowerCase();
-      return !phoneKey && ["connecting", "qr"].includes(state);
-    })
-    .sort((left, right) => new Date(right.updated_at || 0).getTime() - new Date(left.updated_at || 0).getTime());
-  const pendingNoPhoneToKeepId = pendingNoPhoneAccounts[0]?.id || null;
 
   for (const account of accounts) {
     const phoneKey = normalizeAccountPhoneForKey(account?.account_phone);
-    const state = String(account?.connection_state || "").trim().toLowerCase();
-    const isPendingNoPhone = !phoneKey && ["connecting", "qr"].includes(state);
-
-    if (!phoneKey && state !== "open" && (!isPendingNoPhone || account.id !== pendingNoPhoneToKeepId)) {
+    if (!phoneKey) {
       removedIds.add(account.id);
     }
   }
 
-  const removedIdList = Array.from(removedIds);
-
-  if (removedIdList.length) {
-    const { error } = await supabase
-      .from("whatsapp_accounts")
-      .delete()
-      .eq("owner_user_id", ownerUserId)
-      .in("id", removedIdList);
-
-    if (error && error.code !== "42P01") {
-      throw error;
-    }
-  }
-
-  const invalidIds = accounts
-    .filter((account) => {
-      const phoneKey = normalizeAccountPhoneForKey(account?.account_phone);
-      const state = String(account?.connection_state || "").trim().toLowerCase();
-      return !phoneKey && state !== "open" && removedIds.has(account.id);
-    })
-    .map((account) => account.id);
+  const removedIdList = Array.from(new Set([...invalidSummary.removedIds, ...removedIds]));
+  const remainingAccounts = (await getWhatsAppAccounts(ownerUserId)).filter((account) =>
+    isRuntimeCompatibleWhatsAppAuthDir(account?.auth_dir)
+  );
 
   return {
-    removedInvalidCount: invalidIds.length,
+    removedInvalidCount: removedIdList.length,
     removedDuplicateCount: 0,
     removedIds: removedIdList,
-    remainingCount: Math.max(accounts.length - removedIdList.length, 0)
+    remainingCount: remainingAccounts.length
   };
 }
 
@@ -2469,12 +2490,39 @@ async function upsertWhatsAppAccount({
     );
   }
 
+  if (account_phone) {
+    candidates.push(
+      supabase
+        .from("whatsapp_accounts")
+        .select("*")
+        .eq("owner_user_id", owner_user_id)
+        .eq("account_phone", account_phone)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    );
+  }
+
+  if (account_jid) {
+    candidates.push(
+      supabase
+        .from("whatsapp_accounts")
+        .select("*")
+        .eq("owner_user_id", owner_user_id)
+        .eq("account_jid", account_jid)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    );
+  }
+
   const results = await Promise.all(candidates);
   const existingAccount = results.map((result) => result.data).find(Boolean) || null;
   const persistedAuthDir = auth_dir !== undefined
     ? normalizeWhatsAppAuthDir(auth_dir, id || existingAccount?.id || null)
     : undefined;
   const payload = {
+    ...(id && !existingAccount?.id ? { id } : {}),
     owner_user_id,
     ...(account_phone !== undefined ? { account_phone } : {}),
     ...(account_jid !== undefined ? { account_jid } : {}),
@@ -2899,6 +2947,7 @@ module.exports = {
   getWhatsAppAccounts,
   getAllWhatsAppAccounts,
   getWhatsAppAccountById,
+  cleanupInvalidWhatsAppAccounts,
   cleanupStaleWhatsAppAccounts,
   cleanupContactDuplicates,
   getLatestWhatsAppAccount,
