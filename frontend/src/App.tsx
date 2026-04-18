@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChatList } from "./components/ChatList";
 import { ChatWindow } from "./components/ChatWindow";
 import { ContactList } from "./components/ContactList";
+import CustomerEditModal from "./components/CustomerEditModal";
 
 import { CustomerPanel } from "./components/CustomerPanel";
 import type { CustomerPanelProps } from "./components/CustomerPanel";
@@ -175,6 +176,8 @@ function App() {
   const [loadingCustomer, setLoadingCustomer] = useState(false);
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [customerDraft, setCustomerDraft] = useState<Customer | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [editingCustomerOpen, setEditingCustomerOpen] = useState(false);
   const [salesLeadItems, setSalesLeadItems] = useState<SalesLeadItem[]>([]);
   const [allSalesLeadItems, setAllSalesLeadItems] = useState<SalesLeadItem[]>([]);
   const [loadingSalesLeadItems, setLoadingSalesLeadItems] = useState(false);
@@ -361,6 +364,13 @@ function App() {
   useEffect(() => {
     setCustomerPanelCollapsed(false);
   }, [selectedPhone, activeDashboardTab]);
+
+  useEffect(() => {
+    if (activeDashboardTab !== "contacts") {
+      setEditingCustomerOpen(false);
+      setEditingCustomer(null);
+    }
+  }, [activeDashboardTab]);
 
   useEffect(() => {
     if (activeDashboardTab !== "contacts") {
@@ -749,14 +759,36 @@ function App() {
       const savedCustomer = await api.saveCustomer(
         nextCustomer.phone,
         {
+          contact_name: nextCustomer.contact_name || null,
           chat_jid: nextCustomer.chat_jid || null,
           status: nextCustomer.status,
           notes: nextCustomer.notes,
+          profile_picture_url: nextCustomer.profile_picture_url || null,
+          about: nextCustomer.about || null,
+          premise_address: nextCustomer.premise_address || null,
+          business_type: nextCustomer.business_type || null,
+          age: nextCustomer.age ?? null,
+          email_address: nextCustomer.email_address || null,
           whatsappAccountId: activeConversationSourceAccountId
         },
         token
       );
       setCustomerDraft(savedCustomer);
+      setContacts((current) =>
+        current.map((contact) => {
+          const contactId = getConversationIdentifier(contact.phone, contact.chat_jid);
+          const savedId = getConversationIdentifier(savedCustomer.phone, savedCustomer.chat_jid);
+
+          if (contactId !== savedId) {
+            return contact;
+          }
+
+          return {
+            ...contact,
+            ...savedCustomer
+          };
+        })
+      );
       updateConversationStatus({
         phone: savedCustomer.phone,
         chatJid: savedCustomer.chat_jid,
@@ -2184,6 +2216,35 @@ function App() {
       ? activeContactChatJid
       : selectedConversation?.chatJid || customerDraft?.chat_jid || null;
 
+  const activeCustomerForEdit: Customer | null = activeCustomerPhone
+    ? {
+        phone: activeCustomerPhone,
+        whatsapp_account_id: activeConversationSourceAccountId,
+        chat_jid: activeCustomerChatJid,
+        contact_name:
+          activeDashboardTab === "contacts"
+            ? customerDraft?.contact_name || selectedContact?.contact_name || null
+            : customerDraft?.contact_name || selectedConversation?.contactName || null,
+        status: activeDashboardTab === "contacts" ? selectedContact?.status || customerDraft?.status || "new_lead" : selectedStatus,
+        notes: selectedNotes,
+        profile_picture_url: customerDraft?.profile_picture_url || selectedContact?.profile_picture_url || null,
+        about: customerDraft?.about || selectedContact?.about || null,
+        total_messages: customerDraft?.total_messages ?? selectedContact?.total_messages,
+        incoming_count: customerDraft?.incoming_count ?? selectedContact?.incoming_count,
+        outgoing_count: customerDraft?.outgoing_count ?? selectedContact?.outgoing_count,
+        last_message_at: customerDraft?.last_message_at || selectedContact?.last_message_at || null,
+        last_message_preview: customerDraft?.last_message_preview || selectedContact?.last_message_preview || null,
+        last_direction: customerDraft?.last_direction || selectedContact?.last_direction || null,
+        premise_address: customerDraft?.premise_address ?? selectedContact?.premise_address ?? "",
+        business_type: customerDraft?.business_type ?? selectedContact?.business_type ?? "",
+        age: customerDraft?.age ?? selectedContact?.age ?? null,
+        email_address: customerDraft?.email_address ?? selectedContact?.email_address ?? "",
+        contact_id: customerDraft?.contact_id ?? selectedContact?.contact_id ?? "",
+        id: customerDraft?.id ?? selectedContact?.id,
+        updated_at: customerDraft?.updated_at ?? selectedContact?.updated_at ?? undefined
+      }
+    : null;
+
   const customerPanelProps: CustomerPanelProps | null = activeCustomerPhone
     ? {
         contactName:
@@ -2213,6 +2274,7 @@ function App() {
         age: customerDraft?.age ?? selectedContact?.age ?? null,
         emailAddress: customerDraft?.email_address ?? selectedContact?.email_address ?? "",
         contactId: customerDraft?.contact_id ?? selectedContact?.contact_id ?? "",
+        onEditProfile: activeCustomerForEdit ? () => openContactEditor(activeCustomerForEdit) : undefined,
         onNotesChange: (value) => {
           if (!activeCustomerPhone) {
             return;
@@ -2248,6 +2310,78 @@ function App() {
         }
       }
     : null;
+
+  async function handleEditCustomerSave(updatedCustomer: {
+    phone: string;
+    chat_jid?: string | null;
+    contact_name?: string | null;
+    status: Customer["status"];
+    notes: string;
+    profile_picture_url?: string | null;
+    about?: string | null;
+    premise_address?: string | null;
+    business_type?: string | null;
+    age?: number | null;
+    email_address?: string | null;
+  }) {
+    if (!token) {
+      return;
+    }
+
+    try {
+      const savedCustomer = await api.saveCustomer(
+        updatedCustomer.phone,
+        {
+          contact_name: updatedCustomer.contact_name ?? null,
+          chat_jid: updatedCustomer.chat_jid || null,
+          status: updatedCustomer.status,
+          notes: updatedCustomer.notes,
+          profile_picture_url: updatedCustomer.profile_picture_url ?? null,
+          about: updatedCustomer.about ?? null,
+          premise_address: updatedCustomer.premise_address ?? null,
+          business_type: updatedCustomer.business_type ?? null,
+          age: updatedCustomer.age ?? null,
+          email_address: updatedCustomer.email_address ?? null,
+          whatsappAccountId: activeConversationSourceAccountId
+        },
+        token
+      );
+
+      setCustomerDraft(savedCustomer);
+      setContacts((current) =>
+        current.map((contact) => {
+          const contactId = getConversationIdentifier(contact.phone, contact.chat_jid);
+          const savedId = getConversationIdentifier(savedCustomer.phone, savedCustomer.chat_jid);
+
+          if (contactId !== savedId) {
+            return contact;
+          }
+
+          return {
+            ...contact,
+            ...savedCustomer
+          };
+        })
+      );
+      updateConversationStatus({
+        phone: savedCustomer.phone,
+        chatJid: savedCustomer.chat_jid,
+        status: savedCustomer.status
+      });
+
+      if (activeDashboardTab === "contacts") {
+        await fetchContacts({ page: contactsPage, query: contactsQuery, silent: true });
+      }
+    } catch (error) {
+      setDashboardError(error instanceof Error ? error.message : "Failed to save customer.");
+      throw error;
+    }
+  }
+
+  function openContactEditor(contact: Customer) {
+    setEditingCustomer(contact);
+    setEditingCustomerOpen(true);
+  }
 
   if (!token || !dashboardSessionId) {
     return (
@@ -2424,6 +2558,7 @@ function App() {
                       onPageChange={(page) => fetchContacts({ page })}
                       onQueryChange={setContactsQuery}
                       query={contactsQuery}
+                      onEditContact={openContactEditor}
                       onRefresh={() => fetchContacts({ page: contactsPage, query: contactsQuery })}
                       onSelect={(phone, chatJid, opts) => {
                         setActiveMessageFilterId(null);
@@ -2509,6 +2644,15 @@ function App() {
             </div>
           </div>
         )}
+        <CustomerEditModal
+          customer={editingCustomer}
+          isOpen={editingCustomerOpen}
+          onClose={() => {
+            setEditingCustomerOpen(false);
+            setEditingCustomer(null);
+          }}
+          onSave={handleEditCustomerSave}
+        />
     </div>
   </main>
 );

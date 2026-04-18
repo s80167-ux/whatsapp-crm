@@ -233,6 +233,59 @@ function normalizeCustomerStatus(status, notes) {
   }
 }
 
+  // Upsert (insert or update) a canonical profile by contact_id and owner_user_id
+  async function upsertCanonicalProfile({
+    owner_user_id,
+    contact_id,
+    phone,
+    contact_name,
+    status,
+    notes,
+    profile_picture_url,
+    about,
+    unread_count,
+    whatsapp_account_id,
+    ...rest
+  }) {
+    // Build payload
+    const payload = {
+      owner_user_id,
+      contact_id,
+      ...(phone !== undefined ? { phone } : {}),
+      ...(contact_name !== undefined ? { contact_name } : {}),
+      ...(status !== undefined ? { status } : {}),
+      ...(notes !== undefined ? { notes } : {}),
+      ...(profile_picture_url !== undefined ? { profile_picture_url } : {}),
+      ...(about !== undefined ? { about } : {}),
+      ...(unread_count !== undefined ? { unread_count } : {}),
+      ...(whatsapp_account_id !== undefined ? { whatsapp_account_id } : {}),
+      updated_at: new Date().toISOString(),
+      ...rest
+    };
+
+    // Try update first
+    let { data, error } = await supabase
+      .from("customer_canonical_profiles")
+      .update(payload)
+      .eq("owner_user_id", owner_user_id)
+      .eq("contact_id", contact_id)
+      .select("*")
+      .maybeSingle();
+
+    // If not found, insert
+    if ((!data || (Array.isArray(data) && data.length === 0)) && !error) {
+      ({ data, error } = await supabase
+        .from("customer_canonical_profiles")
+        .insert(payload)
+        .select("*")
+        .maybeSingle());
+    }
+
+    throwIfTenantSchemaError(error, "customer_canonical_profiles.owner_user_id");
+    if (error) throw error;
+    return data ? normalizeCustomerRecord(data) : null;
+  }
+
 function toLegacyCustomerStatus(status) {
   switch (status) {
     case "processing":

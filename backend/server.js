@@ -744,6 +744,42 @@ app.get("/customers/by-id/:contact_id", requireAuth, bindAuthenticatedWhatsAppOw
   }
 });
 
+// Update canonical profile by contact_id
+app.put("/customers/by-id/:contact_id", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
+  try {
+    const contactId = req.params.contact_id;
+    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
+    const ownerUserId = req.user.sub;
+    // Accept editable fields from body
+    const {
+      phone,
+      contact_name,
+      status,
+      notes,
+      profile_picture_url,
+      about,
+      unread_count
+    } = req.body;
+
+    const updated = await upsertCanonicalProfile({
+      owner_user_id: ownerUserId,
+      contact_id: contactId,
+      phone,
+      contact_name,
+      status,
+      notes,
+      profile_picture_url,
+      about,
+      unread_count,
+      whatsapp_account_id: whatsappAccountId
+    });
+    return res.json(updated);
+  } catch (error) {
+    console.error("Failed to update canonical profile by contact_id:", error);
+    return res.status(500).json({ error: "Failed to update canonical profile by contact_id." });
+  }
+});
+
 app.get("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const phone = normalizePhone(req.params.phone);
@@ -810,7 +846,17 @@ app.post("/customers/:phone/repopulate", requireAuth, bindAuthenticatedWhatsAppO
 app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, res) => {
   try {
     const phone = normalizePhone(req.params.phone);
-    const { status, notes } = req.body;
+    const {
+      contact_name,
+      status,
+      notes,
+      profile_picture_url,
+      about,
+      premise_address,
+      business_type,
+      age,
+      email_address
+    } = req.body;
     const chatJid = typeof req.body?.chatJid === "string" ? req.body.chatJid.trim() || null : null;
     const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
 
@@ -827,8 +873,22 @@ app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
       whatsapp_account_id: whatsappAccountId,
       phone,
       chat_jid: chatJid,
+      contact_name: typeof contact_name === "string" ? contact_name : contact_name === null ? null : undefined,
       status,
-      notes: typeof notes === "string" ? notes : ""
+      notes: typeof notes === "string" ? notes : "",
+      profile_picture_url:
+        typeof profile_picture_url === "string" ? profile_picture_url : profile_picture_url === null ? null : undefined,
+      about: typeof about === "string" ? about : about === null ? null : undefined,
+      premise_address:
+        typeof premise_address === "string" ? premise_address : premise_address === null ? null : undefined,
+      business_type: typeof business_type === "string" ? business_type : business_type === null ? null : undefined,
+      age:
+        age === undefined || age === null || age === ""
+          ? age === null
+            ? null
+            : undefined
+          : Number(age),
+      email_address: typeof email_address === "string" ? email_address : email_address === null ? null : undefined
     });
 
     const customer = await getCustomerInsights(phone, req.user.sub, chatJid, whatsappAccountId);

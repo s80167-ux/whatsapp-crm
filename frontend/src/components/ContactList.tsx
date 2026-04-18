@@ -24,6 +24,7 @@ interface ContactListProps {
   onQueryChange: (query: string) => void;
   onRefresh: () => void;
   onSelect: (conversationId: string, chatJid?: string | null, opts?: { focusChatInput?: boolean }) => void;
+  onEditContact: (contact: Customer) => void;
 }
 
 const STATUS_ORDER: CustomerStatus[] = ["new_lead", "interested", "processing", "closed_won", "closed_lost"];
@@ -109,7 +110,23 @@ function getStatusLabel(status: CustomerStatus): string {
   }
 }
 
-export function ContactList({ contacts, selectedConversationId, selectedChatJid, loading, refreshing, activeStatusFilter, page, pageSize, total, onPageChange, query, onQueryChange, onRefresh, onSelect }: ContactListProps) {
+export function ContactList({
+  contacts,
+  selectedConversationId,
+  selectedChatJid,
+  loading,
+  refreshing,
+  activeStatusFilter,
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  query,
+  onQueryChange,
+  onRefresh,
+  onSelect,
+  onEditContact
+}: ContactListProps) {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   const sortedContacts = useMemo(() => {
@@ -296,10 +313,9 @@ export function ContactList({ contacts, selectedConversationId, selectedChatJid,
                             <button
                               className="icon-hover-trigger flex flex-col items-center w-14 px-0 py-1 rounded-xl border border-whatsapp-line bg-white/80 text-whatsapp-deep shadow transition hover:bg-whatsapp-soft"
                               type="button"
-                              tabIndex={-1}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                /* TODO: implement edit action */
+                                onEditContact(contact);
                               }}
                             >
                               <svg width="24" height="24" fill="none" viewBox="0 0 24 24" className="mb-1">

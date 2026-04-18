@@ -25,6 +25,7 @@ export type CustomerPanelProps = {
   onToggleMobileCollapse?: () => void;
   onNotesChange: (value: string) => void;
   onClose?: () => void;
+  onEditProfile?: () => void;
   variant?: "panel" | "inline";
   onLeadStatusFilter?: (status: CustomerStatus) => void;
   premiseAddress?: string | null;
@@ -126,6 +127,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
     onToggleMobileCollapse,
     onNotesChange,
     onClose,
+    onEditProfile,
     variant = "panel",
     onLeadStatusFilter,
     premiseAddress,
@@ -161,20 +163,42 @@ export function CustomerPanel(props: CustomerPanelProps) {
             <p className="text-xs uppercase tracking-[0.25em] text-whatsapp-muted">Customer profile</p>
             <p className="mt-1 truncate text-sm font-medium text-ink">{title}</p>
           </div>
-          {onClose ? (
-            <button
-              aria-label="Close customer profile"
-              className="icon-hover-trigger flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-whatsapp-canvas text-whatsapp-muted shadow-soft transition hover:bg-white hover:text-whatsapp-deep"
-              onClick={onClose}
-              type="button"
-            >
-              <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
-                <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-              </svg>
-              <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Close</span>
-              <span className="icon-hover-label hidden sm:inline">Close profile</span>
-            </button>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {onEditProfile ? (
+              <button
+                aria-label="Edit customer profile"
+                className="icon-hover-trigger flex h-10 shrink-0 items-center gap-2 rounded-full border border-whatsapp-line bg-white px-3 text-whatsapp-deep shadow-soft transition hover:bg-whatsapp-soft"
+                onClick={onEditProfile}
+                type="button"
+              >
+                <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                  <path d="M12 20h9" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                  <path
+                    d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19.5 3 21l1.5-4L16.5 3.5z"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                  />
+                </svg>
+                <span className="hidden text-xs font-medium sm:inline">Edit profile</span>
+              </button>
+            ) : null}
+            {onClose ? (
+              <button
+                aria-label="Close customer profile"
+                className="icon-hover-trigger flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-whatsapp-canvas text-whatsapp-muted shadow-soft transition hover:bg-white hover:text-whatsapp-deep"
+                onClick={onClose}
+                type="button"
+              >
+                <svg fill="none" height="18" viewBox="0 0 24 24" width="18">
+                  <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                </svg>
+                <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Close</span>
+                <span className="icon-hover-label hidden sm:inline">Close profile</span>
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : (
         <>
@@ -188,21 +212,43 @@ export function CustomerPanel(props: CustomerPanelProps) {
               <p className="text-xs uppercase tracking-[0.25em] text-whatsapp-muted">Customer info</p>
               <p className="mt-1 truncate text-sm font-medium text-ink">{title}</p>
             </div>
-            {canCollapse ? (
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-whatsapp-canvas text-whatsapp-muted shadow-soft transition hover:bg-white hover:text-whatsapp-deep">
-                {/* Minimal plus/minus icon for collapse/expand */}
-                {mobileCollapsed ? (
-                  <svg className="h-4 w-4 transition" fill="none" viewBox="0 0 24 24">
-                    <rect x="5" y="11" width="14" height="2" rx="1" fill="currentColor" />
+            <div className="flex items-center gap-2">
+              {onEditProfile ? (
+                <button
+                  aria-label="Edit customer profile"
+                  className="icon-hover-trigger flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-whatsapp-line bg-white px-3 text-whatsapp-deep shadow-soft transition hover:bg-whatsapp-soft"
+                  onClick={onEditProfile}
+                  type="button"
+                >
+                  <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
+                    <path d="M12 20h9" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                    <path
+                      d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19.5 3 21l1.5-4L16.5 3.5z"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                    />
                   </svg>
-                ) : (
-                  <svg className="h-4 w-4 transition" fill="none" viewBox="0 0 24 24">
-                    <rect x="5" y="11" width="14" height="2" rx="1" fill="currentColor" />
-                    <rect x="11" y="5" width="2" height="14" rx="1" fill="currentColor" />
-                  </svg>
-                )}
-              </span>
-            ) : null}
+                  <span className="text-[11px] font-medium">Edit</span>
+                </button>
+              ) : null}
+              {canCollapse ? (
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-whatsapp-canvas text-whatsapp-muted shadow-soft transition hover:bg-white hover:text-whatsapp-deep">
+                  {/* Minimal plus/minus icon for collapse/expand */}
+                  {mobileCollapsed ? (
+                    <svg className="h-4 w-4 transition" fill="none" viewBox="0 0 24 24">
+                      <rect x="5" y="11" width="14" height="2" rx="1" fill="currentColor" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4 transition" fill="none" viewBox="0 0 24 24">
+                      <rect x="5" y="11" width="14" height="2" rx="1" fill="currentColor" />
+                      <rect x="11" y="5" width="2" height="14" rx="1" fill="currentColor" />
+                    </svg>
+                  )}
+                </span>
+              ) : null}
+            </div>
           </button>
         </>
       )}

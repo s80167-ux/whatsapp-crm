@@ -588,19 +588,42 @@ export const api = {
   },
   saveCustomer(
     phone: string,
-    payload: Pick<Customer, "status" | "notes"> & { chat_jid?: string | null; whatsappAccountId?: string | null },
+    payload: Partial<
+      Pick<
+        Customer,
+        | "contact_name"
+        | "status"
+        | "notes"
+        | "profile_picture_url"
+        | "about"
+        | "premise_address"
+        | "business_type"
+        | "age"
+        | "email_address"
+      >
+    > & { chat_jid?: string | null; whatsappAccountId?: string | null },
     token: string
   ) {
+    const body: Record<string, unknown> = {
+      chatJid: payload.chat_jid || null,
+      whatsappAccountId: payload.whatsappAccountId || null
+    };
+
+    if (payload.contact_name !== undefined) body.contact_name = payload.contact_name;
+    if (payload.status !== undefined) body.status = payload.status;
+    if (payload.notes !== undefined) body.notes = payload.notes;
+    if (payload.profile_picture_url !== undefined) body.profile_picture_url = payload.profile_picture_url;
+    if (payload.about !== undefined) body.about = payload.about;
+    if (payload.premise_address !== undefined) body.premise_address = payload.premise_address;
+    if (payload.business_type !== undefined) body.business_type = payload.business_type;
+    if (payload.age !== undefined) body.age = payload.age;
+    if (payload.email_address !== undefined) body.email_address = payload.email_address;
+
     return request<Customer>(
       `/customers/${phone}`,
       {
         method: "PUT",
-        body: JSON.stringify({
-          status: payload.status,
-          notes: payload.notes,
-          chatJid: payload.chat_jid || null,
-          whatsappAccountId: payload.whatsappAccountId || null
-        })
+        body: JSON.stringify(body)
       },
       token
     );
