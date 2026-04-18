@@ -55,12 +55,23 @@ async function getCustomerByContactId(contact_id, owner_user_id, whatsappAccount
 async function getMessagesByContactId(contact_id, owner_user_id, chat_jid = null, whatsappAccountId = null) {
   // Find the customer by contact_id
   let customerQuery = supabase
-  .from("customer_canonical_profiles")
-  .select("phone, chat_jid, status, contact_name, unread_count, profile_picture_url, updated_at, whatsapp_account_id")
-  .eq("owner_user_id", ownerUserId)
-  .eq("contact_id", contact_id);
+    .from("customer_canonical_profiles")
+    .select("phone, chat_jid, status, contact_name, unread_count, profile_picture_url, updated_at, whatsapp_account_id")
+    .eq("owner_user_id", owner_user_id)
+    .eq("contact_id", contact_id);
   customerQuery = applyWhatsAppAccountFilter(customerQuery, whatsappAccountId);
-  const { data: customer, error: customerError } = await customerQuery.maybeSingle();
+  let { data: customer, error: customerError } = await customerQuery.maybeSingle();
+
+  if (isMissingRelationError(customerError, "customer_canonical_profiles")) {
+    customerQuery = supabase
+      .from("customers")
+      .select("phone, chat_jid, status, contact_name, unread_count, profile_picture_url, updated_at, whatsapp_account_id")
+      .eq("owner_user_id", owner_user_id)
+      .eq("contact_id", contact_id);
+    customerQuery = applyWhatsAppAccountFilter(customerQuery, whatsappAccountId);
+    ({ data: customer, error: customerError } = await customerQuery.maybeSingle());
+  }
+
   throwIfTenantSchemaError(customerError, "customers.owner_user_id");
   if (customerError) throw customerError;
   if (!customer) return [];
