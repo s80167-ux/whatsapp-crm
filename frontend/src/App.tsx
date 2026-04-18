@@ -239,8 +239,7 @@ function App() {
       const { data, total } = await api.getCustomers({
         page,
         pageSize: CONTACTS_PAGE_SIZE,
-        search: query,
-        whatsappAccountId: selectedWhatsAppAccountId
+        search: query
       }, token);
       // Sort: contacts with a name at the top, then by latest message or updated time
       const sorted = [...data].sort((a, b) => {
@@ -271,7 +270,7 @@ function App() {
       fetchContacts({ page: contactsPage, query: contactsQuery });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDashboardTab, contactsPage, contactsQuery, selectedWhatsAppAccountId, token, dashboardSessionId]);
+  }, [activeDashboardTab, contactsPage, contactsQuery, token, dashboardSessionId]);
 
   function resetDashboardState() {
     messagesCacheRef.current = {};

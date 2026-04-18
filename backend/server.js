@@ -711,10 +711,8 @@ app.get("/customers", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, r
     const pageSize = Number(req.query.pageSize) || 10;
     const limit = pageSize;
     const offset = (page - 1) * pageSize;
-    const whatsappAccountId = await resolveRequestWhatsAppAccountId(req);
     const data = await getCustomers({
       owner_user_id: req.user.sub,
-      whatsapp_account_id: whatsappAccountId,
       limit,
       offset
     });

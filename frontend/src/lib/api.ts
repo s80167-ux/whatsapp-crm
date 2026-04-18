@@ -365,12 +365,11 @@ export const api = {
    * @param params { page, pageSize, search }
    * @returns { data: Customer[], total: number }
    */
-  getCustomers(params: { page?: number; pageSize?: number; search?: string; whatsappAccountId?: string | null }, token?: string) {
+  getCustomers(params: { page?: number; pageSize?: number; search?: string }, token?: string) {
     const urlParams = new URLSearchParams();
     if (params.page !== undefined) urlParams.set("page", String(params.page));
     if (params.pageSize !== undefined) urlParams.set("pageSize", String(params.pageSize));
     if (params.search) urlParams.set("search", params.search);
-    if (params.whatsappAccountId) urlParams.set("whatsappAccountId", params.whatsappAccountId);
     return request<{ data: Customer[]; total: number }>(
       `/customers${urlParams.size ? `?${urlParams.toString()}` : ""}`,
       {},
