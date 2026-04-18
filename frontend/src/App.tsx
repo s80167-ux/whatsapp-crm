@@ -2225,6 +2225,7 @@ function App() {
           activeDashboardTab === "contacts"
             ? customerDraft?.contact_name || selectedContact?.contact_name || null
             : customerDraft?.contact_name || selectedConversation?.contactName || null,
+        is_contact_anchor: customerDraft?.is_contact_anchor ?? selectedContact?.is_contact_anchor ?? false,
         status: activeDashboardTab === "contacts" ? selectedContact?.status || customerDraft?.status || "new_lead" : selectedStatus,
         notes: selectedNotes,
         profile_picture_url: customerDraft?.profile_picture_url || selectedContact?.profile_picture_url || null,
@@ -2268,6 +2269,7 @@ function App() {
         status: activeDashboardTab === "contacts" ? selectedContact?.status || customerDraft?.status || "new_lead" : selectedStatus,
         statusCounts: activeDashboardTab === "contacts" ? selectedContact?.status_counts || customerStatusCounts : customerStatusCounts,
         totalMessages: customerDraft?.total_messages ?? selectedContact?.total_messages,
+        isContactAnchor: customerDraft?.is_contact_anchor ?? selectedContact?.is_contact_anchor ?? false,
         // New fields for customer info window
         premiseAddress: customerDraft?.premise_address ?? selectedContact?.premise_address ?? "",
         businessType: customerDraft?.business_type ?? selectedContact?.business_type ?? "",
@@ -2287,6 +2289,7 @@ function App() {
               activeDashboardTab === "contacts"
                 ? customerDraft?.contact_name || selectedContact?.contact_name || null
                 : customerDraft?.contact_name || selectedConversation?.contactName || null,
+            is_contact_anchor: customerDraft?.is_contact_anchor ?? selectedContact?.is_contact_anchor ?? false,
             profile_picture_url: customerDraft?.profile_picture_url || selectedContact?.profile_picture_url || null,
             about: customerDraft?.about || selectedContact?.about || null,
             total_messages: customerDraft?.total_messages,

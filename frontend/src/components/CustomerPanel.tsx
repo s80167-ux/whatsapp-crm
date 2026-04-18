@@ -5,6 +5,7 @@ import "./CustomerPanel.css";
 export type CustomerPanelProps = {
   about: string | null;
   contactName: string | null;
+  isContactAnchor?: boolean;
   phone: string | null;
   customerId?: string | null;
   chatJid?: string | null;
@@ -92,6 +93,17 @@ function getInitials(contactName: string | null, phone: string | null) {
   return parts.map((part) => part[0]?.toUpperCase() || "").join("");
 }
 
+function VerifiedBadge() {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-sky-700 shadow-sm">
+      <svg aria-hidden="true" fill="none" height="10" viewBox="0 0 12 12" width="10">
+        <path d="m2.25 6.25 2.1 2.1L9.75 3.1" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+      </svg>
+      Verified
+    </span>
+  );
+}
+
 function formatTime(value?: string | null) {
   if (!value) {
     return "No activity yet";
@@ -107,6 +119,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
   const {
     about,
     contactName,
+    isContactAnchor = false,
     phone,
     customerId,
     chatJid,
@@ -161,7 +174,10 @@ export function CustomerPanel(props: CustomerPanelProps) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs uppercase tracking-[0.25em] text-whatsapp-muted">Customer profile</p>
-            <p className="mt-1 truncate text-sm font-medium text-ink">{title}</p>
+            <div className="mt-1 flex min-w-0 items-center gap-2">
+              <p className="truncate text-sm font-medium text-ink">{title}</p>
+              {isContactAnchor ? <VerifiedBadge /> : null}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {onEditProfile ? (
@@ -271,7 +287,10 @@ export function CustomerPanel(props: CustomerPanelProps) {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
                 <div className="min-w-0 flex-1">
-                  <h3 className="break-words text-base sm:text-lg font-semibold leading-tight text-ink">{title}</h3>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h3 className="break-words text-base sm:text-lg font-semibold leading-tight text-ink">{title}</h3>
+                    {isContactAnchor ? <VerifiedBadge /> : null}
+                  </div>
                   <p className="mt-0.5 text-[10px] sm:text-xs uppercase tracking-[0.2em] text-whatsapp-muted">Customer profile</p>
                 </div>
                 {/* Slimmer status: just dot and label */}

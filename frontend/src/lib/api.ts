@@ -67,6 +67,7 @@ export type Customer = {
   whatsapp_account_id?: string | null;
   chat_jid?: string | null;
   contact_name?: string | null;
+  is_contact_anchor?: boolean;
   status: CustomerStatus;
   status_counts?: Record<CustomerStatus, number>;
   notes: string;
