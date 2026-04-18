@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
-import type { Customer } from "../lib/api";
+import { CONTACT_STATUSES, type ContactStatus, type Customer } from "../lib/api";
 
 interface CustomerEditModalProps {
   customer: Customer | null;
@@ -11,6 +11,7 @@ interface CustomerEditModalProps {
     chat_jid?: string | null;
     contact_name?: string | null;
     status: Customer["status"];
+    contact_status?: ContactStatus | null;
     notes: string;
     profile_picture_url?: string | null;
     about?: string | null;
@@ -21,11 +22,31 @@ interface CustomerEditModalProps {
   }) => Promise<void> | void;
 }
 
-const statusOptions: Customer["status"][] = ["new_lead", "interested", "processing", "closed_won", "closed_lost"];
+const contactStatusOptions = [...CONTACT_STATUSES];
+
+function getDefaultContactStatus(customer: Customer | null): ContactStatus {
+  if (customer?.contact_status && CONTACT_STATUSES.includes(customer.contact_status)) {
+    return customer.contact_status;
+  }
+
+  switch (customer?.status) {
+    case "interested":
+      return "\u{1F525} Interested";
+    case "processing":
+      return "\u{1F680} Advanced";
+    case "closed_won":
+      return "\u{1F6D2} Customer";
+    case "closed_lost":
+      return "\u{274C} Lost / Not Interested";
+    case "new_lead":
+    default:
+      return "\u{1F195} Lead";
+  }
+}
 
 type FormState = {
   contact_name: string;
-  status: Customer["status"];
+  contact_status: ContactStatus;
   notes: string;
   profile_picture_url: string;
   about: string;
@@ -38,7 +59,7 @@ type FormState = {
 function buildFormState(customer: Customer | null): FormState {
   return {
     contact_name: customer?.contact_name || "",
-    status: customer?.status || "new_lead",
+    contact_status: getDefaultContactStatus(customer),
     notes: customer?.notes || "",
     profile_picture_url: customer?.profile_picture_url || "",
     about: customer?.about || "",
@@ -84,7 +105,8 @@ export default function CustomerEditModal({ customer, isOpen, onClose, onSave }:
         phone: customer.phone,
         chat_jid: customer.chat_jid || null,
         contact_name: form.contact_name.trim() || null,
-        status: form.status,
+        status: customer.status,
+        contact_status: form.contact_status,
         notes: form.notes,
         profile_picture_url: form.profile_picture_url.trim() || null,
         about: form.about.trim() || null,
@@ -150,13 +172,20 @@ export default function CustomerEditModal({ customer, isOpen, onClose, onSave }:
           </div>
 
           <div className="flex flex-col gap-1">
-            <label htmlFor="status" className="text-xs font-medium">
-              Status
+            <label htmlFor="contact_status" className="text-xs font-medium">
+              Contact Status
             </label>
-            <select id="status" name="status" value={form.status} onChange={handleChange} className="input input-sm" title="Customer status">
-              {statusOptions.map((option) => (
+            <select
+              id="contact_status"
+              name="contact_status"
+              value={form.contact_status}
+              onChange={handleChange}
+              className="input input-sm"
+              title="Contact status"
+            >
+              {contactStatusOptions.map((option) => (
                 <option key={option} value={option}>
-                  {option.replace("_", " ")}
+                  {option}
                 </option>
               ))}
             </select>

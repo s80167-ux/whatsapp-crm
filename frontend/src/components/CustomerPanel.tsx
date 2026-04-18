@@ -1,4 +1,4 @@
-import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type CustomerStatus } from "../lib/api";
+import { CUSTOMER_STATUSES, CUSTOMER_STATUS_LABELS, type ContactStatus, type CustomerStatus } from "../lib/api";
 import { formatPhoneDisplay, formatWhatsAppIdDisplay, getDisplayPhone } from "../lib/display";
 import "./CustomerPanel.css";
 
@@ -12,6 +12,7 @@ export type CustomerPanelProps = {
   updatedAt?: string | null;
   profilePictureUrl: string | null;
   status: CustomerStatus;
+  contactStatus?: ContactStatus | null;
   statusCounts: Record<CustomerStatus, number>;
   notes: string;
   totalMessages?: number;
@@ -126,6 +127,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
     updatedAt,
     profilePictureUrl,
     status,
+    contactStatus,
     statusCounts,
     notes,
     totalMessages,
@@ -157,7 +159,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
   const contactNameLabel = contactName || "Unavailable";
   const whatsappIdLabel = formatWhatsAppIdDisplay(phone, chatJid);
   const phoneLabel = formatPhoneDisplay(phone, chatJid);
-  const currentStatusLabel = CUSTOMER_STATUS_LABELS[status];
+  const currentStatusLabel = contactStatus || CUSTOMER_STATUS_LABELS[status];
   const isInline = variant === "inline";
   const canCollapse = !isInline && Boolean(onToggleMobileCollapse);
   const containerClassName = `glass-panel flex flex-col overflow-hidden p-4 ${isInline ? "h-full shadow-soft" : "h-full min-h-0"}`;

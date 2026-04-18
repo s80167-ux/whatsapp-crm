@@ -235,13 +235,27 @@ function isRuntimeCompatibleWhatsAppAuthDir(value) {
 
 const STATUS_NOTE_MARKER = "[[crm_status:";
 const STATUS_NOTE_REGEX = /^\[\[crm_status:(new_lead|interested|processing|closed_won|closed_lost)\]\]\n?/;
+const CONTACT_STATUS_NOTE_MARKER = "[[crm_contact_status:";
+const CONTACT_STATUS_OPTIONS = [
+  "\u{1F195} Lead",
+  "\u{1F525} Interested",
+  "\u{1F4BC} Prospect",
+  "\u{1F6D2} Customer",
+  "\u{1F501} Repeat Customer",
+  "\u{274C} Lost / Not Interested",
+  "\u{1F680} Advanced",
+  "\u{1F9E0} Internal",
+  "\u{26A0}\u{FE0F} Spam / Invalid",
+  "\u{1F9CA} Cold Lead"
+];
+const CONTACT_STATUS_NOTE_REGEX = /^\[\[crm_contact_status:([^\]]+)\]\]\n?/;
 
 function stripStoredStatusMetadata(notes) {
   if (typeof notes !== "string") {
     return "";
   }
 
-  return notes.replace(STATUS_NOTE_REGEX, "");
+  return notes.replace(STATUS_NOTE_REGEX, "").replace(CONTACT_STATUS_NOTE_REGEX, "");
 }
 
 function getEmbeddedStatus(notes) {
@@ -251,6 +265,16 @@ function getEmbeddedStatus(notes) {
 
   const match = notes.match(STATUS_NOTE_REGEX);
   return match ? match[1] : null;
+}
+
+function getEmbeddedContactStatus(notes) {
+  if (typeof notes !== "string") {
+    return null;
+  }
+
+  const normalizedNotes = notes.replace(STATUS_NOTE_REGEX, "");
+  const match = normalizedNotes.match(CONTACT_STATUS_NOTE_REGEX);
+  return match && CONTACT_STATUS_OPTIONS.includes(match[1]) ? match[1] : null;
 }
 
 function normalizeCustomerStatus(status, notes) {
@@ -333,6 +357,21 @@ function normalizeCustomerStatus(status, notes) {
 
 function toLegacyCustomerStatus(status) {
   switch (status) {
+    case "\u{1F6D2} Customer":
+    case "\u{1F501} Repeat Customer":
+      return "closed_won";
+    case "\u{274C} Lost / Not Interested":
+    case "\u{26A0}\u{FE0F} Spam / Invalid":
+      return "closed_lost";
+    case "\u{1F525} Interested":
+    case "\u{1F4BC} Prospect":
+    case "\u{1F9E0} Internal":
+      return "interested";
+    case "\u{1F680} Advanced":
+      return "processing";
+    case "\u{1F195} Lead":
+    case "\u{1F9CA} Cold Lead":
+      return "new_lead";
     case "processing":
       return "hot";
     case "closed_lost":
@@ -350,6 +389,30 @@ function withStoredStatusMetadata(status, notes) {
   return `${STATUS_NOTE_MARKER}${status}]]\n${sanitizedNotes}`;
 }
 
+function withStoredContactStatusMetadata(contactStatus, notes) {
+  const sanitizedNotes = stripStoredStatusMetadata(notes);
+
+  if (!contactStatus) {
+    return sanitizedNotes;
+  }
+
+  return `${CONTACT_STATUS_NOTE_MARKER}${contactStatus}]]\n${sanitizedNotes}`;
+}
+
+function composeStoredNotes({ status, contactStatus, notes }) {
+  let nextNotes = stripStoredStatusMetadata(notes);
+
+  if (contactStatus) {
+    nextNotes = `${CONTACT_STATUS_NOTE_MARKER}${contactStatus}]]\n${nextNotes}`;
+  }
+
+  if (status) {
+    nextNotes = `${STATUS_NOTE_MARKER}${status}]]\n${nextNotes}`;
+  }
+
+  return nextNotes;
+}
+
 function normalizeCustomerRecord(customer) {
   if (!customer) {
     return customer;
@@ -359,6 +422,7 @@ function normalizeCustomerRecord(customer) {
     ...customer,
     id: customer.id, // Always include UUID
     status: normalizeCustomerStatus(customer.status, customer.notes),
+    contact_status: getEmbeddedContactStatus(customer.notes),
     ...(Object.prototype.hasOwnProperty.call(customer, "notes") ? { notes: stripStoredStatusMetadata(customer.notes) } : {}),
     ...(Object.prototype.hasOwnProperty.call(customer, "premise_address") ? { premise_address: customer.premise_address } : {}),
     ...(Object.prototype.hasOwnProperty.call(customer, "business_type") ? { business_type: customer.business_type } : {}),
@@ -2140,6 +2204,7 @@ async function upsertCustomer({
   is_contact_anchor,
   quality_score,
   status,
+  contact_status,
   notes,
   profile_picture_url,
   about,
@@ -2194,6 +2259,25 @@ async function upsertCustomer({
     phone,
     chat_jid
   });
+
+  const resolvedContactStatus =
+    contact_status === undefined
+      ? getEmbeddedContactStatus(existingCustomer?.notes)
+      : contact_status === null
+        ? null
+        : CONTACT_STATUS_OPTIONS.includes(contact_status)
+          ? contact_status
+          : null;
+
+  if (notes !== undefined || contact_status !== undefined) {
+    writePayload = {
+      ...writePayload,
+      notes: withStoredContactStatusMetadata(
+        resolvedContactStatus,
+        notes !== undefined ? notes : existingCustomer?.notes
+      )
+    };
+  }
 
   const phoneOwnedCustomer = await findExistingCustomerByExactPhone({
     owner_user_id,
@@ -2369,7 +2453,11 @@ async function upsertCustomer({
     const legacyPayload = {
       ...writePayload,
       status: toLegacyCustomerStatus(status),
-      notes: withStoredStatusMetadata(status, notes)
+      notes: composeStoredNotes({
+        status,
+        contactStatus: resolvedContactStatus,
+        notes: notes !== undefined ? notes : writePayload.notes
+      })
     };
 
     if (existingCustomer?.id) {

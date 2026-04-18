@@ -2275,6 +2275,7 @@ function App() {
             : customerDraft?.contact_name || selectedConversation?.contactName || null,
         is_contact_anchor: customerDraft?.is_contact_anchor ?? selectedContact?.is_contact_anchor ?? false,
         status: activeDashboardTab === "contacts" ? selectedContact?.status || customerDraft?.status || "new_lead" : selectedStatus,
+        contact_status: customerDraft?.contact_status ?? selectedContact?.contact_status ?? null,
         notes: selectedNotes,
         profile_picture_url: customerDraft?.profile_picture_url || selectedContact?.profile_picture_url || null,
         about: customerDraft?.about || selectedContact?.about || null,
@@ -2315,6 +2316,7 @@ function App() {
         profilePictureUrl: customerDraft?.profile_picture_url || selectedContact?.profile_picture_url || null,
         saving: savingCustomer,
         status: activeDashboardTab === "contacts" ? selectedContact?.status || customerDraft?.status || "new_lead" : selectedStatus,
+        contactStatus: customerDraft?.contact_status ?? selectedContact?.contact_status ?? null,
         statusCounts: activeDashboardTab === "contacts" ? selectedContact?.status_counts || customerStatusCounts : customerStatusCounts,
         totalMessages: customerDraft?.total_messages ?? selectedContact?.total_messages,
         isContactAnchor: customerDraft?.is_contact_anchor ?? selectedContact?.is_contact_anchor ?? false,
@@ -2347,6 +2349,7 @@ function App() {
             last_message_preview: customerDraft?.last_message_preview || selectedContact?.last_message_preview || null,
             last_direction: customerDraft?.last_direction || selectedContact?.last_direction || null,
             status: selectedStatus,
+            contact_status: customerDraft?.contact_status ?? selectedContact?.contact_status ?? null,
             notes: value,
             // Pass through new fields if present
             premise_address: customerDraft?.premise_address ?? selectedContact?.premise_address,
@@ -2367,6 +2370,7 @@ function App() {
     chat_jid?: string | null;
     contact_name?: string | null;
     status: Customer["status"];
+    contact_status?: Customer["contact_status"];
     notes: string;
     profile_picture_url?: string | null;
     about?: string | null;
@@ -2386,6 +2390,7 @@ function App() {
           contact_name: updatedCustomer.contact_name ?? null,
           chat_jid: updatedCustomer.chat_jid || null,
           status: updatedCustomer.status,
+          contact_status: updatedCustomer.contact_status ?? null,
           notes: updatedCustomer.notes,
           profile_picture_url: updatedCustomer.profile_picture_url ?? null,
           about: updatedCustomer.about ?? null,

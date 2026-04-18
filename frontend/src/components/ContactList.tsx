@@ -1,6 +1,6 @@
 
 import { useMemo, useState } from "react";
-import type { Customer, CustomerStatus } from "../lib/api";
+import type { ContactStatus, Customer, CustomerStatus } from "../lib/api";
 import { getConversationIdentifier, getDisplayName, getDisplayPhone, getResolvedPhone, formatPhoneDisplay } from "../lib/display";
 
 // Utility to detect Android/iOS
@@ -123,6 +123,14 @@ function getStatusLabel(status: CustomerStatus): string {
     case "closed_lost": return "Closed Lost";
     default: return status;
   }
+}
+
+function getContactStatusBadgeClass() {
+  return "border border-amber-200 bg-amber-50 text-amber-800";
+}
+
+function getContactStatusLabel(status: ContactStatus) {
+  return status;
 }
 
 export function ContactList({
@@ -269,6 +277,20 @@ export function ContactList({
                                   {getDisplayName(contact.contact_name, displayPhone || resolvedPhone)}
                                 </p>
                                 {contact.is_contact_anchor ? <VerifiedBadge /> : null}
+                                {contact.contact_status ? (
+                                  <span
+                                    className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[9px] font-semibold shadow-sm ${getContactStatusBadgeClass()}`}
+                                    title={`Contact Status: ${getContactStatusLabel(contact.contact_status)}`}
+                                  >
+                                    {getContactStatusLabel(contact.contact_status)}
+                                  </span>
+                                ) : null}
+                                <span
+                                  className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[9px] font-semibold shadow-sm ${getStatusBadgeClass(contact.status)}`}
+                                  title={`Lead Status: ${getStatusLabel(contact.status)}`}
+                                >
+                                  {getStatusLabel(contact.status)}
+                                </span>
                               </div>
                               <p className={`mt-0.5 truncate text-[11px] font-medium transition-colors ${active ? "text-whatsapp-dark/80" : "text-whatsapp-muted"}`}>
                                 {formatPhoneDisplay(contact.phone, contact.chat_jid)}

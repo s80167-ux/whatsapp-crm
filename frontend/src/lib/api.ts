@@ -4,6 +4,19 @@
 // Remove duplicate export and merge all api methods into a single export below
 export const CUSTOMER_STATUSES = ["new_lead", "interested", "processing", "closed_won", "closed_lost"] as const;
 export type CustomerStatus = (typeof CUSTOMER_STATUSES)[number];
+export const CONTACT_STATUSES = [
+  "\u{1F195} Lead",
+  "\u{1F525} Interested",
+  "\u{1F4BC} Prospect",
+  "\u{1F6D2} Customer",
+  "\u{1F501} Repeat Customer",
+  "\u{274C} Lost / Not Interested",
+  "\u{1F680} Advanced",
+  "\u{1F9E0} Internal",
+  "\u{26A0}\u{FE0F} Spam / Invalid",
+  "\u{1F9CA} Cold Lead"
+] as const;
+export type ContactStatus = (typeof CONTACT_STATUSES)[number];
 export const CUSTOMER_STATUS_LABELS: Record<CustomerStatus, string> = {
   new_lead: "New Lead",
   interested: "Interested",
@@ -69,6 +82,7 @@ export type Customer = {
   contact_name?: string | null;
   is_contact_anchor?: boolean;
   status: CustomerStatus;
+  contact_status?: ContactStatus | null;
   status_counts?: Record<CustomerStatus, number>;
   notes: string;
   updated_at?: string;
@@ -593,6 +607,7 @@ export const api = {
         Customer,
         | "contact_name"
         | "status"
+        | "contact_status"
         | "notes"
         | "profile_picture_url"
         | "about"
@@ -611,6 +626,7 @@ export const api = {
 
     if (payload.contact_name !== undefined) body.contact_name = payload.contact_name;
     if (payload.status !== undefined) body.status = payload.status;
+    if (payload.contact_status !== undefined) body.contact_status = payload.contact_status;
     if (payload.notes !== undefined) body.notes = payload.notes;
     if (payload.profile_picture_url !== undefined) body.profile_picture_url = payload.profile_picture_url;
     if (payload.about !== undefined) body.about = payload.about;

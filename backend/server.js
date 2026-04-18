@@ -16,6 +16,18 @@ const { getCustomers, countCustomers, ...otherSupabaseExports } = require("./sup
 const cors = require("cors");
 const multer = require("multer");
 const VALID_CUSTOMER_STATUSES = ["new_lead", "interested", "processing", "closed_won", "closed_lost"];
+const VALID_CONTACT_STATUSES = [
+  "\u{1F195} Lead",
+  "\u{1F525} Interested",
+  "\u{1F4BC} Prospect",
+  "\u{1F6D2} Customer",
+  "\u{1F501} Repeat Customer",
+  "\u{274C} Lost / Not Interested",
+  "\u{1F680} Advanced",
+  "\u{1F9E0} Internal",
+  "\u{26A0}\u{FE0F} Spam / Invalid",
+  "\u{1F9CA} Cold Lead"
+];
 const {
   createDashboardSession,
   registerUser,
@@ -755,6 +767,7 @@ app.put("/customers/by-id/:contact_id", requireAuth, bindAuthenticatedWhatsAppOw
       phone,
       contact_name,
       status,
+      contact_status,
       notes,
       profile_picture_url,
       about,
@@ -849,6 +862,7 @@ app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
     const {
       contact_name,
       status,
+      contact_status,
       notes,
       profile_picture_url,
       about,
@@ -868,6 +882,10 @@ app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
       return res.status(400).json({ error: "Status must be one of: new_lead, interested, processing, closed_won, closed_lost." });
     }
 
+    if (contact_status !== undefined && contact_status !== null && !VALID_CONTACT_STATUSES.includes(contact_status)) {
+      return res.status(400).json({ error: "Invalid contact status." });
+    }
+
     await upsertCustomer({
       owner_user_id: req.user.sub,
       whatsapp_account_id: whatsappAccountId,
@@ -875,6 +893,8 @@ app.put("/customers/:phone", requireAuth, bindAuthenticatedWhatsAppOwner, async 
       chat_jid: chatJid,
       contact_name: typeof contact_name === "string" ? contact_name : contact_name === null ? null : undefined,
       status,
+      contact_status:
+        typeof contact_status === "string" ? contact_status : contact_status === null ? null : undefined,
       notes: typeof notes === "string" ? notes : "",
       profile_picture_url:
         typeof profile_picture_url === "string" ? profile_picture_url : profile_picture_url === null ? null : undefined,
