@@ -709,14 +709,16 @@ app.get("/customers", requireAuth, bindAuthenticatedWhatsAppOwner, async (req, r
   try {
     const page = Number(req.query.page) || 1;
     const pageSize = Number(req.query.pageSize) || 10;
+    const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
     const limit = pageSize;
     const offset = (page - 1) * pageSize;
     const data = await getCustomers({
       owner_user_id: req.user.sub,
+      search,
       limit,
       offset
     });
-    const total = await countCustomers({ owner_user_id: req.user.sub });
+    const total = await countCustomers({ owner_user_id: req.user.sub, search });
     res.json({ data, total });
   } catch (error) {
     console.error("Failed to fetch customers:", error);

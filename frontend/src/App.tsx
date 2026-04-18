@@ -41,6 +41,21 @@ function sortConversationsByLatestMessage(conversations: Conversation[]) {
   );
 }
 
+function sortContactsByDisplayPriority(contacts: Customer[]) {
+  return [...contacts].sort((left, right) => {
+    const leftHasName = !!(left.contact_name && left.contact_name.trim());
+    const rightHasName = !!(right.contact_name && right.contact_name.trim());
+
+    if (leftHasName !== rightHasName) {
+      return rightHasName ? 1 : -1;
+    }
+
+    const leftTime = left.last_message_at || left.updated_at || "";
+    const rightTime = right.last_message_at || right.updated_at || "";
+    return rightTime.localeCompare(leftTime);
+  });
+}
+
 function isSameCustomerSelection(
   customer: Customer | null,
   targetPhone: string | null,
@@ -230,6 +245,11 @@ function App() {
   const [contactsTotal, setContactsTotal] = useState(0);
   const [contactsQuery, setContactsQuery] = useState("");
 
+  function handleContactsQueryChange(nextQuery: string) {
+    setContactsPage(1);
+    setContactsQuery(nextQuery);
+  }
+
   // Fetch contacts from backend with pagination and search
   const fetchContacts = async ({ page = contactsPage, query = contactsQuery, silent = false } = {}) => {
     if (!token || activeDashboardTab !== "contacts") return;
@@ -241,18 +261,7 @@ function App() {
         pageSize: CONTACTS_PAGE_SIZE,
         search: query
       }, token);
-      // Sort: contacts with a name at the top, then by latest message or updated time
-      const sorted = [...data].sort((a, b) => {
-        // 1. Contacts with a name come first
-        const aHasName = !!(a.contact_name && a.contact_name.trim());
-        const bHasName = !!(b.contact_name && b.contact_name.trim());
-        if (aHasName !== bHasName) return bHasName ? 1 : -1;
-        // 2. Then by latest message or updated time
-        const aTime = a.last_message_at || a.updated_at || "";
-        const bTime = b.last_message_at || b.updated_at || "";
-        return bTime.localeCompare(aTime);
-      });
-      setContacts(sorted);
+      setContacts(sortContactsByDisplayPriority(data));
       setContactsTotal(total);
       setContactsPage(page);
     } catch (error) {
@@ -772,27 +781,16 @@ function App() {
         },
         token
       );
-      setCustomerDraft(savedCustomer);
-      setContacts((current) =>
-        current.map((contact) => {
-          const contactId = getConversationIdentifier(contact.phone, contact.chat_jid);
-          const savedId = getConversationIdentifier(savedCustomer.phone, savedCustomer.chat_jid);
-
-          if (contactId !== savedId) {
-            return contact;
-          }
-
-          return {
-            ...contact,
-            ...savedCustomer
-          };
-        })
-      );
+      syncSavedCustomer(savedCustomer);
       updateConversationStatus({
         phone: savedCustomer.phone,
         chatJid: savedCustomer.chat_jid,
         status: savedCustomer.status
       });
+
+      if (activeDashboardTab === "contacts" && contactsPage !== 1) {
+        await fetchContacts({ page: 1, query: contactsQuery, silent: true });
+      }
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to save customer.");
     } finally {
@@ -2204,6 +2202,57 @@ function App() {
     setSaveTimer(timeout);
   }
 
+  function syncSavedCustomer(savedCustomer: Customer) {
+    const savedConversationId = getConversationIdentifier(savedCustomer.phone, savedCustomer.chat_jid);
+    const normalizedSavedChatJid = String(savedCustomer.chat_jid || "").trim();
+
+    setCustomerDraft(savedCustomer);
+
+    if (savedConversationId) {
+      setSelectedContactConversationId(savedConversationId);
+    }
+
+    setSelectedContactChatJid(savedCustomer.chat_jid || null);
+
+    setContacts((current) => {
+      const nextContacts = current.filter((contact) => {
+        const contactConversationId = getConversationIdentifier(contact.phone, contact.chat_jid);
+        const normalizedContactChatJid = String(contact.chat_jid || "").trim();
+
+        if (savedConversationId && contactConversationId === savedConversationId) {
+          return false;
+        }
+
+        if (normalizedSavedChatJid && normalizedContactChatJid === normalizedSavedChatJid) {
+          return false;
+        }
+
+        return true;
+      });
+
+      return sortContactsByDisplayPriority([savedCustomer, ...nextContacts]);
+    });
+
+    setConversations((current) =>
+      current.map((conversation) => {
+        const conversationId = getConversationIdentifier(conversation.phone, conversation.chatJid);
+        const normalizedConversationChatJid = String(conversation.chatJid || "").trim();
+        const matchesConversation = Boolean(savedConversationId && conversationId === savedConversationId);
+        const matchesChatJid = Boolean(normalizedSavedChatJid && normalizedConversationChatJid === normalizedSavedChatJid);
+
+        if (!matchesConversation && !matchesChatJid) {
+          return conversation;
+        }
+
+        return {
+          ...conversation,
+          contactName: savedCustomer.contact_name ?? null,
+          status: savedCustomer.status
+        };
+      })
+    );
+  }
+
   const activeCustomerPhone =
     activeDashboardTab === "contacts"
       ? selectedContact?.phone || customerDraft?.phone || selectedContactConversationId
@@ -2349,22 +2398,7 @@ function App() {
         token
       );
 
-      setCustomerDraft(savedCustomer);
-      setContacts((current) =>
-        current.map((contact) => {
-          const contactId = getConversationIdentifier(contact.phone, contact.chat_jid);
-          const savedId = getConversationIdentifier(savedCustomer.phone, savedCustomer.chat_jid);
-
-          if (contactId !== savedId) {
-            return contact;
-          }
-
-          return {
-            ...contact,
-            ...savedCustomer
-          };
-        })
-      );
+      syncSavedCustomer(savedCustomer);
       updateConversationStatus({
         phone: savedCustomer.phone,
         chatJid: savedCustomer.chat_jid,
@@ -2372,7 +2406,7 @@ function App() {
       });
 
       if (activeDashboardTab === "contacts") {
-        await fetchContacts({ page: contactsPage, query: contactsQuery, silent: true });
+        await fetchContacts({ page: 1, query: contactsQuery, silent: true });
       }
     } catch (error) {
       setDashboardError(error instanceof Error ? error.message : "Failed to save customer.");
@@ -2559,7 +2593,7 @@ function App() {
                       pageSize={CONTACTS_PAGE_SIZE}
                       total={contactsTotal}
                       onPageChange={(page) => fetchContacts({ page })}
-                      onQueryChange={setContactsQuery}
+                      onQueryChange={handleContactsQueryChange}
                       query={contactsQuery}
                       onEditContact={openContactEditor}
                       onRefresh={() => fetchContacts({ page: contactsPage, query: contactsQuery })}

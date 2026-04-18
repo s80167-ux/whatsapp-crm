@@ -1,5 +1,40 @@
+function escapeIlikePattern(value) {
+  return String(value || "").replace(/[\\%_]/g, "\\$&");
+}
+
+function applyCustomerSearchFilter(query, search) {
+  const normalizedSearch = String(search || "").trim();
+
+  if (!normalizedSearch) {
+    return query;
+  }
+
+  const escaped = escapeIlikePattern(normalizedSearch);
+  const pattern = `%${escaped}%`;
+
+  return query.or(
+    [
+      `contact_name.ilike.${pattern}`,
+      `phone.ilike.${pattern}`,
+      `about.ilike.${pattern}`,
+      `notes.ilike.${pattern}`,
+      `last_message_preview.ilike.${pattern}`,
+      `contact_id.ilike.${pattern}`
+    ].join(",")
+  );
+}
+
 // Fetch customers with optional filters and pagination
-async function getCustomers({ owner_user_id, whatsapp_account_id, phone, contact_id, contact_name, limit = 10, offset = 0 }) {
+async function getCustomers({
+  owner_user_id,
+  whatsapp_account_id,
+  phone,
+  contact_id,
+  contact_name,
+  search,
+  limit = 10,
+  offset = 0
+}) {
   // Cannot order by messages.created_at in PostgREST; fallback to updated_at only
   // If you want to sort by latest message, do it in frontend after fetching
   let query = supabase
@@ -9,37 +44,49 @@ async function getCustomers({ owner_user_id, whatsapp_account_id, phone, contact
     .order("updated_at", { ascending: false })
     .range(offset, offset + limit - 1);
 
+  query = applyCustomerSearchFilter(query, search);
+
   let { data, error } = await query;
   if (
     isMissingRelationError(error, "customer_canonical_profiles") ||
     isMissingColumnError(error, "customer_canonical_profiles.whatsapp_account_id")
   ) {
-    ({ data, error } = await supabase
+    let fallbackQuery = supabase
       .from("customers")
       .select("*", { count: "exact" })
       .eq("owner_user_id", owner_user_id)
       .order("updated_at", { ascending: false })
-      .range(offset, offset + limit - 1));
+      .range(offset, offset + limit - 1);
+
+    fallbackQuery = applyCustomerSearchFilter(fallbackQuery, search);
+    ({ data, error } = await fallbackQuery);
   }
   throwIfTenantSchemaError(error, "customers.owner_user_id");
   if (error) throw error;
   return (data || []).map(normalizeCustomerRecord);
 }
 
-async function countCustomers({ owner_user_id }) {
-  let { count, error } = await supabase
+async function countCustomers({ owner_user_id, search }) {
+  let query = supabase
     .from("customer_canonical_profiles")
     .select("*", { count: "exact", head: true })
     .eq("owner_user_id", owner_user_id);
+
+  query = applyCustomerSearchFilter(query, search);
+
+  let { count, error } = await query;
 
   if (
     isMissingRelationError(error, "customer_canonical_profiles") ||
     isMissingColumnError(error, "customer_canonical_profiles.whatsapp_account_id")
   ) {
-    ({ count, error } = await supabase
+    let fallbackQuery = supabase
       .from("customers")
       .select("*", { count: "exact", head: true })
-      .eq("owner_user_id", owner_user_id));
+      .eq("owner_user_id", owner_user_id);
+
+    fallbackQuery = applyCustomerSearchFilter(fallbackQuery, search);
+    ({ count, error } = await fallbackQuery);
   }
 
   throwIfTenantSchemaError(error, "customers.owner_user_id");
