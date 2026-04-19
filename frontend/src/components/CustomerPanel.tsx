@@ -253,15 +253,15 @@ export function CustomerPanel(props: CustomerPanelProps) {
               ) : null}
               {canCollapse ? (
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-whatsapp-canvas text-whatsapp-muted shadow-soft transition hover:bg-white hover:text-whatsapp-deep">
-                  {/* Minimal plus/minus icon for collapse/expand */}
+                  {/* Show the action the toggle will perform next. */}
                   {mobileCollapsed ? (
                     <svg className="h-4 w-4 transition" fill="none" viewBox="0 0 24 24">
                       <rect x="5" y="11" width="14" height="2" rx="1" fill="currentColor" />
+                      <rect x="11" y="5" width="2" height="14" rx="1" fill="currentColor" />
                     </svg>
                   ) : (
                     <svg className="h-4 w-4 transition" fill="none" viewBox="0 0 24 24">
                       <rect x="5" y="11" width="14" height="2" rx="1" fill="currentColor" />
-                      <rect x="11" y="5" width="2" height="14" rx="1" fill="currentColor" />
                     </svg>
                   )}
                 </span>
