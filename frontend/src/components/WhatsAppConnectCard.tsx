@@ -782,16 +782,18 @@ export function WhatsAppConnectCard({
 
   if (compact) {
     return (
-      <div className="relative overflow-visible px-1 py-2 sm:p-2 lg:min-w-[210px] lg:px-2 lg:py-1.5">
+      <div className="relative overflow-visible px-1 py-1 sm:px-1.5 sm:py-1 lg:min-w-[210px] lg:px-1.5 lg:py-0.5">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-[10px] uppercase tracking-[0.2em] text-whatsapp-muted">WhatsApp</p>
-            <p className="mt-1 text-sm font-semibold leading-5 text-ink">{compactStatusTitle(status)}</p>
-            {activeNumberLabel ? (
-              <p className="mt-0.5 truncate text-[11px] font-medium text-whatsapp-muted">{activeNumberLabel}</p>
-            ) : null}
+            <div className="mt-1 flex min-w-0 items-baseline gap-2">
+              <p className="truncate text-sm font-semibold leading-5 text-ink">{compactStatusTitle(status)}</p>
+              {activeNumberLabel ? (
+                <p className="truncate text-[11px] font-medium text-whatsapp-muted">{activeNumberLabel}</p>
+              ) : null}
+            </div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             {connectIconButton}
             {profileIconButton}
             {qrIconButton}

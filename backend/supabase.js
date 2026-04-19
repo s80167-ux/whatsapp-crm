@@ -22,6 +22,88 @@ function applyCustomerSearchFilter(query, search) {
   );
 }
 
+function normalizeScopeInput(scopeOrUserId) {
+  if (scopeOrUserId && typeof scopeOrUserId === "object") {
+    return {
+      userId: String(scopeOrUserId.userId || scopeOrUserId.id || scopeOrUserId.sub || "").trim() || null,
+      organizationId:
+        String(scopeOrUserId.organizationId || scopeOrUserId.organization_id || "").trim() || null,
+      role: String(scopeOrUserId.role || "user").trim().toLowerCase() || "user"
+    };
+  }
+
+  const normalizedUserId = String(scopeOrUserId || "").trim() || null;
+  return {
+    userId: normalizedUserId,
+    organizationId: null,
+    role: "user"
+  };
+}
+
+function applyLegacyOwnerFilter(query, scopeOrUserId, ownerColumn = "owner_user_id") {
+  const scope = normalizeScopeInput(scopeOrUserId);
+  return scope.userId ? query.eq(ownerColumn, scope.userId) : query;
+}
+
+function applyRoleScopedFilter(
+  query,
+  scopeOrUserId,
+  {
+    organizationColumn = "organization_id",
+    createdByColumn = "created_by",
+    assignedToColumn = "assigned_to",
+    legacyOwnerColumn = "owner_user_id",
+    allowAgentAssignedScope = true
+  } = {}
+) {
+  const scope = normalizeScopeInput(scopeOrUserId);
+
+  if (!scope.organizationId) {
+    return applyLegacyOwnerFilter(query, scope, legacyOwnerColumn);
+  }
+
+  if (scope.role === "super_admin") {
+    return query;
+  }
+
+  let scopedQuery = query.eq(organizationColumn, scope.organizationId);
+
+  if (scope.role === "admin") {
+    return scopedQuery;
+  }
+
+  if (scope.role === "agent" && allowAgentAssignedScope && assignedToColumn) {
+    return scopedQuery.eq(assignedToColumn, scope.userId);
+  }
+
+  return scopedQuery.eq(createdByColumn, scope.userId);
+}
+
+function buildTenantWriteColumns(
+  scopeOrUserId,
+  {
+    createdBy,
+    assignedTo,
+    includeAssignedTo = false,
+    legacyOwnerUserId = null
+  } = {}
+) {
+  const scope = normalizeScopeInput(scopeOrUserId);
+  const resolvedCreatedBy = String(createdBy || scope.userId || "").trim() || null;
+  const resolvedAssignedTo = String(assignedTo || "").trim() || resolvedCreatedBy;
+  const payload = {
+    ...(scope.organizationId ? { organization_id: scope.organizationId } : {}),
+    ...(resolvedCreatedBy ? { created_by: resolvedCreatedBy } : {}),
+    ...(legacyOwnerUserId || resolvedCreatedBy ? { owner_user_id: legacyOwnerUserId || resolvedCreatedBy } : {})
+  };
+
+  if (includeAssignedTo && resolvedAssignedTo) {
+    payload.assigned_to = resolvedAssignedTo;
+  }
+
+  return payload;
+}
+
 // Fetch customers with optional filters and pagination
 async function getCustomers({
   owner_user_id,
@@ -33,14 +115,18 @@ async function getCustomers({
   limit = 10,
   offset = 0
 }) {
+  const scope = normalizeScopeInput(owner_user_id);
   // Cannot order by messages.created_at in PostgREST; fallback to updated_at only
   // If you want to sort by latest message, do it in frontend after fetching
-  let query = supabase
+  let query = applyRoleScopedFilter(
+    supabase
     .from("customer_canonical_profiles")
     .select("*", { count: "exact" })
-    .eq("owner_user_id", owner_user_id)
     .order("updated_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+    .range(offset, offset + limit - 1),
+    scope
+  );
+  query = applyWhatsAppAccountFilter(query, whatsapp_account_id);
 
   query = applyCustomerSearchFilter(query, search);
 
@@ -52,9 +138,10 @@ async function getCustomers({
     let fallbackQuery = supabase
       .from("customers")
       .select("*", { count: "exact" })
-      .eq("owner_user_id", owner_user_id)
       .order("updated_at", { ascending: false })
       .range(offset, offset + limit - 1);
+    fallbackQuery = applyRoleScopedFilter(fallbackQuery, scope);
+    fallbackQuery = applyWhatsAppAccountFilter(fallbackQuery, whatsapp_account_id);
 
     fallbackQuery = applyCustomerSearchFilter(fallbackQuery, search);
     ({ data, error } = await fallbackQuery);
@@ -65,10 +152,13 @@ async function getCustomers({
 }
 
 async function countCustomers({ owner_user_id, search }) {
-  let query = supabase
+  const scope = normalizeScopeInput(owner_user_id);
+  let query = applyRoleScopedFilter(
+    supabase
     .from("customer_canonical_profiles")
-    .select("*", { count: "exact", head: true })
-    .eq("owner_user_id", owner_user_id);
+    .select("*", { count: "exact", head: true }),
+    scope
+  );
 
   query = applyCustomerSearchFilter(query, search);
 
@@ -80,8 +170,8 @@ async function countCustomers({ owner_user_id, search }) {
   ) {
     let fallbackQuery = supabase
       .from("customers")
-      .select("*", { count: "exact", head: true })
-      .eq("owner_user_id", owner_user_id);
+      .select("*", { count: "exact", head: true });
+    fallbackQuery = applyRoleScopedFilter(fallbackQuery, scope);
 
     fallbackQuery = applyCustomerSearchFilter(fallbackQuery, search);
     ({ count, error } = await fallbackQuery);
@@ -93,18 +183,25 @@ async function countCustomers({ owner_user_id, search }) {
 }
 // Fetch a customer by contact_id and owner_user_id
 async function getCustomerByContactId(contact_id, owner_user_id, whatsappAccountId = null) {
-  let query = supabase
+  const scope = normalizeScopeInput(owner_user_id);
+  let query = applyRoleScopedFilter(
+    supabase
     .from("customer_canonical_profiles")
     .select("*")
-    .eq("owner_user_id", owner_user_id)
-    .eq("contact_id", contact_id);
+    .eq("contact_id", contact_id),
+    scope
+  );
+  query = applyWhatsAppAccountFilter(query, whatsappAccountId);
   let { data, error } = await query.maybeSingle();
   if (isMissingRelationError(error, "customer_canonical_profiles")) {
-    query = supabase
+    query = applyRoleScopedFilter(
+      supabase
       .from("customers")
       .select("*")
-      .eq("owner_user_id", owner_user_id)
-      .eq("contact_id", contact_id);
+      .eq("contact_id", contact_id),
+      scope
+    );
+    query = applyWhatsAppAccountFilter(query, whatsappAccountId);
     ({ data, error } = await query.maybeSingle());
   }
   throwIfTenantSchemaError(error, "customers.owner_user_id");
@@ -114,20 +211,27 @@ async function getCustomerByContactId(contact_id, owner_user_id, whatsappAccount
 
 // Fetch messages by contact_id and owner_user_id
 async function getMessagesByContactId(contact_id, owner_user_id, chat_jid = null, whatsappAccountId = null) {
+  const scope = normalizeScopeInput(owner_user_id);
   // Find the customer by contact_id
-  let customerQuery = supabase
+  let customerQuery = applyRoleScopedFilter(
+    supabase
     .from("customer_canonical_profiles")
     .select("phone, chat_jid, status, contact_name, unread_count, profile_picture_url, updated_at, whatsapp_account_id")
-    .eq("owner_user_id", owner_user_id)
-    .eq("contact_id", contact_id);
+    .eq("contact_id", contact_id),
+    scope
+  );
+  customerQuery = applyWhatsAppAccountFilter(customerQuery, whatsappAccountId);
   let { data: customer, error: customerError } = await customerQuery.maybeSingle();
 
   if (isMissingRelationError(customerError, "customer_canonical_profiles")) {
-    customerQuery = supabase
+    customerQuery = applyRoleScopedFilter(
+      supabase
       .from("customers")
       .select("phone, chat_jid, status, contact_name, unread_count, profile_picture_url, updated_at, whatsapp_account_id")
-      .eq("owner_user_id", owner_user_id)
-      .eq("contact_id", contact_id);
+      .eq("contact_id", contact_id),
+      scope
+    );
+    customerQuery = applyWhatsAppAccountFilter(customerQuery, whatsappAccountId);
     ({ data: customer, error: customerError } = await customerQuery.maybeSingle());
   }
 
@@ -136,12 +240,14 @@ async function getMessagesByContactId(contact_id, owner_user_id, chat_jid = null
   if (!customer) return [];
 
   // Now fetch messages by phone and owner_user_id (optionally filter by chat_jid)
-  let query = supabase
+  let query = applyRoleScopedFilter(
+    supabase
     .from("messages")
     .select("*")
-    .eq("owner_user_id", owner_user_id)
     .eq("phone", customer.phone)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }),
+    scope
+  );
   if (chat_jid) query = query.eq("chat_jid", chat_jid);
   query = applyWhatsAppAccountFilter(query, whatsappAccountId);
   const { data: messages, error: msgError } = await query;
@@ -305,6 +411,9 @@ function normalizeCustomerStatus(status, notes) {
   // Upsert (insert or update) a canonical profile by contact_id and owner_user_id
   async function upsertCanonicalProfile({
     owner_user_id,
+    organization_id,
+    created_by,
+    assigned_to,
     contact_id,
     phone,
     contact_name,
@@ -316,9 +425,22 @@ function normalizeCustomerStatus(status, notes) {
     whatsapp_account_id,
     ...rest
   }) {
+    const scope = normalizeScopeInput(owner_user_id);
     // Build payload
     const payload = {
-      owner_user_id,
+      ...buildTenantWriteColumns(
+        {
+          ...scope,
+          organization_id,
+          organizationId: organization_id || scope.organizationId
+        },
+        {
+          createdBy: created_by || scope.userId,
+          assignedTo: assigned_to,
+          includeAssignedTo: true,
+          legacyOwnerUserId: scope.userId || owner_user_id
+        }
+      ),
       contact_id,
       ...(phone !== undefined ? { phone } : {}),
       ...(contact_name !== undefined ? { contact_name } : {}),
@@ -333,13 +455,14 @@ function normalizeCustomerStatus(status, notes) {
     };
 
     // Try update first
-    let { data, error } = await supabase
+    let { data, error } = await applyRoleScopedFilter(
+      supabase
       .from("customer_canonical_profiles")
       .update(payload)
-      .eq("owner_user_id", owner_user_id)
       .eq("contact_id", contact_id)
-      .select("*")
-      .maybeSingle();
+      .select("*"),
+      scope
+    ).maybeSingle();
 
     // If not found, insert
     if ((!data || (Array.isArray(data) && data.length === 0)) && !error) {
@@ -851,6 +974,7 @@ function shouldPreferConversationCustomerCandidate(currentCustomer, nextCustomer
 }
 
 async function listConversationCustomerRows(ownerUserId) {
+  const scope = normalizeScopeInput(ownerUserId);
   const relations = ["customer_canonical_profiles", "customers"];
   const selectColumns = "id, phone, chat_jid, status, contact_name, unread_count, profile_picture_url, updated_at, whatsapp_account_id";
   const pageSize = 1000;
@@ -860,13 +984,15 @@ async function listConversationCustomerRows(ownerUserId) {
     let offset = 0;
 
     while (true) {
-      const { data, error } = await supabase
+      const { data, error } = await applyRoleScopedFilter(
+        supabase
         .from(relation)
         .select(selectColumns)
-        .eq("owner_user_id", ownerUserId)
         .order("updated_at", { ascending: false })
         .order("id", { ascending: false })
-        .range(offset, offset + pageSize - 1);
+        .range(offset, offset + pageSize - 1),
+        scope
+      );
 
       if (
         relation === "customer_canonical_profiles" &&
@@ -985,7 +1111,7 @@ async function getProfileByUserId(userId) {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, email, full_name, avatar_url, last_sign_in_at, created_at, updated_at")
+    .select("id, email, full_name, avatar_url, last_sign_in_at, created_at, updated_at, organization_id, role, organization:organizations(id, name, status)")
     .eq("id", normalizedUserId)
     .maybeSingle();
 
@@ -1020,16 +1146,20 @@ function buildConversationKey(whatsappAccountId, phone, chatJid) {
 }
 
 async function findMessageByWhatsAppId(owner_user_id, wa_message_id, whatsapp_account_id = null) {
-  if (!owner_user_id || !wa_message_id) {
+  const scope = normalizeScopeInput(owner_user_id);
+
+  if (!scope.userId || !wa_message_id) {
     return null;
   }
 
-  let scopedQuery = supabase
+  let scopedQuery = applyRoleScopedFilter(
+    supabase
     .from("messages")
     .select("*")
-    .eq("owner_user_id", owner_user_id)
     .eq("wa_message_id", wa_message_id)
-    .limit(1);
+    .limit(1),
+    scope
+  );
 
   scopedQuery = applyWhatsAppAccountFilter(scopedQuery, whatsapp_account_id);
 
@@ -1057,7 +1187,7 @@ async function findMessageByWhatsAppId(owner_user_id, wa_message_id, whatsapp_ac
   const unscopedResult = await supabase
     .from("messages")
     .select("*")
-    .eq("owner_user_id", owner_user_id)
+    .eq("owner_user_id", scope.userId)
     .eq("wa_message_id", wa_message_id)
     .limit(1)
     .maybeSingle();
@@ -1090,12 +1220,12 @@ async function findExistingMessage({ owner_user_id, whatsapp_account_id, phone, 
   let fallbackQuery = supabase
     .from("messages")
     .select("*")
-    .eq("owner_user_id", owner_user_id)
     .eq("phone", phone)
     .eq("message", message)
     .eq("direction", direction)
     .eq("created_at", created_at)
     .limit(1);
+  fallbackQuery = applyRoleScopedFilter(fallbackQuery, owner_user_id);
 
   if (chat_jid) {
     fallbackQuery = fallbackQuery.eq("chat_jid", chat_jid);
@@ -1114,12 +1244,12 @@ async function findExistingMessage({ owner_user_id, whatsapp_account_id, phone, 
     fallbackQuery = supabase
       .from("messages")
       .select("*")
-      .eq("owner_user_id", owner_user_id)
       .eq("phone", phone)
       .eq("message", message)
       .eq("direction", direction)
       .eq("created_at", created_at)
       .limit(1);
+    fallbackQuery = applyRoleScopedFilter(fallbackQuery, owner_user_id);
 
     const noChatJidFallback = await fallbackQuery.maybeSingle();
 
@@ -1140,14 +1270,19 @@ async function findExistingMessage({ owner_user_id, whatsapp_account_id, phone, 
 }
 
 async function findExistingCustomer({ owner_user_id, whatsapp_account_id, phone, chat_jid }) {
+  const scope = normalizeScopeInput(owner_user_id);
+
   if (chat_jid) {
-    let byChatJidQuery = supabase
+    let byChatJidQuery = applyRoleScopedFilter(
+      supabase
       .from("customers")
       .select("*")
-      .eq("owner_user_id", owner_user_id)
       .eq("chat_jid", chat_jid)
       .order("updated_at", { ascending: false })
-      .limit(1);
+      .limit(1),
+      scope
+    );
+    byChatJidQuery = applyWhatsAppAccountFilter(byChatJidQuery, whatsapp_account_id);
 
     const byChatJid = await byChatJidQuery.maybeSingle();
 
@@ -1167,13 +1302,16 @@ async function findExistingCustomer({ owner_user_id, whatsapp_account_id, phone,
   }
 
   const lookupValues = await getPhoneLookupValues(phone, chat_jid || null);
-  let existingQuery = supabase
+  let existingQuery = applyRoleScopedFilter(
+    supabase
     .from("customers")
     .select("*")
-    .eq("owner_user_id", owner_user_id)
     .in("phone", lookupValues)
     .order("updated_at", { ascending: false })
-    .limit(1);
+    .limit(1),
+    scope
+  );
+  existingQuery = applyWhatsAppAccountFilter(existingQuery, whatsapp_account_id);
 
   const existing = await existingQuery.maybeSingle();
 
@@ -1188,18 +1326,22 @@ async function findExistingCustomer({ owner_user_id, whatsapp_account_id, phone,
 
 async function findExistingCustomerByExactPhone({ owner_user_id, whatsapp_account_id, phone }) {
   const normalizedPhone = String(phone || "").trim();
+  const scope = normalizeScopeInput(owner_user_id);
 
   if (!normalizedPhone) {
     return null;
   }
 
-  let existingQuery = supabase
+  let existingQuery = applyRoleScopedFilter(
+    supabase
     .from("customers")
     .select("*")
-    .eq("owner_user_id", owner_user_id)
     .eq("phone", normalizedPhone)
     .order("updated_at", { ascending: false })
-    .limit(1);
+    .limit(1),
+    scope
+  );
+  existingQuery = applyWhatsAppAccountFilter(existingQuery, whatsapp_account_id);
 
   const existing = await existingQuery.maybeSingle();
 
@@ -1271,11 +1413,14 @@ async function deleteCustomerById({ owner_user_id, customerId }) {
     return;
   }
 
-  const { error } = await supabase
+  let query = applyRoleScopedFilter(
+    supabase
     .from("customers")
     .delete()
-    .eq("owner_user_id", owner_user_id)
-    .eq("id", customerId);
+    .eq("id", customerId),
+    owner_user_id
+  );
+  const { error } = await query;
 
   throwIfTenantSchemaError(error, "customers.owner_user_id");
 
@@ -1284,7 +1429,8 @@ async function deleteCustomerById({ owner_user_id, customerId }) {
   }
 }
 
-async function saveMessage({ owner_user_id, whatsapp_account_id, phone, chat_jid, wa_message_id, message, direction, send_status, created_at, media_type, media_mime_type, media_file_name, media_data_url }) {
+async function saveMessage({ owner_user_id, whatsapp_account_id, organization_id, created_by, assigned_to, phone, chat_jid, wa_message_id, message, direction, send_status, created_at, media_type, media_mime_type, media_file_name, media_data_url }) {
+  const scope = normalizeScopeInput(owner_user_id);
   const existingMessage = await findExistingMessage({
     owner_user_id,
     whatsapp_account_id,
@@ -1303,7 +1449,19 @@ async function saveMessage({ owner_user_id, whatsapp_account_id, phone, chat_jid
   let query = supabase
     .from("messages")
     .insert({
-      owner_user_id,
+      ...buildTenantWriteColumns(
+        {
+          ...scope,
+          organization_id,
+          organizationId: organization_id || scope.organizationId
+        },
+        {
+          createdBy: created_by || scope.userId,
+          assignedTo: assigned_to,
+          includeAssignedTo: true,
+          legacyOwnerUserId: scope.userId || owner_user_id
+        }
+      ),
       ...(whatsapp_account_id ? { whatsapp_account_id } : {}),
       phone,
       ...(chat_jid ? { chat_jid } : {}),
@@ -1337,7 +1495,19 @@ async function saveMessage({ owner_user_id, whatsapp_account_id, phone, chat_jid
     ({ data, error } = await supabase
       .from("messages")
       .insert({
-        owner_user_id,
+        ...buildTenantWriteColumns(
+          {
+            ...scope,
+            organization_id,
+            organizationId: organization_id || scope.organizationId
+          },
+          {
+            createdBy: created_by || scope.userId,
+            assignedTo: assigned_to,
+            includeAssignedTo: true,
+            legacyOwnerUserId: scope.userId || owner_user_id
+          }
+        ),
         phone,
         message,
         direction,
@@ -1441,27 +1611,32 @@ async function updateOutgoingMessageStatus({ owner_user_id, whatsapp_account_id,
 }
 
 async function getMessagesByPhone(phone, ownerUserId, chatJid, whatsappAccountId = null) {
+  const scope = normalizeScopeInput(ownerUserId);
   const lookupValues = await getPhoneLookupValues(phone, chatJid || null);
   const resolvedPhone = await resolveWhatsAppPhone(phone, chatJid || null);
   let data;
   let error;
 
   if (chatJid) {
-    let byChatJidQuery = supabase
+    let byChatJidQuery = applyRoleScopedFilter(
+      supabase
       .from("messages")
       .select("*")
-      .eq("owner_user_id", ownerUserId)
       .eq("chat_jid", chatJid)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true }),
+      scope
+    );
     byChatJidQuery = applyWhatsAppAccountFilter(byChatJidQuery, whatsappAccountId);
 
     let byPhoneQuery = lookupValues.length
-      ? supabase
+      ? applyRoleScopedFilter(
+          supabase
           .from("messages")
           .select("*")
-          .eq("owner_user_id", ownerUserId)
           .in("phone", lookupValues)
-          .order("created_at", { ascending: true })
+          .order("created_at", { ascending: true }),
+          scope
+        )
       : Promise.resolve({ data: [], error: null });
 
     if (lookupValues.length) {
@@ -1501,24 +1676,28 @@ async function getMessagesByPhone(phone, ownerUserId, chatJid, whatsappAccountId
       return [];
     }
 
-    let query = supabase
+    let query = applyRoleScopedFilter(
+      supabase
       .from("messages")
       .select("*")
-      .eq("owner_user_id", ownerUserId)
       .in("phone", lookupValues)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true }),
+      scope
+    );
 
     query = applyWhatsAppAccountFilter(query, whatsappAccountId);
 
     ({ data, error } = await query);
 
     if (isMissingColumnError(error, "messages.whatsapp_account_id")) {
-      ({ data, error } = await supabase
+      ({ data, error } = await applyLegacyOwnerFilter(
+        supabase
         .from("messages")
         .select("*")
-        .eq("owner_user_id", ownerUserId)
         .in("phone", lookupValues)
-        .order("created_at", { ascending: true }));
+        .order("created_at", { ascending: true }),
+        scope
+      ));
     }
   }
 
@@ -1535,26 +1714,31 @@ async function getMessagesByPhone(phone, ownerUserId, chatJid, whatsappAccountId
 }
 
 async function getConversationHistoryAnchor(phone, ownerUserId, chatJid, whatsappAccountId = null) {
+  const scope = normalizeScopeInput(ownerUserId);
   const lookupValues = await getPhoneLookupValues(phone, chatJid || null);
   let data;
   let error;
 
   if (chatJid) {
-    let byChatJidQuery = supabase
+    let byChatJidQuery = applyRoleScopedFilter(
+      supabase
       .from("messages")
       .select("id, phone, chat_jid, wa_message_id, direction, created_at, whatsapp_account_id")
-      .eq("owner_user_id", ownerUserId)
       .eq("chat_jid", chatJid)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true }),
+      scope
+    );
     byChatJidQuery = applyWhatsAppAccountFilter(byChatJidQuery, whatsappAccountId);
 
     let byPhoneQuery = lookupValues.length
-      ? supabase
+      ? applyRoleScopedFilter(
+          supabase
           .from("messages")
           .select("id, phone, chat_jid, wa_message_id, direction, created_at, whatsapp_account_id")
-          .eq("owner_user_id", ownerUserId)
           .in("phone", lookupValues)
-          .order("created_at", { ascending: true })
+          .order("created_at", { ascending: true }),
+          scope
+        )
       : Promise.resolve({ data: [], error: null });
 
     if (lookupValues.length) {
@@ -1575,12 +1759,14 @@ async function getConversationHistoryAnchor(phone, ownerUserId, chatJid, whatsap
       isMissingColumnError(byPhone.error, "messages.wa_message_id") ||
       isMissingColumnError(byPhone.error, "messages.whatsapp_account_id")
     ) {
-      byPhone = await supabase
+      byPhone = await applyLegacyOwnerFilter(
+        supabase
         .from("messages")
         .select("id, phone, direction, created_at")
-        .eq("owner_user_id", ownerUserId)
         .in("phone", lookupValues)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: true }),
+        scope
+      );
     }
 
     data = Array.from(
@@ -1592,12 +1778,14 @@ async function getConversationHistoryAnchor(phone, ownerUserId, chatJid, whatsap
       return null;
     }
 
-    let query = supabase
+    let query = applyRoleScopedFilter(
+      supabase
       .from("messages")
       .select("id, phone, chat_jid, wa_message_id, direction, created_at, whatsapp_account_id")
-      .eq("owner_user_id", ownerUserId)
       .in("phone", lookupValues)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true }),
+      scope
+    );
     query = applyWhatsAppAccountFilter(query, whatsappAccountId);
 
     ({ data, error } = await query);
@@ -1607,12 +1795,14 @@ async function getConversationHistoryAnchor(phone, ownerUserId, chatJid, whatsap
       isMissingColumnError(error, "messages.wa_message_id") ||
       isMissingColumnError(error, "messages.whatsapp_account_id")
     ) {
-      ({ data, error } = await supabase
+      ({ data, error } = await applyLegacyOwnerFilter(
+        supabase
         .from("messages")
         .select("id, phone, direction, created_at")
-        .eq("owner_user_id", ownerUserId)
         .in("phone", lookupValues)
-        .order("created_at", { ascending: true }));
+        .order("created_at", { ascending: true }),
+        scope
+      ));
     }
   }
 
@@ -1640,12 +1830,13 @@ async function getConversationHistoryAnchor(phone, ownerUserId, chatJid, whatsap
 }
 
 async function deleteMessage({ owner_user_id, message_id }) {
-  const { data: existingMessage, error: lookupError } = await supabase
+  const { data: existingMessage, error: lookupError } = await applyRoleScopedFilter(
+    supabase
     .from("messages")
     .select("*")
-    .eq("owner_user_id", owner_user_id)
-    .eq("id", message_id)
-    .maybeSingle();
+    .eq("id", message_id),
+    owner_user_id
+  ).maybeSingle();
 
   throwIfTenantSchemaError(lookupError, "messages.owner_user_id");
 
@@ -1659,11 +1850,13 @@ async function deleteMessage({ owner_user_id, message_id }) {
     throw error;
   }
 
-  const { error } = await supabase
+  const { error } = await applyRoleScopedFilter(
+    supabase
     .from("messages")
     .delete()
-    .eq("owner_user_id", owner_user_id)
-    .eq("id", message_id);
+    .eq("id", message_id),
+    owner_user_id
+  );
 
   throwIfTenantSchemaError(error, "messages.owner_user_id");
 
@@ -1678,11 +1871,14 @@ async function deleteMessage({ owner_user_id, message_id }) {
 }
 
 async function getConversations(ownerUserId, whatsappAccountId = null) {
-  let messageQuery = supabase
+  const scope = normalizeScopeInput(ownerUserId);
+  let messageQuery = applyRoleScopedFilter(
+    supabase
     .from("conversation_latest_messages")
     .select("phone, chat_jid, last_message, last_message_at, last_direction, whatsapp_account_id")
-    .eq("owner_user_id", ownerUserId)
-    .order("last_message_at", { ascending: false });
+    .order("last_message_at", { ascending: false }),
+    scope
+  );
 
   messageQuery = applyWhatsAppAccountFilter(messageQuery, whatsappAccountId);
 
@@ -1761,18 +1957,22 @@ async function getConversations(ownerUserId, whatsappAccountId = null) {
 }
 
 async function getCustomerByPhone(phone, ownerUserId, chatJid, whatsappAccountId = null) {
+  const scope = normalizeScopeInput(ownerUserId);
   let data = null;
   let error = null;
   const preferredRelation = "customer_canonical_profiles";
 
   if (chatJid) {
-    let query = supabase
+    let query = applyRoleScopedFilter(
+      supabase
       .from(preferredRelation)
       .select("*")
-      .eq("owner_user_id", ownerUserId)
       .eq("chat_jid", chatJid)
       .order("updated_at", { ascending: false })
-      .limit(1);
+      .limit(1),
+      scope
+    );
+    query = applyWhatsAppAccountFilter(query, whatsappAccountId);
     ({ data, error } = await query.maybeSingle());
 
     throwIfTenantSchemaError(error, "customers.owner_user_id");
@@ -1808,27 +2008,31 @@ async function getCustomerByPhone(phone, ownerUserId, chatJid, whatsappAccountId
   }
 
   const lookupValues = await getPhoneLookupValues(phone, chatJid || null);
-  let query = supabase
+  let query = applyRoleScopedFilter(
+    supabase
     .from(preferredRelation)
     .select("*")
-    .eq("owner_user_id", ownerUserId)
     .in("phone", lookupValues)
     .order("updated_at", { ascending: false })
-    .limit(1);
+    .limit(1),
+    scope
+  );
+  query = applyWhatsAppAccountFilter(query, whatsappAccountId);
   ({ data, error } = await query.maybeSingle());
 
   if (
     isMissingRelationError(error, preferredRelation) ||
     isMissingColumnError(error, `${preferredRelation}.whatsapp_account_id`)
   ) {
-    ({ data, error } = await supabase
+    ({ data, error } = await applyRoleScopedFilter(
+      supabase
       .from("customers")
       .select("*")
-      .eq("owner_user_id", ownerUserId)
       .in("phone", lookupValues)
       .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle());
+      .limit(1),
+      scope
+    ).maybeSingle());
   }
 
   throwIfTenantSchemaError(error, "customers.owner_user_id");
@@ -1857,6 +2061,7 @@ async function getCustomerByPhone(phone, ownerUserId, chatJid, whatsappAccountId
 }
 
 async function getCustomerInsights(phone, ownerUserId, chatJid, whatsappAccountId = null) {
+  const scope = normalizeScopeInput(ownerUserId);
   const customer = await getCustomerByPhone(phone, ownerUserId, chatJid, whatsappAccountId);
   const scopedChatJid = customer?.chat_jid || chatJid || null;
   const lookupValues = await getPhoneLookupValues(phone, scopedChatJid);
@@ -1865,20 +2070,24 @@ async function getCustomerInsights(phone, ownerUserId, chatJid, whatsappAccountI
   let error;
 
   if (scopedChatJid) {
-    let byChatJidQuery = supabase
+    let byChatJidQuery = applyRoleScopedFilter(
+      supabase
       .from("messages")
       .select("id, direction, created_at, message")
-      .eq("owner_user_id", ownerUserId)
       .eq("chat_jid", scopedChatJid)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }),
+      scope
+    );
     byChatJidQuery = applyWhatsAppAccountFilter(byChatJidQuery, whatsappAccountId);
 
-    let byPhoneQuery = supabase
+    let byPhoneQuery = applyRoleScopedFilter(
+      supabase
       .from("messages")
       .select("id, direction, created_at, message")
-      .eq("owner_user_id", ownerUserId)
       .in("phone", lookupValues)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }),
+      scope
+    );
     byPhoneQuery = applyWhatsAppAccountFilter(byPhoneQuery, whatsappAccountId);
 
     let [byChatJid, byPhone] = await Promise.all([
@@ -1887,12 +2096,14 @@ async function getCustomerInsights(phone, ownerUserId, chatJid, whatsappAccountI
     ]);
 
     if (isMissingColumnError(byPhone.error, "messages.whatsapp_account_id")) {
-      byPhone = await supabase
+      byPhone = await applyLegacyOwnerFilter(
+        supabase
         .from("messages")
         .select("id, direction, created_at, message")
-        .eq("owner_user_id", ownerUserId)
         .in("phone", lookupValues)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false }),
+        scope
+      );
     }
 
     if (
@@ -1910,22 +2121,26 @@ async function getCustomerInsights(phone, ownerUserId, chatJid, whatsappAccountI
       error = byChatJid.error || byPhone.error;
     }
   } else {
-    let query = supabase
+    let query = applyRoleScopedFilter(
+      supabase
       .from("messages")
       .select("id, direction, created_at, message")
-      .eq("owner_user_id", ownerUserId)
       .in("phone", lookupValues)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }),
+      scope
+    );
     query = applyWhatsAppAccountFilter(query, whatsappAccountId);
     ({ data: messages, error } = await query);
 
     if (isMissingColumnError(error, "messages.whatsapp_account_id")) {
-      ({ data: messages, error } = await supabase
+      ({ data: messages, error } = await applyLegacyOwnerFilter(
+        supabase
         .from("messages")
         .select("id, direction, created_at, message")
-        .eq("owner_user_id", ownerUserId)
         .in("phone", lookupValues)
-        .order("created_at", { ascending: false }));
+        .order("created_at", { ascending: false }),
+        scope
+      ));
     }
   }
 
@@ -1938,18 +2153,22 @@ async function getCustomerInsights(phone, ownerUserId, chatJid, whatsappAccountI
   let salesItemsStatusCounts = null;
   let salesItemsError = null;
 
-  let salesItemsQuery = supabase
+  let salesItemsQuery = applyRoleScopedFilter(
+    supabase
     .from("customer_sales_items")
-    .select("lead_status, phone, chat_jid")
-    .eq("owner_user_id", ownerUserId);
+    .select("lead_status, phone, chat_jid"),
+    scope
+  );
   salesItemsQuery = applyWhatsAppAccountFilter(salesItemsQuery, whatsappAccountId);
   ({ data: salesItemsStatusCounts, error: salesItemsError } = await salesItemsQuery);
 
   if (isMissingColumnError(salesItemsError, "customer_sales_items.whatsapp_account_id")) {
-    ({ data: salesItemsStatusCounts, error: salesItemsError } = await supabase
+    ({ data: salesItemsStatusCounts, error: salesItemsError } = await applyLegacyOwnerFilter(
+      supabase
       .from("customer_sales_items")
-      .select("lead_status, phone, chat_jid")
-      .eq("owner_user_id", ownerUserId));
+      .select("lead_status, phone, chat_jid"),
+      scope
+    ));
   }
 
   throwIfSalesItemsSchemaError(salesItemsError);
@@ -1982,16 +2201,20 @@ async function getCustomerInsights(phone, ownerUserId, chatJid, whatsappAccountI
       }
     }
   } else {
-    let { data: customerRows, error: customerRowsError } = await supabase
+    let { data: customerRows, error: customerRowsError } = await applyRoleScopedFilter(
+      supabase
       .from("customer_canonical_profiles")
-      .select("status, notes, phone, chat_jid")
-      .eq("owner_user_id", ownerUserId);
+      .select("status, notes, phone, chat_jid"),
+      scope
+    );
 
     if (isMissingRelationError(customerRowsError, "customer_canonical_profiles")) {
-      ({ data: customerRows, error: customerRowsError } = await supabase
+      ({ data: customerRows, error: customerRowsError } = await applyRoleScopedFilter(
+        supabase
         .from("customers")
-        .select("status, notes, phone, chat_jid")
-        .eq("owner_user_id", ownerUserId));
+        .select("status, notes, phone, chat_jid"),
+        scope
+      ));
     }
 
     throwIfTenantSchemaError(customerRowsError, "customers.owner_user_id");
@@ -2041,15 +2264,17 @@ async function clearConversationUnreadCount({ owner_user_id, whatsapp_account_id
     return null;
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await applyRoleScopedFilter(
+    supabase
     .from("customers")
     .update({
       unread_count: 0,
       updated_at: new Date().toISOString()
     })
     .eq("id", existingCustomer.id)
-    .select("*")
-    .single();
+    .select("*"),
+    owner_user_id
+  ).single();
 
   throwIfTenantSchemaError(error, "customers.owner_user_id");
 
@@ -2065,47 +2290,56 @@ async function clearConversationUnreadCount({ owner_user_id, whatsapp_account_id
 }
 
 async function deleteConversation({ owner_user_id, whatsapp_account_id, phone, chat_jid }) {
+  const scope = normalizeScopeInput(owner_user_id);
   const lookupValues = await getPhoneLookupValues(phone, chat_jid || null);
   const targetChatJid = String(chat_jid || "").trim() || null;
 
   const [messageRowsByPhone, messageRowsByChatJid, customerRowsByPhone, customerRowsByChatJid] = await Promise.all([
     lookupValues.length
-      ? applyWhatsAppAccountFilter(
-          supabase
+        ? applyWhatsAppAccountFilter(
+          applyRoleScopedFilter(
+            supabase
             .from("messages")
             .select("id")
-            .eq("owner_user_id", owner_user_id)
             .in("phone", lookupValues),
+            scope
+          ),
           whatsapp_account_id
         )
       : Promise.resolve({ data: [], error: null }),
     targetChatJid
       ? applyWhatsAppAccountFilter(
-          supabase
+          applyRoleScopedFilter(
+            supabase
             .from("messages")
             .select("id")
-            .eq("owner_user_id", owner_user_id)
             .eq("chat_jid", targetChatJid),
+            scope
+          ),
           whatsapp_account_id
         )
       : Promise.resolve({ data: [], error: null }),
     lookupValues.length
       ? applyWhatsAppAccountFilter(
-          supabase
+          applyRoleScopedFilter(
+            supabase
             .from("customers")
             .select("id")
-            .eq("owner_user_id", owner_user_id)
             .in("phone", lookupValues),
+            scope
+          ),
           whatsapp_account_id
         )
       : Promise.resolve({ data: [], error: null }),
     targetChatJid
       ? applyWhatsAppAccountFilter(
-          supabase
+          applyRoleScopedFilter(
+            supabase
             .from("customers")
             .select("id")
-            .eq("owner_user_id", owner_user_id)
             .eq("chat_jid", targetChatJid),
+            scope
+          ),
           whatsapp_account_id
         )
       : Promise.resolve({ data: [], error: null })
@@ -2153,11 +2387,13 @@ async function deleteConversation({ owner_user_id, whatsapp_account_id, phone, c
   );
 
   if (messageIds.length) {
-    let deleteQuery = supabase
+    let deleteQuery = applyRoleScopedFilter(
+      supabase
       .from("messages")
       .delete()
-      .eq("owner_user_id", owner_user_id)
-      .in("id", messageIds);
+      .in("id", messageIds),
+      scope
+    );
 
     deleteQuery = applyWhatsAppAccountFilter(deleteQuery, whatsapp_account_id);
 
@@ -2171,11 +2407,13 @@ async function deleteConversation({ owner_user_id, whatsapp_account_id, phone, c
   }
 
   if (customerIds.length) {
-    let deleteQuery = supabase
+    let deleteQuery = applyRoleScopedFilter(
+      supabase
       .from("customers")
       .delete()
-      .eq("owner_user_id", owner_user_id)
-      .in("id", customerIds);
+      .in("id", customerIds),
+      scope
+    );
 
     deleteQuery = applyWhatsAppAccountFilter(deleteQuery, whatsapp_account_id);
 
@@ -2196,6 +2434,9 @@ async function deleteConversation({ owner_user_id, whatsapp_account_id, phone, c
 
 async function upsertCustomer({
   owner_user_id,
+  organization_id,
+  created_by,
+  assigned_to,
   whatsapp_account_id,
   phone,
   chat_jid,
@@ -2214,6 +2455,7 @@ async function upsertCustomer({
   age,
   email_address
 }) {
+  const scope = normalizeScopeInput(owner_user_id);
   const canonicalPhone = await resolveWhatsAppPhone(phone, chat_jid || null);
   if (!canonicalPhone) {
     return null;
@@ -2232,7 +2474,19 @@ async function upsertCustomer({
         : undefined;
 
   const payload = {
-    owner_user_id,
+    ...buildTenantWriteColumns(
+      {
+        ...scope,
+        organization_id,
+        organizationId: organization_id || scope.organizationId
+      },
+      {
+        createdBy: created_by || scope.userId,
+        assignedTo: assigned_to,
+        includeAssignedTo: true,
+        legacyOwnerUserId: scope.userId || owner_user_id
+      }
+    ),
     ...(whatsapp_account_id ? { whatsapp_account_id } : {}),
     phone: canonicalPhone,
     ...(chat_jid !== undefined ? { chat_jid } : {}),
@@ -2598,8 +2852,12 @@ async function getWhatsAppSettings(ownerUserId) {
 }
 
 async function upsertWhatsAppProfile({ owner_user_id, phone, username, profile_picture_url, history_sync_days }) {
+  const scope = normalizeScopeInput(owner_user_id);
   const payload = {
-    owner_user_id,
+    ...buildTenantWriteColumns(scope, {
+      createdBy: scope.userId,
+      legacyOwnerUserId: scope.userId || owner_user_id
+    }),
     ...(phone !== undefined ? { phone } : {}),
     ...(username !== undefined ? { username } : {}),
     ...(profile_picture_url !== undefined ? { profile_picture_url } : {}),
@@ -2621,11 +2879,17 @@ async function upsertWhatsAppProfile({ owner_user_id, phone, username, profile_p
 }
 
 async function getWhatsAppAccounts(ownerUserId) {
-  const { data, error } = await supabase
+  const { data, error } = await applyRoleScopedFilter(
+    supabase
     .from("whatsapp_accounts")
     .select("*")
-    .eq("owner_user_id", ownerUserId)
-    .order("updated_at", { ascending: false });
+    .order("updated_at", { ascending: false }),
+    ownerUserId,
+    {
+      allowAgentAssignedScope: false,
+      assignedToColumn: null
+    }
+  );
 
   if (error && error.code !== "42P01") {
     throw error;
@@ -2648,16 +2912,23 @@ async function getAllWhatsAppAccounts() {
 }
 
 async function getWhatsAppAccountById(ownerUserId, accountId) {
-  if (!ownerUserId || !accountId) {
+  const scope = normalizeScopeInput(ownerUserId);
+
+  if (!scope.userId || !accountId) {
     return null;
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await applyRoleScopedFilter(
+    supabase
     .from("whatsapp_accounts")
     .select("*")
-    .eq("owner_user_id", ownerUserId)
-    .eq("id", accountId)
-    .maybeSingle();
+    .eq("id", accountId),
+    scope,
+    {
+      allowAgentAssignedScope: false,
+      assignedToColumn: null
+    }
+  ).maybeSingle();
 
   if (error && error.code !== "42P01") {
     throw error;
@@ -2676,7 +2947,10 @@ async function cleanupInvalidWhatsAppAccounts(ownerUserId = null) {
     .select("id, owner_user_id, account_phone");
 
   if (ownerUserId) {
-    query = query.eq("owner_user_id", ownerUserId);
+    query = applyRoleScopedFilter(query, ownerUserId, {
+      allowAgentAssignedScope: false,
+      assignedToColumn: null
+    });
   }
 
   const { data, error } = await query;
@@ -2703,7 +2977,10 @@ async function cleanupInvalidWhatsAppAccounts(ownerUserId = null) {
     .in("id", removedIds);
 
   if (ownerUserId) {
-    deleteQuery = deleteQuery.eq("owner_user_id", ownerUserId);
+    deleteQuery = applyRoleScopedFilter(deleteQuery, ownerUserId, {
+      allowAgentAssignedScope: false,
+      assignedToColumn: null
+    });
   }
 
   const { error: deleteError } = await deleteQuery;
@@ -2773,13 +3050,18 @@ async function cleanupContactDuplicates(ownerUserId = null) {
 }
 
 async function getLatestWhatsAppAccount(ownerUserId) {
-  const { data, error } = await supabase
+  const { data, error } = await applyRoleScopedFilter(
+    supabase
     .from("whatsapp_accounts")
     .select("*")
-    .eq("owner_user_id", ownerUserId)
     .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1),
+    ownerUserId,
+    {
+      allowAgentAssignedScope: false,
+      assignedToColumn: null
+    }
+  ).maybeSingle();
 
   if (error && error.code !== "42P01") {
     throw error;
@@ -2791,6 +3073,8 @@ async function getLatestWhatsAppAccount(ownerUserId) {
 async function upsertWhatsAppAccount({
   id,
   owner_user_id,
+  organization_id,
+  created_by,
   account_phone,
   account_jid,
   display_name,
@@ -2800,58 +3084,79 @@ async function upsertWhatsAppAccount({
   is_active,
   last_connected_at
 }) {
+  const scope = normalizeScopeInput(owner_user_id);
   const now = new Date().toISOString();
   const normalizedAuthDir = auth_dir !== undefined ? normalizeWhatsAppAuthDir(auth_dir, id || null) : undefined;
   const candidates = [];
 
   if (id) {
     candidates.push(
-      supabase
+      applyRoleScopedFilter(
+        supabase
         .from("whatsapp_accounts")
         .select("*")
-        .eq("owner_user_id", owner_user_id)
         .eq("id", id)
-        .limit(1)
-        .maybeSingle()
+        .limit(1),
+        scope,
+        {
+          allowAgentAssignedScope: false,
+          assignedToColumn: null
+        }
+      ).maybeSingle()
     );
   }
 
   if (normalizedAuthDir) {
     candidates.push(
-      supabase
+      applyRoleScopedFilter(
+        supabase
         .from("whatsapp_accounts")
         .select("*")
-        .eq("owner_user_id", owner_user_id)
         .eq("auth_dir", normalizedAuthDir)
         .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
+        .limit(1),
+        scope,
+        {
+          allowAgentAssignedScope: false,
+          assignedToColumn: null
+        }
+      ).maybeSingle()
     );
   }
 
   if (account_phone) {
     candidates.push(
-      supabase
+      applyRoleScopedFilter(
+        supabase
         .from("whatsapp_accounts")
         .select("*")
-        .eq("owner_user_id", owner_user_id)
         .eq("account_phone", account_phone)
         .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
+        .limit(1),
+        scope,
+        {
+          allowAgentAssignedScope: false,
+          assignedToColumn: null
+        }
+      ).maybeSingle()
     );
   }
 
   if (account_jid) {
     candidates.push(
-      supabase
+      applyRoleScopedFilter(
+        supabase
         .from("whatsapp_accounts")
         .select("*")
-        .eq("owner_user_id", owner_user_id)
         .eq("account_jid", account_jid)
         .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
+        .limit(1),
+        scope,
+        {
+          allowAgentAssignedScope: false,
+          assignedToColumn: null
+        }
+      ).maybeSingle()
     );
   }
 
@@ -2861,8 +3166,18 @@ async function upsertWhatsAppAccount({
     ? normalizeWhatsAppAuthDir(auth_dir, id || existingAccount?.id || null)
     : undefined;
   const payload = {
+    ...buildTenantWriteColumns(
+      {
+        ...scope,
+        organization_id,
+        organizationId: organization_id || scope.organizationId
+      },
+      {
+        createdBy: created_by || scope.userId,
+        legacyOwnerUserId: scope.userId || owner_user_id
+      }
+    ),
     ...(id && !existingAccount?.id ? { id } : {}),
-    owner_user_id,
     ...(account_phone !== undefined ? { account_phone } : {}),
     ...(account_jid !== undefined ? { account_jid } : {}),
     ...(display_name !== undefined ? { display_name } : {}),
@@ -2903,25 +3218,30 @@ async function upsertWhatsAppAccount({
 }
 
 async function getCustomerSalesItems(phone, ownerUserId, chatJid, whatsappAccountId = null) {
+  const scope = normalizeScopeInput(ownerUserId);
   const lookupValues = await getPhoneLookupValues(phone, chatJid || null);
   let data;
   let error;
 
   if (chatJid) {
-    let byChatJidQuery = supabase
+    let byChatJidQuery = applyRoleScopedFilter(
+      supabase
       .from("customer_sales_items")
       .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
-      .eq("owner_user_id", ownerUserId)
       .eq("chat_jid", chatJid)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }),
+      scope
+    );
     byChatJidQuery = applyWhatsAppAccountFilter(byChatJidQuery, whatsappAccountId);
 
-    let byPhoneQuery = supabase
+    let byPhoneQuery = applyRoleScopedFilter(
+      supabase
       .from("customer_sales_items")
       .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
-      .eq("owner_user_id", ownerUserId)
       .in("phone", lookupValues)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }),
+      scope
+    );
     byPhoneQuery = applyWhatsAppAccountFilter(byPhoneQuery, whatsappAccountId);
 
     const [byChatJid, byPhone] = await Promise.all([
@@ -2944,22 +3264,26 @@ async function getCustomerSalesItems(phone, ownerUserId, chatJid, whatsappAccoun
       error = byChatJid.error || byPhone.error;
     }
   } else {
-    let query = supabase
+    let query = applyRoleScopedFilter(
+      supabase
       .from("customer_sales_items")
       .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
-      .eq("owner_user_id", ownerUserId)
       .in("phone", lookupValues)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }),
+      scope
+    );
     query = applyWhatsAppAccountFilter(query, whatsappAccountId);
     ({ data, error } = await query);
 
     if (isMissingColumnError(error, "customer_sales_items.whatsapp_account_id")) {
-      ({ data, error } = await supabase
+      ({ data, error } = await applyLegacyOwnerFilter(
+        supabase
         .from("customer_sales_items")
         .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
-        .eq("owner_user_id", ownerUserId)
         .in("phone", lookupValues)
-        .order("created_at", { ascending: false }));
+        .order("created_at", { ascending: false }),
+        scope
+      ));
     }
   }
 
@@ -2978,11 +3302,14 @@ async function getCustomerSalesItems(phone, ownerUserId, chatJid, whatsappAccoun
 }
 
 async function getAllCustomerSalesItems(ownerUserId, whatsappAccountId = null) {
-  let query = supabase
+  const scope = normalizeScopeInput(ownerUserId);
+  let query = applyRoleScopedFilter(
+    supabase
     .from("customer_sales_items")
     .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
-    .eq("owner_user_id", ownerUserId)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }),
+    scope
+  );
 
   query = applyWhatsAppAccountFilter(query, whatsappAccountId);
 
@@ -2992,11 +3319,13 @@ async function getAllCustomerSalesItems(ownerUserId, whatsappAccountId = null) {
     isMissingColumnError(error, "customer_sales_items.chat_jid") ||
     isMissingColumnError(error, "customer_sales_items.whatsapp_account_id")
   ) {
-    ({ data, error } = await supabase
+    ({ data, error } = await applyLegacyOwnerFilter(
+      supabase
       .from("customer_sales_items")
       .select("id, message_id, phone, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
-      .eq("owner_user_id", ownerUserId)
-      .order("created_at", { ascending: false }));
+      .order("created_at", { ascending: false }),
+      scope
+    ));
   }
 
   throwIfSalesItemsSchemaError(error);
@@ -3014,12 +3343,13 @@ async function getAllCustomerSalesItems(ownerUserId, whatsappAccountId = null) {
 }
 
 async function getOwnedMessageRecord(messageId, ownerUserId) {
-  const { data, error } = await supabase
+  const { data, error } = await applyRoleScopedFilter(
+    supabase
     .from("messages")
     .select("id, phone, chat_jid")
-    .eq("owner_user_id", ownerUserId)
-    .eq("id", messageId)
-    .maybeSingle();
+    .eq("id", messageId),
+    ownerUserId
+  ).maybeSingle();
 
   throwIfTenantSchemaError(error, "messages.owner_user_id");
 
@@ -3031,12 +3361,13 @@ async function getOwnedMessageRecord(messageId, ownerUserId) {
 }
 
 async function getOwnedCustomerSalesItem(itemId, ownerUserId) {
-  const { data, error } = await supabase
+  const { data, error } = await applyRoleScopedFilter(
+    supabase
     .from("customer_sales_items")
     .select("id, phone, chat_jid")
-    .eq("owner_user_id", ownerUserId)
-    .eq("id", itemId)
-    .maybeSingle();
+    .eq("id", itemId),
+    ownerUserId
+  ).maybeSingle();
 
   throwIfSalesItemsSchemaError(error);
 
@@ -3105,7 +3436,8 @@ async function messageBelongsToCustomerConversation({ phone, chat_jid, messageRe
   return Boolean(canonicalPhone && messagePhone && canonicalPhone === messagePhone);
 }
 
-async function createCustomerSalesItem({ owner_user_id, whatsapp_account_id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity }) {
+async function createCustomerSalesItem({ owner_user_id, organization_id, created_by, assigned_to, whatsapp_account_id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity }) {
+  const scope = normalizeScopeInput(owner_user_id);
   const messageRecord = await getOwnedMessageRecord(message_id, owner_user_id);
 
   if (!messageRecord) {
@@ -3129,7 +3461,19 @@ async function createCustomerSalesItem({ owner_user_id, whatsapp_account_id, mes
   }
 
   const payload = {
-    owner_user_id,
+    ...buildTenantWriteColumns(
+      {
+        ...scope,
+        organization_id,
+        organizationId: organization_id || scope.organizationId
+      },
+      {
+        createdBy: created_by || scope.userId,
+        assignedTo: assigned_to,
+        includeAssignedTo: true,
+        legacyOwnerUserId: scope.userId || owner_user_id
+      }
+    ),
     ...(whatsapp_account_id ? { whatsapp_account_id } : {}),
     message_id,
     phone: canonicalPhone || phone,
@@ -3160,7 +3504,8 @@ async function createCustomerSalesItem({ owner_user_id, whatsapp_account_id, mes
   };
 }
 
-async function updateCustomerSalesItem({ owner_user_id, whatsapp_account_id, item_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity }) {
+async function updateCustomerSalesItem({ owner_user_id, organization_id, created_by, assigned_to, whatsapp_account_id, item_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity }) {
+  const scope = normalizeScopeInput(owner_user_id);
   const salesItem = await getOwnedCustomerSalesItem(item_id, owner_user_id);
 
   if (!salesItem) {
@@ -3183,6 +3528,19 @@ async function updateCustomerSalesItem({ owner_user_id, whatsapp_account_id, ite
 
   const canonicalPhone = await resolveWhatsAppPhone(phone, chat_jid || null);
   const payload = {
+    ...buildTenantWriteColumns(
+      {
+        ...scope,
+        organization_id,
+        organizationId: organization_id || scope.organizationId
+      },
+      {
+        createdBy: created_by || scope.userId,
+        assignedTo: assigned_to,
+        includeAssignedTo: true,
+        legacyOwnerUserId: scope.userId || owner_user_id
+      }
+    ),
     ...(whatsapp_account_id ? { whatsapp_account_id } : {}),
     phone: canonicalPhone || phone,
     ...(chat_jid ? { chat_jid } : {}),
@@ -3194,13 +3552,14 @@ async function updateCustomerSalesItem({ owner_user_id, whatsapp_account_id, ite
     updated_at: new Date().toISOString()
   };
 
-  const { data, error } = await supabase
+  const { data, error } = await applyRoleScopedFilter(
+    supabase
     .from("customer_sales_items")
     .update(payload)
-    .eq("owner_user_id", owner_user_id)
     .eq("id", item_id)
-    .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at")
-    .single();
+    .select("id, message_id, phone, chat_jid, lead_status, product_type, package_name, price, quantity, created_at, updated_at"),
+    scope
+  ).single();
 
   throwIfSalesItemsSchemaError(error);
 
@@ -3302,6 +3661,7 @@ module.exports = {
   deleteActiveDashboardSession,
   getCustomerByContactId,
   getMessagesByContactId,
+  upsertCanonicalProfile,
   getCustomers,
   countCustomers,
   supabase

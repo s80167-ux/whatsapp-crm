@@ -33,6 +33,8 @@ export type AuthResponse = {
   user: {
     id: string;
     email: string;
+    role?: "super_admin" | "admin" | "user" | "agent";
+    organization_id?: string | null;
   };
 };
 
@@ -205,6 +207,13 @@ export type UserProfile = {
   full_name: string | null;
   avatar_url: string | null;
   last_sign_in_at: string | null;
+  organization_id: string | null;
+  role: "super_admin" | "admin" | "user" | "agent";
+  organization?: {
+    id: string;
+    name: string;
+    status: "active" | "suspended";
+  } | null;
   created_at: string | null;
   updated_at: string | null;
 };

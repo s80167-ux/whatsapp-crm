@@ -2,11 +2,13 @@
 const crypto = require("crypto");
 const { createClient } = require("@supabase/supabase-js");
 const {
+  getProfileByUserId,
   upsertProfileFromAuthUser,
   deleteActiveDashboardSession,
   getActiveDashboardSessionId,
   upsertActiveDashboardSession
 } = require("./supabase");
+const { getRequestUserContext } = require("./authz");
 
 async function syncProfileBestEffort(user) {
   if (!user) {
@@ -79,11 +81,14 @@ async function loginUser(email, password) {
   }
 
   await syncProfileBestEffort(data.user);
+  const profile = await getProfileByUserId(data.user.id);
 
   return {
     user: {
       id: data.user.id,
-      email: data.user.email
+      email: data.user.email,
+      role: profile?.role || "user",
+      organization_id: profile?.organization_id || null
     },
     token: data.session.access_token
   };
@@ -142,16 +147,14 @@ async function requireSupabaseAuth(req, res, next) {
 
   try {
     const user = await getAuthenticatedUser(token);
+    const requestUser = await getRequestUserContext(user);
 
-    req.user = {
-      sub: user.id,
-      email: user.email
-    };
+    req.user = requestUser;
     return next();
   } catch (error) {
     return res.status(error.status || 401).json({
       error: error.message || "Invalid or expired token.",
-      code: error.status && error.status !== 401 ? undefined : "AUTH_TOKEN_INVALID"
+      code: error.code || (error.status && error.status !== 401 ? undefined : "AUTH_TOKEN_INVALID")
     });
   }
 }
@@ -180,16 +183,13 @@ async function requireAuth(req, res, next) {
       });
     }
 
-    req.user = {
-      sub: user.id,
-      email: user.email
-    };
+    req.user = await getRequestUserContext(user);
     req.sessionId = sessionId;
     return next();
   } catch (error) {
     return res.status(error.status || 401).json({
       error: error.message || "Invalid or expired token.",
-      code: error.status && error.status !== 401 ? undefined : "AUTH_TOKEN_INVALID"
+      code: error.code || (error.status && error.status !== 401 ? undefined : "AUTH_TOKEN_INVALID")
     });
   }
 }

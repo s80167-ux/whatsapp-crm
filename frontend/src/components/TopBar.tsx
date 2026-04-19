@@ -274,14 +274,14 @@ export function TopBar({
     : "Unavailable";
 
   return (
-    <div className="glass-panel flex flex-col gap-1.5 p-2.5 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:px-4 lg:py-2.5">
+    <div className="glass-panel flex flex-col gap-1.5 p-2.5 lg:flex-row lg:items-start lg:justify-between lg:gap-4 lg:px-4 lg:py-2.5">
       <div className="flex flex-col gap-1.5 lg:min-w-0 lg:flex-1">
         <nav className="flex flex-wrap items-center gap-1 sm:gap-1.5">
           {navItems.map((item) => (
             <button
               aria-label={item.label}
               key={item.key}
-              className={`icon-hover-trigger flex h-8 w-8 items-center justify-center rounded-lg p-0 text-sm font-semibold transition-all duration-200 sm:h-auto sm:w-auto sm:gap-2 sm:px-3 sm:py-2 lg:px-2.5 lg:py-1.5 ${
+              className={`icon-hover-trigger inline-flex h-8 w-8 items-center justify-center rounded-lg p-0 text-sm font-semibold leading-none transition-all duration-200 sm:h-10 sm:w-auto sm:gap-2 sm:px-3 sm:py-0 lg:h-9 lg:px-2.5 ${
                 activeTab === item.key
                   ? "bg-[#f0f2f5] text-whatsapp-deep"
                   : item.disabled
@@ -304,8 +304,8 @@ export function TopBar({
         </nav>
       </div>
 
-      <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end sm:gap-2 lg:w-auto lg:shrink-0">
-        <div className="flex items-center gap-1.5">
+      <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-end sm:gap-3 lg:w-auto lg:shrink-0 lg:self-start">
+        <div className="flex items-start gap-1.5">
           <WhatsAppConnectCard
             activeWhatsAppNumber={activeWhatsAppNumber}
             compact
@@ -323,14 +323,21 @@ export function TopBar({
           />
         </div>
 
-        <div className="lg:min-w-[200px]">
+        <div className="lg:min-w-[220px] lg:self-start">
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-[10px] uppercase tracking-[0.2em] text-whatsapp-muted">Signed in</p>
-              <p className="mt-0.5 truncate text-[15px] font-semibold text-ink sm:mt-1 sm:text-sm">{profile?.full_name || userEmail}</p>
+              <div className="mt-0.5 flex min-w-0 items-baseline gap-2 sm:mt-1">
+                <p className="truncate text-[15px] font-semibold text-ink sm:text-sm">{profile?.full_name || userEmail}</p>
+                {profile?.organization?.name || profile?.role ? (
+                <p className="truncate text-[11px] text-whatsapp-muted">
+                  {[profile?.organization?.name || null, profile?.role ? profile.role.replace(/_/g, " ") : null].filter(Boolean).join(" | ")}
+                </p>
+              ) : null}
+              </div>
               {profile?.full_name ? <p className="truncate text-[11px] text-whatsapp-muted">{userEmail}</p> : null}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1">
               <button
                 aria-label={showProfilePanel ? "Hide profile" : "Show profile"}
                 className="icon-hover-trigger flex h-8 w-8 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent"
@@ -450,13 +457,21 @@ export function TopBar({
                             </div>
 
                             <div className="grid gap-2 sm:grid-cols-2">
-                              <div className="whatsapp-popover-card">
-                                <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Profile ID</p>
-                                <p className="mt-1 break-all text-sm font-medium text-ink">{profile?.id || "Unavailable"}</p>
+                              <div className="whatsapp-popover-card px-3 py-2.5">
+                                <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-whatsapp-muted">Profile ID</p>
+                                <p className="mt-1.5 break-all text-[13px] font-medium leading-5 text-ink">{profile?.id || "Unavailable"}</p>
                               </div>
-                              <div className="whatsapp-popover-card">
-                                <p className="text-[10px] uppercase tracking-[0.18em] text-whatsapp-muted">Last sign in</p>
-                                <p className="mt-1 text-sm font-medium text-ink">{profileLastSeen}</p>
+                              <div className="whatsapp-popover-card px-3 py-2.5">
+                                <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-whatsapp-muted">Last sign in</p>
+                                <p className="mt-1.5 text-[13px] font-medium leading-5 text-ink">{profileLastSeen}</p>
+                              </div>
+                              <div className="whatsapp-popover-card px-3 py-2.5">
+                                <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-whatsapp-muted">Role</p>
+                                <p className="mt-1.5 text-[13px] font-medium capitalize leading-5 text-ink">{(profile?.role || "user").replace(/_/g, " ")}</p>
+                              </div>
+                              <div className="whatsapp-popover-card px-3 py-2.5">
+                                <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-whatsapp-muted">Organization</p>
+                                <p className="mt-1.5 text-[13px] font-medium leading-5 text-ink">{profile?.organization?.name || "Default Organization"}</p>
                               </div>
                             </div>
                           </>
@@ -581,3 +596,4 @@ function getItemIcon(label: string) {
       return null;
   }
 }
+

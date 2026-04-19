@@ -1,0 +1,2 @@
+Registered WhatsApp routes: GET /whatsapp/status | GET /whatsapp/qr | POST /whatsapp/connect | GET /whatsapp/profile | GET /whatsapp/accounts | POST /whatsapp/cleanup-stale-accounts | POST /whatsapp/cleanup-contacts | POST /whatsapp/resync-contact-names | GET /whatsapp/settings | PUT /whatsapp/settings | POST /whatsapp/disconnect | DELETE /whatsapp/clear
+Backend listening on http://localhost:4010
