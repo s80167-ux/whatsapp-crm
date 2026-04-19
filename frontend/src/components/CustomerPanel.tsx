@@ -162,7 +162,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
   const currentStatusLabel = contactStatus || CUSTOMER_STATUS_LABELS[status];
   const isInline = variant === "inline";
   const canCollapse = !isInline && Boolean(onToggleMobileCollapse);
-  const containerClassName = `glass-panel flex flex-col overflow-hidden p-4 ${isInline ? "h-full shadow-soft" : "h-full min-h-0"}`;
+  const containerClassName = `glass-panel flex flex-col overflow-visible p-4 ${isInline ? "h-full shadow-soft" : "h-full min-h-0"}`;
   // Only declare contentClasses once
   const contentClasses = isInline
     ? "custom-scrollbar mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1"
@@ -252,7 +252,7 @@ export function CustomerPanel(props: CustomerPanelProps) {
                 </button>
               ) : null}
               {canCollapse ? (
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-whatsapp-canvas text-whatsapp-muted shadow-soft transition hover:bg-white hover:text-whatsapp-deep">
+                <span className="icon-hover-trigger flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-whatsapp-canvas text-whatsapp-muted shadow-soft transition hover:bg-white hover:text-whatsapp-deep">
                   {/* Show the action the toggle will perform next. */}
                   {mobileCollapsed ? (
                     <svg className="h-4 w-4 transition" fill="none" viewBox="0 0 24 24">
@@ -264,6 +264,9 @@ export function CustomerPanel(props: CustomerPanelProps) {
                       <rect x="5" y="11" width="14" height="2" rx="1" fill="currentColor" />
                     </svg>
                   )}
+                  <span className="icon-hover-label customer-panel-toggle-label hidden sm:inline">
+                    {mobileCollapsed ? "Expand profile" : "Collapse profile"}
+                  </span>
                 </span>
               ) : null}
             </div>

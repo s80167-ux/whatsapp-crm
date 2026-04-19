@@ -78,3 +78,14 @@
   grid-template-columns: repeat(auto-fit, minmax(75px, 1fr));
   gap: 10px;
 }
+
+.customer-panel-toggle-label {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%) translateY(4px);
+}
+
+.icon-hover-trigger:hover .customer-panel-toggle-label,
+.icon-hover-trigger:focus-visible .customer-panel-toggle-label {
+  transform: translateX(-50%) translateY(0);
+}
