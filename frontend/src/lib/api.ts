@@ -81,6 +81,7 @@ export type Customer = {
   chat_jid?: string | null;
   contact_name?: string | null;
   is_contact_anchor?: boolean;
+  quality_score?: number;
   status: CustomerStatus;
   contact_status?: ContactStatus | null;
   status_counts?: Record<CustomerStatus, number>;

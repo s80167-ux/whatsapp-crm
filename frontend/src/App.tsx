@@ -56,6 +56,28 @@ function sortContactsByDisplayPriority(contacts: Customer[]) {
   });
 }
 
+function compareCustomerPreference(left: Customer, right: Customer) {
+  const leftAnchor = Boolean(left.is_contact_anchor);
+  const rightAnchor = Boolean(right.is_contact_anchor);
+  if (leftAnchor !== rightAnchor) {
+    return Number(rightAnchor) - Number(leftAnchor);
+  }
+
+  const leftQuality = Number(left.quality_score || 0);
+  const rightQuality = Number(right.quality_score || 0);
+  if (leftQuality !== rightQuality) {
+    return rightQuality - leftQuality;
+  }
+
+  const leftUpdatedAt = new Date(left.updated_at || 0).getTime();
+  const rightUpdatedAt = new Date(right.updated_at || 0).getTime();
+  if (leftUpdatedAt !== rightUpdatedAt) {
+    return rightUpdatedAt - leftUpdatedAt;
+  }
+
+  return String(right.id || "").localeCompare(String(left.id || ""));
+}
+
 function isSameCustomerSelection(
   customer: Customer | null,
   targetPhone: string | null,
@@ -191,6 +213,7 @@ function App() {
   const [loadingCustomer, setLoadingCustomer] = useState(false);
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [customerDraft, setCustomerDraft] = useState<Customer | null>(null);
+  const [selectedContactSnapshot, setSelectedContactSnapshot] = useState<Customer | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [editingCustomerOpen, setEditingCustomerOpen] = useState(false);
   const [salesLeadItems, setSalesLeadItems] = useState<SalesLeadItem[]>([]);
@@ -1233,8 +1256,8 @@ function App() {
     [leadConversations, selectedConversationChatJid, selectedPhone]
   );
   const selectedContact = useMemo(
-    () =>
-      contacts.find((contact) => {
+    () => {
+      const candidates = contacts.filter((contact) => {
         const conversationId = getConversationIdentifier(contact.phone, contact.chat_jid);
         if (conversationId !== selectedContactConversationId) {
           return false;
@@ -1245,13 +1268,21 @@ function App() {
         }
 
         return true;
-      }) || null,
+      });
+
+      if (!candidates.length) {
+        return null;
+      }
+
+      return [...candidates].sort(compareCustomerPreference)[0] || null;
+    },
     [contacts, selectedContactChatJid, selectedContactConversationId]
   );
+  const contactPanelCustomer = activeDashboardTab === "contacts" ? selectedContactSnapshot || customerDraft || selectedContact : customerDraft;
   const activeChatJid = selectedConversation?.chatJid || customerDraft?.chat_jid || null;
-  const activeContactChatJid = selectedContact?.chat_jid || customerDraft?.chat_jid || null;
+  const activeContactChatJid = selectedContactChatJid || customerDraft?.chat_jid || null;
   const activeConversationSourceAccountId =
-    selectedConversation?.whatsappAccountId || customerDraft?.whatsapp_account_id || selectedContact?.whatsapp_account_id || null;
+    selectedConversation?.whatsappAccountId || customerDraft?.whatsapp_account_id || contactPanelCustomer?.whatsapp_account_id || null;
   const activeConversationSourceState = String(selectedConversation?.sourceConnectionState || "").trim().toLowerCase();
   const selectedWhatsAppAccountPhone = normalizePhoneValue(selectedWhatsAppAccount?.account_phone);
   const activeConversationSourcePhone = normalizePhoneValue(selectedConversation?.sourceAccountPhone);
@@ -1283,6 +1314,25 @@ function App() {
       activeContactChatJid
     };
   }, [activeChatJid, activeContactChatJid, activeDashboardTab, selectedContactChatJid, selectedContactConversationId, selectedConversationChatJid, selectedPhone, selectedWhatsAppAccountId]);
+
+  useEffect(() => {
+    if (activeDashboardTab !== "contacts" || !activeSelectionId) {
+      setSelectedContactSnapshot(null);
+      return;
+    }
+
+    setSelectedContactSnapshot(selectedContact || null);
+  }, [activeDashboardTab, activeSelectionId]);
+
+  useEffect(() => {
+    if (activeDashboardTab !== "contacts" || !customerDraft || !activeSelectionId) {
+      return;
+    }
+
+    if (isSameCustomerSelection(customerDraft, activeSelectionId, activeContactChatJid, selectedWhatsAppAccountId)) {
+      setSelectedContactSnapshot(customerDraft);
+    }
+  }, [activeContactChatJid, activeDashboardTab, activeSelectionId, customerDraft, selectedWhatsAppAccountId]);
 
   useEffect(() => {
     let mounted = true;
@@ -2255,14 +2305,18 @@ function App() {
 
   const activeCustomerPhone =
     activeDashboardTab === "contacts"
-      ? selectedContact?.phone || customerDraft?.phone || selectedContactConversationId
+      ? selectedContactConversationId || contactPanelCustomer?.phone || null
       : customerDraft?.phone || selectedPhone;
   const selectedStatus = selectedConversation?.status || customerDraft?.status || "new_lead";
   const selectedNotes = customerDraft?.notes || "";
   const activeCustomerChatJid =
     activeDashboardTab === "contacts"
-      ? activeContactChatJid
+      ? activeContactChatJid || contactPanelCustomer?.chat_jid || null
       : selectedConversation?.chatJid || customerDraft?.chat_jid || null;
+  const displayProfilePictureUrl =
+    activeDashboardTab === "contacts"
+      ? contactPanelCustomer?.profile_picture_url || null
+      : customerDraft?.profile_picture_url || selectedConversation?.profilePictureUrl || null;
 
   const activeCustomerForEdit: Customer | null = activeCustomerPhone
     ? {
@@ -2271,27 +2325,27 @@ function App() {
         chat_jid: activeCustomerChatJid,
         contact_name:
           activeDashboardTab === "contacts"
-            ? customerDraft?.contact_name || selectedContact?.contact_name || null
+            ? contactPanelCustomer?.contact_name || null
             : customerDraft?.contact_name || selectedConversation?.contactName || null,
-        is_contact_anchor: customerDraft?.is_contact_anchor ?? selectedContact?.is_contact_anchor ?? false,
-        status: activeDashboardTab === "contacts" ? selectedContact?.status || customerDraft?.status || "new_lead" : selectedStatus,
-        contact_status: customerDraft?.contact_status ?? selectedContact?.contact_status ?? null,
+        is_contact_anchor: contactPanelCustomer?.is_contact_anchor ?? false,
+        status: activeDashboardTab === "contacts" ? contactPanelCustomer?.status || "new_lead" : selectedStatus,
+        contact_status: contactPanelCustomer?.contact_status ?? null,
         notes: selectedNotes,
-        profile_picture_url: customerDraft?.profile_picture_url || selectedContact?.profile_picture_url || null,
-        about: customerDraft?.about || selectedContact?.about || null,
-        total_messages: customerDraft?.total_messages ?? selectedContact?.total_messages,
-        incoming_count: customerDraft?.incoming_count ?? selectedContact?.incoming_count,
-        outgoing_count: customerDraft?.outgoing_count ?? selectedContact?.outgoing_count,
-        last_message_at: customerDraft?.last_message_at || selectedContact?.last_message_at || null,
-        last_message_preview: customerDraft?.last_message_preview || selectedContact?.last_message_preview || null,
-        last_direction: customerDraft?.last_direction || selectedContact?.last_direction || null,
-        premise_address: customerDraft?.premise_address ?? selectedContact?.premise_address ?? "",
-        business_type: customerDraft?.business_type ?? selectedContact?.business_type ?? "",
-        age: customerDraft?.age ?? selectedContact?.age ?? null,
-        email_address: customerDraft?.email_address ?? selectedContact?.email_address ?? "",
-        contact_id: customerDraft?.contact_id ?? selectedContact?.contact_id ?? "",
-        id: customerDraft?.id ?? selectedContact?.id,
-        updated_at: customerDraft?.updated_at ?? selectedContact?.updated_at ?? undefined
+        profile_picture_url: displayProfilePictureUrl,
+        about: contactPanelCustomer?.about || null,
+        total_messages: contactPanelCustomer?.total_messages,
+        incoming_count: contactPanelCustomer?.incoming_count,
+        outgoing_count: contactPanelCustomer?.outgoing_count,
+        last_message_at: contactPanelCustomer?.last_message_at || null,
+        last_message_preview: contactPanelCustomer?.last_message_preview || null,
+        last_direction: contactPanelCustomer?.last_direction || null,
+        premise_address: contactPanelCustomer?.premise_address ?? "",
+        business_type: contactPanelCustomer?.business_type ?? "",
+        age: contactPanelCustomer?.age ?? null,
+        email_address: contactPanelCustomer?.email_address ?? "",
+        contact_id: contactPanelCustomer?.contact_id ?? "",
+        id: contactPanelCustomer?.id,
+        updated_at: contactPanelCustomer?.updated_at ?? undefined
       }
     : null;
 
@@ -2299,33 +2353,33 @@ function App() {
     ? {
         contactName:
           activeDashboardTab === "contacts"
-            ? customerDraft?.contact_name || selectedContact?.contact_name || null
+            ? contactPanelCustomer?.contact_name || null
             : customerDraft?.contact_name || selectedConversation?.contactName || null,
-        about: customerDraft?.about || selectedContact?.about || null,
+        about: contactPanelCustomer?.about || null,
         chatJid: activeCustomerChatJid,
-        customerId: customerDraft?.id ?? selectedContact?.id ?? null,
-        updatedAt: customerDraft?.updated_at ?? selectedContact?.updated_at ?? null,
-        incomingCount: customerDraft?.incoming_count ?? selectedContact?.incoming_count,
-        lastDirection: customerDraft?.last_direction || selectedContact?.last_direction || null,
-        lastMessageAt: customerDraft?.last_message_at || selectedContact?.last_message_at || null,
-        lastMessagePreview: customerDraft?.last_message_preview || selectedContact?.last_message_preview || null,
+        customerId: contactPanelCustomer?.id ?? null,
+        updatedAt: contactPanelCustomer?.updated_at ?? null,
+        incomingCount: contactPanelCustomer?.incoming_count,
+        lastDirection: contactPanelCustomer?.last_direction || null,
+        lastMessageAt: contactPanelCustomer?.last_message_at || null,
+        lastMessagePreview: contactPanelCustomer?.last_message_preview || null,
         loading: loadingCustomer,
         notes: selectedNotes,
-        outgoingCount: customerDraft?.outgoing_count ?? selectedContact?.outgoing_count,
+        outgoingCount: contactPanelCustomer?.outgoing_count,
         phone: activeCustomerPhone,
-        profilePictureUrl: customerDraft?.profile_picture_url || selectedContact?.profile_picture_url || null,
+        profilePictureUrl: displayProfilePictureUrl,
         saving: savingCustomer,
-        status: activeDashboardTab === "contacts" ? selectedContact?.status || customerDraft?.status || "new_lead" : selectedStatus,
-        contactStatus: customerDraft?.contact_status ?? selectedContact?.contact_status ?? null,
-        statusCounts: activeDashboardTab === "contacts" ? selectedContact?.status_counts || customerStatusCounts : customerStatusCounts,
-        totalMessages: customerDraft?.total_messages ?? selectedContact?.total_messages,
-        isContactAnchor: customerDraft?.is_contact_anchor ?? selectedContact?.is_contact_anchor ?? false,
+        status: activeDashboardTab === "contacts" ? contactPanelCustomer?.status || "new_lead" : selectedStatus,
+        contactStatus: contactPanelCustomer?.contact_status ?? null,
+        statusCounts: activeDashboardTab === "contacts" ? customerStatusCounts : customerStatusCounts,
+        totalMessages: contactPanelCustomer?.total_messages ?? 0,
+        isContactAnchor: contactPanelCustomer?.is_contact_anchor ?? false,
         // New fields for customer info window
-        premiseAddress: customerDraft?.premise_address ?? selectedContact?.premise_address ?? "",
-        businessType: customerDraft?.business_type ?? selectedContact?.business_type ?? "",
-        age: customerDraft?.age ?? selectedContact?.age ?? null,
-        emailAddress: customerDraft?.email_address ?? selectedContact?.email_address ?? "",
-        contactId: customerDraft?.contact_id ?? selectedContact?.contact_id ?? "",
+        premiseAddress: contactPanelCustomer?.premise_address ?? "",
+        businessType: contactPanelCustomer?.business_type ?? "",
+        age: contactPanelCustomer?.age ?? null,
+        emailAddress: contactPanelCustomer?.email_address ?? "",
+        contactId: contactPanelCustomer?.contact_id ?? "",
         onEditProfile: activeCustomerForEdit ? () => openContactEditor(activeCustomerForEdit) : undefined,
         onNotesChange: (value) => {
           if (!activeCustomerPhone) {
@@ -2337,26 +2391,26 @@ function App() {
             chat_jid: activeCustomerChatJid,
             contact_name:
               activeDashboardTab === "contacts"
-                ? customerDraft?.contact_name || selectedContact?.contact_name || null
+                ? contactPanelCustomer?.contact_name || null
                 : customerDraft?.contact_name || selectedConversation?.contactName || null,
-            is_contact_anchor: customerDraft?.is_contact_anchor ?? selectedContact?.is_contact_anchor ?? false,
-            profile_picture_url: customerDraft?.profile_picture_url || selectedContact?.profile_picture_url || null,
-            about: customerDraft?.about || selectedContact?.about || null,
-            total_messages: customerDraft?.total_messages,
-            incoming_count: customerDraft?.incoming_count ?? selectedContact?.incoming_count,
-            outgoing_count: customerDraft?.outgoing_count ?? selectedContact?.outgoing_count,
-            last_message_at: customerDraft?.last_message_at || selectedContact?.last_message_at || null,
-            last_message_preview: customerDraft?.last_message_preview || selectedContact?.last_message_preview || null,
-            last_direction: customerDraft?.last_direction || selectedContact?.last_direction || null,
+            is_contact_anchor: contactPanelCustomer?.is_contact_anchor ?? false,
+            profile_picture_url: displayProfilePictureUrl,
+            about: contactPanelCustomer?.about || null,
+            total_messages: contactPanelCustomer?.total_messages,
+            incoming_count: contactPanelCustomer?.incoming_count,
+            outgoing_count: contactPanelCustomer?.outgoing_count,
+            last_message_at: contactPanelCustomer?.last_message_at || null,
+            last_message_preview: contactPanelCustomer?.last_message_preview || null,
+            last_direction: contactPanelCustomer?.last_direction || null,
             status: selectedStatus,
-            contact_status: customerDraft?.contact_status ?? selectedContact?.contact_status ?? null,
+            contact_status: contactPanelCustomer?.contact_status ?? null,
             notes: value,
             // Pass through new fields if present
-            premise_address: customerDraft?.premise_address ?? selectedContact?.premise_address,
-            business_type: customerDraft?.business_type ?? selectedContact?.business_type,
-            age: customerDraft?.age ?? selectedContact?.age,
-            email_address: customerDraft?.email_address ?? selectedContact?.email_address,
-            contact_id: customerDraft?.contact_id ?? selectedContact?.contact_id,
+            premise_address: contactPanelCustomer?.premise_address,
+            business_type: contactPanelCustomer?.business_type,
+            age: contactPanelCustomer?.age,
+            email_address: contactPanelCustomer?.email_address,
+            contact_id: contactPanelCustomer?.contact_id,
           };
 
           setCustomerDraft(nextCustomer);
@@ -2647,8 +2701,8 @@ function App() {
                       onSendQuickReply={sendTextMessage}
                       messageFilterId={activeMessageFilterId}
                       onClearMessageFilter={() => setActiveMessageFilterId(null)}
-                      phone={activeCustomerPhone}
-                      profilePictureUrl={customerDraft?.profile_picture_url || null}
+                      phone={activeCustomerPhone || null}
+                      profilePictureUrl={displayProfilePictureUrl}
                       repopulatingFromWhatsApp={repopulatingConversation}
                       salesLeadItems={salesLeadItems}
                       salesLeadStatus={selectedStatus}
