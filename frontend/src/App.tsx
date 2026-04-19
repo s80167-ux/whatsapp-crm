@@ -25,7 +25,7 @@ import {
   type WhatsAppQr,
   type WhatsAppStatus
 } from "./lib/api";
-import { getConversationIdentifier, getConversationSortTimestamp, getResolvedPhone } from "./lib/display";
+import { getConversationIdentifier, getConversationSortTimestamp, getDisplayName, getDisplayPhone, getResolvedPhone } from "./lib/display";
 import { clearPasswordRecoveryCallback, getEmailVerificationRedirectUrl, getPasswordRecoveryRedirectUrl, isPasswordRecoveryCallback, supabase } from "./lib/supabase";
 
 type AuthMode = "login" | "register";
@@ -408,13 +408,66 @@ function App() {
       return;
     }
 
-    if (selectedContactConversationId || !selectedPhone) {
+    if (!contacts.length) {
       return;
     }
 
-    setSelectedContactConversationId(selectedPhone);
-    setSelectedContactChatJid(selectedConversationChatJid);
-  }, [activeDashboardTab, selectedContactConversationId, selectedConversationChatJid, selectedPhone]);
+    const hasSelectedContactInList = contacts.some((contact) => {
+      const conversationId = getConversationIdentifier(contact.phone, contact.chat_jid);
+      if (conversationId !== selectedContactConversationId) {
+        return false;
+      }
+
+      if (selectedContactChatJid) {
+        return String(contact.chat_jid || "").trim() === String(selectedContactChatJid).trim();
+      }
+
+      return true;
+    });
+
+    if (hasSelectedContactInList) {
+      return;
+    }
+
+    const inboxContact = selectedPhone
+      ? contacts.find((contact) => {
+          const conversationId = getConversationIdentifier(contact.phone, contact.chat_jid);
+          if (conversationId !== selectedPhone) {
+            return false;
+          }
+
+          if (selectedConversationChatJid) {
+            return String(contact.chat_jid || "").trim() === String(selectedConversationChatJid).trim();
+          }
+
+          return true;
+        }) || null
+      : null;
+
+    if (inboxContact) {
+      setSelectedContactConversationId(getConversationIdentifier(inboxContact.phone, inboxContact.chat_jid));
+      setSelectedContactChatJid(inboxContact.chat_jid || null);
+      return;
+    }
+
+    const topContact =
+      [...contacts].sort((left, right) => {
+        const leftResolvedPhone = getResolvedPhone(left.phone, left.chat_jid);
+        const rightResolvedPhone = getResolvedPhone(right.phone, right.chat_jid);
+        const leftDisplayPhone = getDisplayPhone(left.phone, left.chat_jid);
+        const rightDisplayPhone = getDisplayPhone(right.phone, right.chat_jid);
+        const leftLabel = getDisplayName(left.contact_name, leftDisplayPhone || leftResolvedPhone).trim();
+        const rightLabel = getDisplayName(right.contact_name, rightDisplayPhone || rightResolvedPhone).trim();
+        return leftLabel.localeCompare(rightLabel, undefined, { sensitivity: "base", numeric: true });
+      })[0] || null;
+
+    if (!topContact) {
+      return;
+    }
+
+    setSelectedContactConversationId(getConversationIdentifier(topContact.phone, topContact.chat_jid));
+    setSelectedContactChatJid(topContact.chat_jid || null);
+  }, [activeDashboardTab, contacts, selectedContactChatJid, selectedContactConversationId, selectedConversationChatJid, selectedPhone]);
 
   useEffect(() => {
     setApiUnauthorizedHandler((error) => handleSessionRevoked(error.message));
@@ -1278,7 +1331,7 @@ function App() {
     },
     [contacts, selectedContactChatJid, selectedContactConversationId]
   );
-  const contactPanelCustomer = activeDashboardTab === "contacts" ? selectedContactSnapshot || customerDraft || selectedContact : customerDraft;
+  const contactPanelCustomer = activeDashboardTab === "contacts" ? selectedContactSnapshot || selectedContact || customerDraft : customerDraft;
   const activeChatJid = selectedConversation?.chatJid || customerDraft?.chat_jid || null;
   const activeContactChatJid = selectedContactChatJid || customerDraft?.chat_jid || null;
   const activeConversationSourceAccountId =
@@ -1322,7 +1375,7 @@ function App() {
     }
 
     setSelectedContactSnapshot(selectedContact || null);
-  }, [activeDashboardTab, activeSelectionId]);
+  }, [activeDashboardTab, activeSelectionId, selectedContact]);
 
   useEffect(() => {
     if (activeDashboardTab !== "contacts" || !customerDraft || !activeSelectionId) {

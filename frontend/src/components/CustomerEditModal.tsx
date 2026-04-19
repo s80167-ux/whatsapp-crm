@@ -70,6 +70,21 @@ function buildFormState(customer: Customer | null): FormState {
   };
 }
 
+function getInitials(contactName: string | null, phone: string | null) {
+  const source = contactName || phone || "?";
+  const parts = source
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+
+  if (!parts.length) {
+    return "?";
+  }
+
+  return parts.map((part) => part[0]?.toUpperCase() || "").join("");
+}
+
 export default function CustomerEditModal({ customer, isOpen, onClose, onSave }: CustomerEditModalProps) {
   const [form, setForm] = useState<FormState>(() => buildFormState(customer));
   const [saving, setSaving] = useState(false);
@@ -127,6 +142,12 @@ export default function CustomerEditModal({ customer, isOpen, onClose, onSave }:
     return null;
   }
 
+  const initials = getInitials(form.contact_name || customer.contact_name || null, customer.phone);
+  const fieldClassName =
+    "input-glass min-h-[46px] rounded-2xl border-white/60 bg-white/90 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition focus:border-whatsapp-dark/50 focus:bg-white";
+  const textareaClassName = `${fieldClassName} min-h-[110px] resize-none`;
+  const disabledFieldClassName = `${fieldClassName} bg-[#f6f3ef] text-whatsapp-muted`;
+
   return createPortal(
     <div
       aria-hidden="true"
@@ -136,174 +157,223 @@ export default function CustomerEditModal({ customer, isOpen, onClose, onSave }:
       <div
         aria-label="Edit Customer Profile"
         aria-modal="true"
-        className="whatsapp-popover fixed left-1/2 top-1/2 z-[45] w-[calc(100vw-24px)] max-w-[520px] -translate-x-1/2 -translate-y-1/2 overflow-hidden max-h-[calc(100dvh-24px)]"
+        className="whatsapp-popover fixed left-1/2 top-1/2 z-[45] w-[calc(100vw-24px)] max-w-[580px] -translate-x-1/2 -translate-y-1/2 overflow-hidden max-h-[calc(100dvh-24px)]"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
       >
         <form
-          className="whatsapp-popover-content space-y-3 max-h-[calc(100dvh-24px)] overflow-y-auto overscroll-contain"
+          className="whatsapp-popover-content scrollbar-hidden space-y-4 max-h-[calc(100dvh-24px)] overflow-y-auto overscroll-contain"
           onSubmit={handleSubmit}
         >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="whatsapp-popover-kicker">Customer profile</p>
-              <h2 className="whatsapp-popover-title">Edit contact details</h2>
-              <p className="whatsapp-popover-subtitle">Keep CRM data up to date without leaving the dashboard.</p>
+          <div className="relative overflow-hidden rounded-[24px] border border-white/70 bg-[linear-gradient(135deg,rgba(37,211,102,0.16),rgba(255,255,255,0.92)_38%,rgba(18,140,126,0.08))] p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+            <div aria-hidden="true" className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/45 blur-2xl" />
+            <div className="relative flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-whatsapp-dark text-base font-semibold text-white shadow-soft">
+                  {initials}
+                </div>
+                <div className="min-w-0">
+                  <p className="whatsapp-popover-kicker">Customer profile</p>
+                  <h2 className="whatsapp-popover-title">Edit contact details</h2>
+                  <p className="whatsapp-popover-subtitle">Keep CRM data up to date without leaving the dashboard.</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-whatsapp-dark/80">
+                    <span className="rounded-full border border-white/80 bg-white/75 px-3 py-1 font-semibold shadow-sm">{customer.phone}</span>
+                    {customer.chat_jid ? (
+                      <span className="rounded-full border border-white/80 bg-white/60 px-3 py-1 font-medium shadow-sm">{customer.chat_jid}</span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
             </div>
-            <span className="whatsapp-popover-pill">Edit</span>
           </div>
 
           {error ? <div className="whatsapp-popover-card border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">{error}</div> : null}
 
-          <div className="grid gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1 sm:col-span-2">
-            <label htmlFor="contact_name" className="text-xs font-medium">
-              Name
-            </label>
-            <input
-              id="contact_name"
-              name="contact_name"
-              value={form.contact_name}
-              onChange={handleChange}
-              className="input input-sm"
-              placeholder="Full name"
-              title="Contact name"
-            />
-          </div>
+          <div className="space-y-4">
+            <section className="whatsapp-popover-card space-y-4 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-dark/65">Identity</p>
+                  <p className="mt-1 text-xs text-whatsapp-muted">The main profile details shown across the dashboard.</p>
+                </div>
+              </div>
 
-          <div className="flex flex-col gap-1">
-            <label htmlFor="contact_status" className="text-xs font-medium">
-              Contact Status
-            </label>
-            <select
-              id="contact_status"
-              name="contact_status"
-              value={form.contact_status}
-              onChange={handleChange}
-              className="input input-sm"
-              title="Contact status"
-            >
-              {contactStatusOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <label htmlFor="contact_name" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-whatsapp-dark/70">
+                    Name
+                  </label>
+                  <input
+                    id="contact_name"
+                    name="contact_name"
+                    value={form.contact_name}
+                    onChange={handleChange}
+                    className={fieldClassName}
+                    placeholder="Full name"
+                    title="Contact name"
+                  />
+                </div>
 
-          <div className="flex flex-col gap-1">
-            <label htmlFor="age" className="text-xs font-medium">
-              Age
-            </label>
-            <input id="age" name="age" type="number" min="0" value={form.age} onChange={handleChange} className="input input-sm" title="Age" />
-          </div>
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="contact_status" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-whatsapp-dark/70">
+                    Contact Status
+                  </label>
+                  <select
+                    id="contact_status"
+                    name="contact_status"
+                    value={form.contact_status}
+                    onChange={handleChange}
+                    className={fieldClassName}
+                    title="Contact status"
+                  >
+                    {contactStatusOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-          <div className="flex flex-col gap-1 sm:col-span-2">
-            <label htmlFor="notes" className="text-xs font-medium">
-              Notes
-            </label>
-            <textarea
-              id="notes"
-              name="notes"
-              value={form.notes}
-              onChange={handleChange}
-              className="input input-sm min-h-[88px]"
-              placeholder="Notes"
-              rows={3}
-              title="Notes"
-            />
-          </div>
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="age" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-whatsapp-dark/70">
+                    Age
+                  </label>
+                  <input id="age" name="age" type="number" min="0" value={form.age} onChange={handleChange} className={fieldClassName} title="Age" />
+                </div>
 
-          <div className="flex flex-col gap-1 sm:col-span-2">
-            <label htmlFor="profile_picture_url" className="text-xs font-medium">
-              Profile Picture URL
-            </label>
-            <input
-              id="profile_picture_url"
-              name="profile_picture_url"
-              value={form.profile_picture_url}
-              onChange={handleChange}
-              className="input input-sm"
-              placeholder="Profile picture URL"
-              title="Profile picture URL"
-            />
-          </div>
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <label htmlFor="about" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-whatsapp-dark/70">
+                    About
+                  </label>
+                  <textarea
+                    id="about"
+                    name="about"
+                    value={form.about}
+                    onChange={handleChange}
+                    className={textareaClassName}
+                    placeholder="Short bio or customer context"
+                    rows={3}
+                    title="About"
+                  />
+                </div>
 
-          <div className="flex flex-col gap-1 sm:col-span-2">
-            <label htmlFor="about" className="text-xs font-medium">
-              About
-            </label>
-            <textarea
-              id="about"
-              name="about"
-              value={form.about}
-              onChange={handleChange}
-              className="input input-sm min-h-[80px]"
-              placeholder="About"
-              rows={3}
-              title="About"
-            />
-          </div>
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <label htmlFor="profile_picture_url" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-whatsapp-dark/70">
+                    Profile Picture URL
+                  </label>
+                  <input
+                    id="profile_picture_url"
+                    name="profile_picture_url"
+                    value={form.profile_picture_url}
+                    onChange={handleChange}
+                    className={fieldClassName}
+                    placeholder="https://..."
+                    title="Profile picture URL"
+                  />
+                </div>
+              </div>
+            </section>
 
-          <div className="flex flex-col gap-1">
-            <label htmlFor="premise_address" className="text-xs font-medium">
-              Premise Address
-            </label>
-            <input
-              id="premise_address"
-              name="premise_address"
-              value={form.premise_address}
-              onChange={handleChange}
-              className="input input-sm"
-              placeholder="Premise address"
-              title="Premise address"
-            />
-          </div>
+            <section className="whatsapp-popover-card space-y-4 p-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-dark/65">Business Details</p>
+                <p className="mt-1 text-xs text-whatsapp-muted">Useful context for sales follow-up and segmentation.</p>
+              </div>
 
-          <div className="flex flex-col gap-1">
-            <label htmlFor="business_type" className="text-xs font-medium">
-              Business Type
-            </label>
-            <input
-              id="business_type"
-              name="business_type"
-              value={form.business_type}
-              onChange={handleChange}
-              className="input input-sm"
-              placeholder="Business type"
-              title="Business type"
-            />
-          </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="premise_address" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-whatsapp-dark/70">
+                    Premise Address
+                  </label>
+                  <input
+                    id="premise_address"
+                    name="premise_address"
+                    value={form.premise_address}
+                    onChange={handleChange}
+                    className={fieldClassName}
+                    placeholder="Premise address"
+                    title="Premise address"
+                  />
+                </div>
 
-          <div className="flex flex-col gap-1">
-            <label htmlFor="email_address" className="text-xs font-medium">
-              Email Address
-            </label>
-            <input
-              id="email_address"
-              name="email_address"
-              type="email"
-              value={form.email_address}
-              onChange={handleChange}
-              className="input input-sm"
-              placeholder="Email address"
-              title="Email address"
-            />
-          </div>
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="business_type" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-whatsapp-dark/70">
+                    Business Type
+                  </label>
+                  <input
+                    id="business_type"
+                    name="business_type"
+                    value={form.business_type}
+                    onChange={handleChange}
+                    className={fieldClassName}
+                    placeholder="Business type"
+                    title="Business type"
+                  />
+                </div>
 
-          <div className="flex flex-col gap-1">
-            <label htmlFor="phone" className="text-xs font-medium">
-              Phone (WhatsApp)
-            </label>
-            <input id="phone" value={customer.phone} disabled className="input input-sm bg-gray-100" title="Phone (WhatsApp)" />
-          </div>
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <label htmlFor="email_address" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-whatsapp-dark/70">
+                    Email Address
+                  </label>
+                  <input
+                    id="email_address"
+                    name="email_address"
+                    type="email"
+                    value={form.email_address}
+                    onChange={handleChange}
+                    className={fieldClassName}
+                    placeholder="Email address"
+                    title="Email address"
+                  />
+                </div>
+              </div>
+            </section>
 
-          <div className="flex flex-col gap-1 sm:col-span-2">
-            <label htmlFor="chat_jid" className="text-xs font-medium">
-              Chat JID
-            </label>
-            <input id="chat_jid" value={customer.chat_jid || ""} disabled className="input input-sm bg-gray-100" title="Chat JID" />
-          </div>
+            <section className="whatsapp-popover-card space-y-4 p-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-dark/65">Notes</p>
+                <p className="mt-1 text-xs text-whatsapp-muted">Internal CRM notes for your team.</p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="notes" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-whatsapp-dark/70">
+                  Notes
+                </label>
+                <textarea
+                  id="notes"
+                  name="notes"
+                  value={form.notes}
+                  onChange={handleChange}
+                  className={textareaClassName}
+                  placeholder="Important details, preferences, follow-up reminders..."
+                  rows={4}
+                  title="Notes"
+                />
+              </div>
+            </section>
+
+            <section className="whatsapp-popover-card space-y-4 border-dashed p-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-whatsapp-dark/65">Read Only</p>
+                <p className="mt-1 text-xs text-whatsapp-muted">Stable identifiers from WhatsApp sync.</p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="phone" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-whatsapp-dark/70">
+                    Phone (WhatsApp)
+                  </label>
+                  <input id="phone" value={customer.phone} disabled className={disabledFieldClassName} title="Phone (WhatsApp)" />
+                </div>
+
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <label htmlFor="chat_jid" className="text-[11px] font-semibold uppercase tracking-[0.14em] text-whatsapp-dark/70">
+                    Chat JID
+                  </label>
+                  <input id="chat_jid" value={customer.chat_jid || ""} disabled className={disabledFieldClassName} title="Chat JID" />
+                </div>
+              </div>
+            </section>
           </div>
 
           <div className="grid grid-cols-2 gap-2 pt-1">
