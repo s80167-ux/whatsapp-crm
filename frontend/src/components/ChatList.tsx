@@ -411,22 +411,34 @@ export function ChatList({
                 (!selectedChatJid || String(conversation.chatJid || "").trim() === String(selectedChatJid).trim());
               const conversationKey = conversation.chatJid || conversationId || conversation.timestamp;
               const deleting = deletingConversationKey === conversationKey;
+              const rowInteractive = Boolean(conversationId) && !deleting;
 
               return (
                 <div key={conversationKey} className="group relative">
-                  <button
+                  <div
+                    aria-disabled={!rowInteractive}
                     className={`relative w-full max-w-full min-w-0 overflow-hidden rounded-lg border px-3 py-3 text-left transition-colors duration-200 sm:px-4 sm:py-3 ${
                       active
                         ? "border-transparent bg-[#e9edef] shadow-none"
                         : "border-transparent bg-white hover:bg-[#f5f6f6] shadow-none"
-                    }`}
-                    disabled={!conversationId || deleting}
+                    } ${rowInteractive ? "cursor-pointer" : "cursor-default opacity-70"}`}
                     onClick={() => {
-                      if (conversationId) {
+                      if (rowInteractive && conversationId) {
                         onSelect(conversationId, conversation.chatJid);
                       }
                     }}
-                    type="button"
+                    onKeyDown={(event) => {
+                      if (!rowInteractive || !conversationId) {
+                        return;
+                      }
+
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelect(conversationId, conversation.chatJid);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={rowInteractive ? 0 : -1}
                   >
                     <div className="min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                       <div className="min-w-0 flex-1">
@@ -517,7 +529,7 @@ export function ChatList({
                         </p>
                       </div>
                     </div>
-                  </button>
+                  </div>
                 </div>
               );
             })}

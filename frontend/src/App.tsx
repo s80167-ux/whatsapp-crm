@@ -2593,7 +2593,7 @@ function App() {
         {dashboardNotice ? <div className="glass-panel border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{dashboardNotice}</div> : null}
 
         {isSalesDashboard ? (
-          <div className="min-h-0 flex-1 space-y-4 xl:grid xl:grid-cols-[minmax(320px,1.5fr)_minmax(0,3fr)] xl:items-stretch xl:gap-4 xl:space-y-0 xl:space-x-0">
+          <div className="min-h-0 flex-1 space-y-4 xl:grid xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)] xl:items-stretch xl:gap-4 xl:space-y-0 xl:space-x-0">
             <Sidebar
               activeView={activeView}
               activeStatusFilter={activeStatusFilter}
@@ -2645,7 +2645,7 @@ function App() {
             />
           </div>
         ) : (
-          <div className="min-h-0 flex-1 space-y-4 xl:grid xl:grid-cols-[minmax(320px,1.5fr)_minmax(0,3fr)_minmax(0,2fr)] xl:items-stretch xl:gap-4 xl:space-y-0 xl:space-x-0">
+          <div className="min-h-0 flex-1 space-y-4 xl:grid xl:grid-cols-[minmax(320px,360px)_minmax(0,3fr)_minmax(0,2fr)] xl:items-stretch xl:gap-4 xl:space-y-0 xl:space-x-0">
             <Sidebar
               activeView={activeView}
               activeStatusFilter={activeStatusFilter}

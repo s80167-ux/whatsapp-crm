@@ -288,8 +288,8 @@ export function SalesDashboard({ activeContact, conversations, loading = false, 
   const revenueGrowth = Math.min(100, Math.max(0, conversionRate + 10));
 
   return (
-    <section className="space-y-3 xl:grid xl:grid-cols-[minmax(0,1fr)_330px] xl:items-start xl:gap-3">
-      <div className="mt-2 flex flex-col space-y-3 sm:mt-4">
+    <section className="space-y-3 xl:grid xl:grid-cols-[minmax(0,1fr)_330px] xl:items-start xl:gap-3 xl:space-y-0">
+      <div className="flex flex-col space-y-3">
         <section className="glass-panel space-y-3 p-3 sm:p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>

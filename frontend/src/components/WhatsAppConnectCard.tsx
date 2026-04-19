@@ -437,6 +437,7 @@ export function WhatsAppConnectCard({
     <button
       aria-label={showProfilePanel ? "Hide WhatsApp profile" : "Show WhatsApp profile"}
       className={`icon-hover-trigger flex ${compact ? "h-8 w-8" : "h-10 w-10"} appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent ${showProfilePanel ? "text-whatsapp-deep" : ""}`}
+      key="profile"
       ref={profileButtonRef}
       onClick={() => setShowProfilePanel((current) => !current)}
       type="button"
@@ -450,7 +451,7 @@ export function WhatsAppConnectCard({
           strokeWidth="2"
         />
       </svg>
-      <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Profile</span>
+      <span className="hidden text-[10px] font-normal text-gray-500 sm:hidden">Profile</span>
       <span className="icon-hover-label hidden sm:inline">{showProfilePanel ? "Hide WhatsApp profile" : "Show WhatsApp profile"}</span>
     </button>
   ) : null;
@@ -460,6 +461,7 @@ export function WhatsAppConnectCard({
       aria-label={disconnectLabel}
       className={`icon-hover-trigger flex ${compact ? "h-8 w-8" : "h-10 w-10"} appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-rose-700 focus:bg-transparent disabled:cursor-not-allowed disabled:opacity-50`}
       disabled={disconnecting}
+      key="disconnect"
       onClick={onDisconnect}
       type="button"
     >
@@ -479,7 +481,7 @@ export function WhatsAppConnectCard({
           strokeWidth="1.8"
         />
       </svg>
-      <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Disconnect</span>
+      <span className="hidden text-[10px] font-normal text-gray-500 sm:hidden">Disconnect</span>
       <span className="icon-hover-label hidden sm:inline">{disconnectLabel}</span>
     </button>
   ) : null;
@@ -489,13 +491,14 @@ export function WhatsAppConnectCard({
       aria-label={connectLabel}
       className={`icon-hover-trigger flex ${compact ? "h-8 w-8" : "h-10 w-10"} appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent disabled:cursor-not-allowed disabled:opacity-50`}
       disabled={connectingNew}
+      key="connect"
       onClick={onConnectNew}
       type="button"
     >
       <svg fill="none" height="16" viewBox="0 0 24 24" width="16">
         <path d="M12 5v14M5 12h14" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
       </svg>
-      <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Connect</span>
+      <span className="hidden text-[10px] font-normal text-gray-500 sm:hidden">Connect</span>
       <span className="icon-hover-label hidden sm:inline">{connectLabel}</span>
     </button>
   ) : null;
@@ -504,6 +507,7 @@ export function WhatsAppConnectCard({
     <button
       aria-label={showAdvanced ? "Hide WhatsApp settings" : "Show WhatsApp settings"}
       className={`icon-hover-trigger flex h-8 w-8 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent ${showAdvanced ? "text-whatsapp-deep" : ""}`}
+      key="settings"
       ref={settingsButtonRef}
       onClick={() => setShowAdvanced((current) => !current)}
       type="button"
@@ -518,7 +522,7 @@ export function WhatsAppConnectCard({
           strokeWidth="2"
         />
       </svg>
-      <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Settings</span>
+      <span className="hidden text-[10px] font-normal text-gray-500 sm:hidden">Settings</span>
       <span className="icon-hover-label hidden sm:inline">{showAdvanced ? "Hide WhatsApp settings" : "Show WhatsApp settings"}</span>
     </button>
   );
@@ -527,6 +531,7 @@ export function WhatsAppConnectCard({
     <button
       aria-label={showQrOverlay ? "Hide WhatsApp QR code" : "Show WhatsApp QR code"}
       className={`icon-hover-trigger flex h-8 w-8 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent ${showQrOverlay ? "text-whatsapp-deep" : ""}`}
+      key="qr"
       onClick={() => setShowQrOverlay((current) => !current)}
       ref={qrButtonRef}
       type="button"
@@ -535,7 +540,7 @@ export function WhatsAppConnectCard({
         <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
         <path d="M14 14h2v2h-2zM18 14h2v6h-6v-2h4zM14 18h2v2h-2z" fill="currentColor" />
       </svg>
-      <span className="block text-[10px] font-normal text-gray-500 sm:hidden">QR</span>
+      <span className="hidden text-[10px] font-normal text-gray-500 sm:hidden">QR</span>
       <span className="icon-hover-label hidden sm:inline">{showQrOverlay ? "Hide WhatsApp QR code" : "Show WhatsApp QR code"}</span>
     </button>
   ) : null;
@@ -780,25 +785,29 @@ export function WhatsAppConnectCard({
       : settingsPanelContent
     : null;
 
+  const mobileCompactActionButtons = [connectIconButton, qrIconButton, settingsIconButton].filter(Boolean);
+  const desktopCompactActionButtons = [connectIconButton, profileIconButton, qrIconButton, settingsIconButton, disconnectIconButton].filter(Boolean);
+
   if (compact) {
     return (
-      <div className="relative overflow-visible px-1 py-1 sm:px-1.5 sm:py-1 lg:min-w-[210px] lg:px-1.5 lg:py-0.5">
-        <div className="flex items-start justify-between gap-2">
+      <div className="relative w-full overflow-visible px-0.5 py-0.5 sm:w-auto sm:px-1.5 sm:py-1 lg:min-w-[210px] lg:px-1.5 lg:py-0.5">
+        <div className="flex items-start justify-between gap-1.5 sm:gap-2">
           <div className="min-w-0 flex-1">
             <p className="text-[10px] uppercase tracking-[0.2em] text-whatsapp-muted">WhatsApp</p>
-            <div className="mt-1 flex min-w-0 items-baseline gap-2">
+            <div className="mt-1 flex min-w-0 flex-col items-start gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
               <p className="truncate text-sm font-semibold leading-5 text-ink">{compactStatusTitle(status)}</p>
               {activeNumberLabel ? (
                 <p className="truncate text-[11px] font-medium text-whatsapp-muted">{activeNumberLabel}</p>
               ) : null}
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {connectIconButton}
-            {profileIconButton}
-            {qrIconButton}
-            {settingsIconButton}
-            {disconnectIconButton}
+          <div className="shrink-0">
+            <div className="grid w-[84px] grid-cols-3 justify-items-center gap-0.5 sm:hidden">
+              {mobileCompactActionButtons}
+            </div>
+            <div className="hidden items-center gap-1 sm:flex">
+              {desktopCompactActionButtons}
+            </div>
           </div>
         </div>
 

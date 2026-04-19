@@ -274,7 +274,7 @@ export function TopBar({
     : "Unavailable";
 
   return (
-    <div className="glass-panel flex flex-col gap-1.5 p-2.5 lg:flex-row lg:items-start lg:justify-between lg:gap-4 lg:px-4 lg:py-2.5">
+    <div className="glass-panel flex flex-col gap-1.5 p-2 lg:flex-row lg:items-start lg:justify-between lg:gap-4 lg:px-4 lg:py-2.5">
       <div className="flex flex-col gap-1.5 lg:min-w-0 lg:flex-1">
         <nav className="flex flex-wrap items-center gap-1 sm:gap-1.5">
           {navItems.map((item) => (
@@ -304,8 +304,8 @@ export function TopBar({
         </nav>
       </div>
 
-      <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-start sm:justify-end sm:gap-3 lg:w-auto lg:shrink-0 lg:self-start">
-        <div className="flex items-start gap-1.5">
+      <div className="flex w-full flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-end sm:gap-3 lg:w-auto lg:shrink-0 lg:self-start">
+        <div className="flex w-full items-start gap-1.5 sm:w-auto">
           <WhatsAppConnectCard
             activeWhatsAppNumber={activeWhatsAppNumber}
             compact
@@ -324,20 +324,23 @@ export function TopBar({
         </div>
 
         <div className="lg:min-w-[220px] lg:self-start">
-          <div className="flex items-start justify-between gap-2">
+          <div className="flex items-start justify-between gap-1.5 sm:gap-2">
             <div className="min-w-0 flex-1">
               <p className="text-[10px] uppercase tracking-[0.2em] text-whatsapp-muted">Signed in</p>
-              <div className="mt-0.5 flex min-w-0 items-baseline gap-2 sm:mt-1">
+              <div className="mt-0.5 flex min-w-0 flex-col items-start gap-0.5 sm:mt-1 sm:flex-row sm:items-baseline sm:gap-2">
                 <p className="truncate text-[15px] font-semibold text-ink sm:text-sm">{profile?.full_name || userEmail}</p>
+                {profile?.organization?.name ? (
+                  <p className="truncate text-[11px] text-whatsapp-muted sm:hidden">{profile.organization.name}</p>
+                ) : null}
                 {profile?.organization?.name || profile?.role ? (
-                <p className="truncate text-[11px] text-whatsapp-muted">
-                  {[profile?.organization?.name || null, profile?.role ? profile.role.replace(/_/g, " ") : null].filter(Boolean).join(" | ")}
-                </p>
-              ) : null}
+                  <p className="hidden truncate text-[11px] text-whatsapp-muted sm:block">
+                    {[profile?.organization?.name || null, profile?.role ? profile.role.replace(/_/g, " ") : null].filter(Boolean).join(" | ")}
+                  </p>
+                ) : null}
               </div>
               {profile?.full_name ? <p className="truncate text-[11px] text-whatsapp-muted">{userEmail}</p> : null}
             </div>
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="grid w-[84px] shrink-0 grid-cols-3 justify-items-center gap-0.5 sm:flex sm:w-auto sm.items-center sm:gap-1">
               <button
                 aria-label={showProfilePanel ? "Hide profile" : "Show profile"}
                 className="icon-hover-trigger flex h-8 w-8 appearance-none items-center justify-center border-0 bg-transparent p-0 text-whatsapp-muted shadow-none outline-none ring-0 transition hover:bg-transparent hover:text-whatsapp-deep focus:bg-transparent"
@@ -358,7 +361,7 @@ export function TopBar({
                     strokeWidth="2"
                   />
                 </svg>
-                <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Profile</span>
+                <span className="hidden text-[10px] font-normal text-gray-500 sm:hidden">Profile</span>
                 <span className="icon-hover-label hidden sm:inline">Profile</span>
               </button>
 
@@ -383,7 +386,7 @@ export function TopBar({
                     strokeWidth="2"
                   />
                 </svg>
-                <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Change</span>
+                <span className="hidden text-[10px] font-normal text-gray-500 sm:hidden">Change</span>
                 <span className="icon-hover-label hidden sm:inline">Change password</span>
               </button>
 
@@ -402,7 +405,7 @@ export function TopBar({
                     strokeWidth="2"
                   />
                 </svg>
-                <span className="block text-[10px] font-normal text-gray-500 sm:hidden">Logout</span>
+                <span className="hidden text-[10px] font-normal text-gray-500 sm:hidden">Logout</span>
                 <span className="icon-hover-label hidden sm:inline">Logout</span>
               </button>
             </div>

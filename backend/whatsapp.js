@@ -33,6 +33,7 @@ const HISTORY_MESSAGES_FILE = "hist_messages.json";
 const HISTORY_CACHE_MAX_MESSAGES = 5000;
 const CONNECTING_RECOVERY_TIMEOUT_MS = 25000;
 const MAX_CONNECTING_TIMEOUTS_BEFORE_AUTH_RESET = 3;
+const SOCKET_TASK_DRAIN_TIMEOUT_MS = 5000;
 
 function isExplicitAbsoluteAuthDir(value) {
   const rawValue = String(value || "").trim();
@@ -356,7 +357,11 @@ function getOrCreateSessionFromAccount(account) {
     connectingRecoveryTimer: null,
     consecutiveConnectingTimeouts: 0,
     initializingPromise: null,
-    contactIdentityCache: new Map()
+    contactIdentityCache: new Map(),
+    socketGeneration: 0,
+    activeSocketGeneration: 0,
+    pendingSocketTasks: new Map(),
+    socketTaskWaiters: new Map()
   };
 
   sessions.set(accountId, session);
@@ -408,11 +413,117 @@ function shouldIgnoreQrDowngrade(session) {
   return false;
 }
 
-function safelyRunSocketTask(label, task) {
+function updateSocketTaskCount(session, generation, delta) {
+  if (!session || !Number.isFinite(generation) || generation <= 0) {
+    return;
+  }
+
+  const nextCount = Math.max(0, (session.pendingSocketTasks.get(generation) || 0) + delta);
+  if (nextCount === 0) {
+    session.pendingSocketTasks.delete(generation);
+  } else {
+    session.pendingSocketTasks.set(generation, nextCount);
+  }
+
+  const waiters = session.socketTaskWaiters.get(generation) || [];
+  if (!waiters.length) {
+    return;
+  }
+
+  const remainingWaiters = [];
+  for (const waiter of waiters) {
+    if (nextCount <= waiter.threshold) {
+      clearTimeout(waiter.timeoutId);
+      waiter.resolve();
+    } else {
+      remainingWaiters.push(waiter);
+    }
+  }
+
+  if (remainingWaiters.length) {
+    session.socketTaskWaiters.set(generation, remainingWaiters);
+  } else {
+    session.socketTaskWaiters.delete(generation);
+  }
+}
+
+function waitForSocketTasks(session, generation, threshold = 0, timeoutMs = SOCKET_TASK_DRAIN_TIMEOUT_MS) {
+  if (!session || !Number.isFinite(generation) || generation <= 0) {
+    return Promise.resolve();
+  }
+
+  const pendingCount = session.pendingSocketTasks.get(generation) || 0;
+  if (pendingCount <= threshold) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      const waiters = session.socketTaskWaiters.get(generation) || [];
+      session.socketTaskWaiters.set(
+        generation,
+        waiters.filter((waiter) => waiter.timeoutId !== timeoutId)
+      );
+      resolve();
+    }, timeoutMs);
+
+    const waiters = session.socketTaskWaiters.get(generation) || [];
+    waiters.push({ threshold, resolve, timeoutId });
+    session.socketTaskWaiters.set(generation, waiters);
+  });
+}
+
+async function teardownSocketGeneration(session, activeSock, generation, options = {}) {
+  if (!session || !Number.isFinite(generation) || generation <= 0) {
+    return;
+  }
+
+  if (session.activeSocketGeneration === generation) {
+    session.activeSocketGeneration = 0;
+  }
+
+  if (session.sock === activeSock) {
+    session.sock = null;
+  }
+
+  session.qrData = null;
+  session.historySyncObserved = false;
+  clearFallbackSyncTimer(session);
+
+  try {
+    if (activeSock?.ev?.removeAllListeners) {
+      activeSock.ev.removeAllListeners();
+    }
+  } catch (error) {
+    console.warn(`Failed to remove WhatsApp socket listeners for ${session.accountId}:`, error?.message || error);
+  }
+
+  try {
+    if (activeSock?.end) {
+      activeSock.end(undefined);
+    }
+  } catch (error) {
+    console.warn(`Failed to close WhatsApp socket for ${session.accountId}:`, error?.message || error);
+  }
+
+  await waitForSocketTasks(session, generation, options.pendingThreshold ?? 0, options.timeoutMs);
+}
+
+function safelyRunSocketTask(session, generation, label, task) {
+  updateSocketTaskCount(session, generation, 1);
   Promise.resolve()
-    .then(task)
+    .then(async () => {
+      if (session?.activeSocketGeneration !== generation) {
+        return;
+      }
+
+      await task();
+    })
     .catch((error) => {
       console.error(`WhatsApp socket task failed (${label}):`, error?.message || error);
+    })
+    .finally(() => {
+      updateSocketTaskCount(session, generation, -1);
     });
 }
 
@@ -424,6 +535,15 @@ async function disposeSession(session, options = {}) {
   clearReconnectTimer(session);
   clearFallbackSyncTimer(session);
   clearConnectingRecoveryTimer(session);
+  session.activeSocketGeneration = 0;
+  session.pendingSocketTasks.clear();
+  for (const waiters of session.socketTaskWaiters.values()) {
+    for (const waiter of waiters) {
+      clearTimeout(waiter.timeoutId);
+      waiter.resolve();
+    }
+  }
+  session.socketTaskWaiters.clear();
   for (const request of session.pendingHistorySyncRequests || []) {
     clearTimeout(request.timeout);
     request.resolve({
@@ -1435,10 +1555,13 @@ async function initializeWhatsApp(ownerUserId, accountId) {
       getMessage: async () => undefined
     });
     const activeSock = session.sock;
+    const socketGeneration = session.socketGeneration + 1;
+    session.socketGeneration = socketGeneration;
+    session.activeSocketGeneration = socketGeneration;
     const isCurrentSocket = () => session.sock === activeSock;
 
     session.connectingRecoveryTimer = setTimeout(() => {
-      safelyRunSocketTask(`connecting-timeout:${session.accountId}`, async () => {
+      safelyRunSocketTask(session, socketGeneration, `connecting-timeout:${session.accountId}`, async () => {
         if (!isCurrentSocket() || session.connectionState !== "connecting") {
           return;
         }
@@ -1453,18 +1576,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
         );
 
         clearConnectingRecoveryTimer(session);
-        session.qrData = null;
-        session.sock = null;
-        session.historySyncObserved = false;
-        clearFallbackSyncTimer(session);
-
-        try {
-          if (activeSock?.end) {
-            activeSock.end(undefined);
-          }
-        } catch (error) {
-          console.warn(`Failed to close stalled WhatsApp socket for ${session.accountId}:`, error?.message || error);
-        }
+        await teardownSocketGeneration(session, activeSock, socketGeneration, { pendingThreshold: 1 });
 
         session.connectionState = "disconnected";
         await syncSessionAccountState(session, { connection_state: "disconnected" }).catch(() => {});
@@ -1477,11 +1589,11 @@ async function initializeWhatsApp(ownerUserId, accountId) {
         return;
       }
 
-      safelyRunSocketTask(`creds.update:${session.accountId}`, () => saveCreds());
+      safelyRunSocketTask(session, socketGeneration, `creds.update:${session.accountId}`, () => saveCreds());
     });
 
     activeSock.ev.on("connection.update", (update) => {
-      safelyRunSocketTask(`connection.update:${session.accountId}`, async () => {
+      safelyRunSocketTask(session, socketGeneration, `connection.update:${session.accountId}`, async () => {
         if (!isCurrentSocket()) {
           return;
         }
@@ -1577,12 +1689,6 @@ async function initializeWhatsApp(ownerUserId, accountId) {
             lastDisconnect?.error instanceof Boom
               ? lastDisconnect.error?.data || lastDisconnect.error?.output?.payload || null
               : null;
-          session.qrData = null;
-          if (isCurrentSocket()) {
-            session.sock = null;
-          }
-          session.historySyncObserved = false;
-          clearFallbackSyncTimer(session);
 
           console.warn("WhatsApp connection closed:", {
             accountId: session.accountId,
@@ -1598,6 +1704,8 @@ async function initializeWhatsApp(ownerUserId, accountId) {
             console.warn(`Ignoring disconnect transition during process shutdown for ${session.accountId}.`);
             return;
           }
+
+          await teardownSocketGeneration(session, activeSock, socketGeneration, { pendingThreshold: 1 });
 
           if (session.manualDisconnectRequested) {
             session.connectionState = "disconnected";
@@ -1621,7 +1729,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
     });
 
     activeSock.ev.on("chats.set", ({ chats }) => {
-      safelyRunSocketTask(`chats.set:${session.accountId}`, async () => {
+      safelyRunSocketTask(session, socketGeneration, `chats.set:${session.accountId}`, async () => {
         if (!isCurrentSocket()) {
           return;
         }
@@ -1656,7 +1764,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
     });
 
     activeSock.ev.on("chats.update", (updates) => {
-      safelyRunSocketTask(`chats.update:${session.accountId}`, async () => {
+      safelyRunSocketTask(session, socketGeneration, `chats.update:${session.accountId}`, async () => {
         if (!isCurrentSocket()) {
           return;
         }
@@ -1695,7 +1803,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
     });
 
     activeSock.ev.on("messages.upsert", ({ messages, type }) => {
-      safelyRunSocketTask(`messages.upsert:${session.accountId}`, async () => {
+      safelyRunSocketTask(session, socketGeneration, `messages.upsert:${session.accountId}`, async () => {
         if (!isCurrentSocket()) {
           return;
         }
@@ -1713,7 +1821,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
     });
 
     activeSock.ev.on("messages.update", (updates) => {
-      safelyRunSocketTask(`messages.update:${session.accountId}`, async () => {
+      safelyRunSocketTask(session, socketGeneration, `messages.update:${session.accountId}`, async () => {
         if (!isCurrentSocket()) {
           return;
         }
@@ -1742,7 +1850,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
     });
 
     activeSock.ev.on("contacts.upsert", (contacts) => {
-      safelyRunSocketTask(`contacts.upsert:${session.accountId}`, async () => {
+      safelyRunSocketTask(session, socketGeneration, `contacts.upsert:${session.accountId}`, async () => {
         if (!isCurrentSocket()) {
           return;
         }
@@ -1787,7 +1895,7 @@ async function initializeWhatsApp(ownerUserId, accountId) {
     });
 
     activeSock.ev.on("messaging-history.set", ({ chats, contacts, messages, syncType }) => {
-      safelyRunSocketTask(`messaging-history.set:${session.accountId}`, async () => {
+      safelyRunSocketTask(session, socketGeneration, `messaging-history.set:${session.accountId}`, async () => {
         if (!isCurrentSocket()) {
           return;
         }
