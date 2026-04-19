@@ -42,6 +42,11 @@ export type DashboardSessionResponse = {
   sessionId: string;
 };
 
+export type InviteRedemptionResponse = {
+  success: boolean;
+  profile: UserProfile | null;
+};
+
 export type Conversation = {
   phone: string;
   chatJid: string | null;
@@ -216,6 +221,21 @@ export type UserProfile = {
   } | null;
   created_at: string | null;
   updated_at: string | null;
+};
+
+export type OrganizationInvitation = {
+  id: string;
+  organization_id: string;
+  email: string | null;
+  role: "admin" | "agent" | "user";
+  invite_code: string;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  invited_by: string | null;
+  accepted_by: string | null;
+  accepted_at: string | null;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type DeleteMessageResponse = {
@@ -434,6 +454,19 @@ export const api = {
       token
     );
   },
+  redeemInviteCode(inviteCode: string, token: string) {
+    return request<InviteRedemptionResponse>(
+      "/auth/redeem-invite",
+      {
+        method: "POST",
+        body: JSON.stringify({ inviteCode })
+      },
+      token,
+      {
+        skipSession: true
+      }
+    );
+  },
   getWhatsAppStatus(token: string, whatsappAccountId?: string | null) {
     return request<WhatsAppStatus>(withWhatsAppAccountParam("/whatsapp/status", whatsappAccountId), {}, token);
   },
@@ -470,6 +503,35 @@ export const api = {
   },
   getMyProfile(token: string) {
     return request<UserProfile>("/profiles/me", {}, token);
+  },
+  getOrganizationInvitations(token: string) {
+    return request<OrganizationInvitation[]>("/admin/invitations", {}, token);
+  },
+  createOrganizationInvitation(
+    payload: {
+      email?: string | null;
+      role: "admin" | "agent" | "user";
+      expiresInDays?: number;
+    },
+    token: string
+  ) {
+    return request<OrganizationInvitation>(
+      "/admin/invitations",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      token
+    );
+  },
+  revokeOrganizationInvitation(invitationId: string, token: string) {
+    return request<{ success: boolean; invitation: OrganizationInvitation }>(
+      `/admin/invitations/${invitationId}`,
+      {
+        method: "DELETE"
+      },
+      token
+    );
   },
   clearDatabase(token: string) {
     return request<{ success: boolean; message: string }>(

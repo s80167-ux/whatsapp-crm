@@ -40,18 +40,17 @@ function isLocalhostOrigin(origin: string) {
 }
 
 function getAuthRedirectBaseUrl() {
-  if (typeof window === "undefined") {
-    return normalizeUrl(configuredPublicAppUrl) || fallbackPublicAppUrl;
-  }
-
-  const currentUrl = `${window.location.origin}${window.location.pathname}`;
   const publicAppUrl = normalizeUrl(configuredPublicAppUrl) || fallbackPublicAppUrl;
+
+  if (typeof window === "undefined") {
+    return publicAppUrl;
+  }
 
   if (isLocalhostOrigin(window.location.origin)) {
     return publicAppUrl;
   }
 
-  return currentUrl;
+  return publicAppUrl;
 }
 
 export function getPasswordRecoveryRedirectUrl() {

@@ -1,10 +1,12 @@
-import type { Conversation, CustomerStatus, UserProfile, WhatsAppAccount } from "../lib/api";
+import { useEffect, useState } from "react";
+import { api, type Conversation, type CustomerStatus, type OrganizationInvitation, type UserProfile, type WhatsAppAccount } from "../lib/api";
 
 type AdminDashboardProps = {
   organizationName: string;
   profile: UserProfile | null;
   conversations: Conversation[];
   salesStatuses: Record<CustomerStatus, number>;
+  token: string;
   whatsAppAccounts: WhatsAppAccount[];
 };
 
@@ -133,10 +135,106 @@ export function AdminDashboard({
   profile,
   conversations,
   salesStatuses,
+  token,
   whatsAppAccounts
 }: AdminDashboardProps) {
   const metrics = buildMetrics(conversations, whatsAppAccounts, salesStatuses);
   const tasks = buildTaskList(conversations, whatsAppAccounts, organizationName);
+  const [invitations, setInvitations] = useState<OrganizationInvitation[]>([]);
+  const [invitesLoading, setInvitesLoading] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"admin" | "agent" | "user">("agent");
+  const [inviteExpiresInDays, setInviteExpiresInDays] = useState(7);
+  const [inviteError, setInviteError] = useState("");
+  const [inviteNotice, setInviteNotice] = useState("");
+  const [creatingInvite, setCreatingInvite] = useState(false);
+  const [revokingInviteId, setRevokingInviteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadInvitations() {
+      if (!token) {
+        return;
+      }
+
+      setInvitesLoading(true);
+      setInviteError("");
+
+      try {
+        const data = await api.getOrganizationInvitations(token);
+        if (!cancelled) {
+          setInvitations(data);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setInviteError(error instanceof Error ? error.message : "Failed to load invitations.");
+        }
+      } finally {
+        if (!cancelled) {
+          setInvitesLoading(false);
+        }
+      }
+    }
+
+    void loadInvitations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  async function handleCreateInvite() {
+    setCreatingInvite(true);
+    setInviteError("");
+    setInviteNotice("");
+
+    try {
+      const invitation = await api.createOrganizationInvitation(
+        {
+          email: inviteEmail.trim() || null,
+          role: inviteRole,
+          expiresInDays: inviteExpiresInDays
+        },
+        token
+      );
+
+      setInvitations((current) => [invitation, ...current]);
+      setInviteNotice(`Invite created. Share code ${invitation.invite_code} with the member.`);
+      setInviteEmail("");
+      setInviteRole("agent");
+      setInviteExpiresInDays(7);
+    } catch (error) {
+      setInviteError(error instanceof Error ? error.message : "Failed to create invite.");
+    } finally {
+      setCreatingInvite(false);
+    }
+  }
+
+  async function handleRevokeInvite(invitationId: string) {
+    setRevokingInviteId(invitationId);
+    setInviteError("");
+    setInviteNotice("");
+
+    try {
+      await api.revokeOrganizationInvitation(invitationId, token);
+      setInvitations((current) =>
+        current.map((invitation) =>
+          invitation.id === invitationId
+            ? {
+                ...invitation,
+                status: "revoked"
+              }
+            : invitation
+        )
+      );
+      setInviteNotice("Invite revoked.");
+    } catch (error) {
+      setInviteError(error instanceof Error ? error.message : "Failed to revoke invite.");
+    } finally {
+      setRevokingInviteId(null);
+    }
+  }
 
   return (
     <section className="space-y-4">
@@ -190,6 +288,57 @@ export function AdminDashboard({
               </div>
             ))}
           </div>
+
+          <div className="mt-5 rounded-2xl border border-whatsapp-line bg-white/80 p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+              <label className="flex-1">
+                <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Member email</span>
+                <input
+                  className="input-glass w-full"
+                  onChange={(event) => setInviteEmail(event.target.value)}
+                  placeholder="team.member@company.com"
+                  type="email"
+                  value={inviteEmail}
+                />
+              </label>
+              <label className="lg:w-44">
+                <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Role</span>
+                <select
+                  className="input-glass w-full"
+                  onChange={(event) => setInviteRole(event.target.value as "admin" | "agent" | "user")}
+                  value={inviteRole}
+                >
+                  <option value="agent">Agent</option>
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </label>
+              <label className="lg:w-36">
+                <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Expiry</span>
+                <select
+                  className="input-glass w-full"
+                  onChange={(event) => setInviteExpiresInDays(Number(event.target.value))}
+                  value={inviteExpiresInDays}
+                >
+                  <option value={3}>3 days</option>
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                </select>
+              </label>
+              <button
+                className="rounded-xl bg-whatsapp-deep px-4 py-3 text-sm font-semibold text-white transition hover:bg-whatsapp-dark disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={creatingInvite}
+                onClick={handleCreateInvite}
+                type="button"
+              >
+                {creatingInvite ? "Creating..." : "Generate invite"}
+              </button>
+            </div>
+
+            {inviteError ? <p className="mt-3 text-sm text-rose-600">{inviteError}</p> : null}
+            {inviteNotice ? <p className="mt-3 text-sm text-emerald-700">{inviteNotice}</p> : null}
+          </div>
         </section>
 
         <section className="glass-panel p-5">
@@ -237,31 +386,78 @@ export function AdminDashboard({
         </section>
 
         <section className="glass-panel p-5">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-whatsapp-muted">Pipeline Snapshot</p>
-          <h2 className="mt-2 text-xl font-semibold text-ink">Lead mix across the organization</h2>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-whatsapp-muted">Pending Invites</p>
+          <h2 className="mt-2 text-xl font-semibold text-ink">Codes ready to share</h2>
           <div className="mt-5 space-y-3">
-            {Object.entries(salesStatuses).map(([status, count]) => (
-              <div key={status} className="rounded-2xl border border-whatsapp-line bg-white/80 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold capitalize text-ink">{status.replace(/_/g, " ")}</p>
-                  <p className="text-lg font-semibold text-ink">{count}</p>
+            {invitesLoading ? <p className="text-sm text-whatsapp-muted">Loading invitations...</p> : null}
+
+            {!invitesLoading && !invitations.length ? (
+              <div className="rounded-2xl border border-dashed border-whatsapp-line bg-white/80 p-4 text-sm text-whatsapp-muted">
+                No invitations yet. Generate one above to onboard a new admin, agent, or user.
+              </div>
+            ) : null}
+
+            {invitations.map((invitation) => (
+              <div key={invitation.id} className="rounded-2xl border border-whatsapp-line bg-white/80 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-ink">{invitation.email || "Open invitation"}</p>
+                    <p className="mt-1 text-xs uppercase tracking-[0.18em] text-whatsapp-muted">{invitation.role}</p>
+                  </div>
+                  <span className="rounded-full bg-[#f8f5f2] px-2.5 py-1 text-[11px] font-semibold text-whatsapp-deep">
+                    {invitation.status}
+                  </span>
                 </div>
-                <div className="mt-3 h-2 rounded-full bg-[#edf1ef]">
-                  <div
-                    className="h-2 rounded-full bg-[linear-gradient(90deg,#1f6b4f_0%,#f0cf9c_100%)]"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        conversations.length ? (count / Math.max(conversations.length, 1)) * 100 : count ? 100 : 0
-                      )}%`
-                    }}
-                  />
+
+                <div className="mt-3 rounded-xl bg-[#f8f5f2] px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-whatsapp-muted">Invite code</p>
+                  <p className="mt-1 text-sm font-semibold tracking-[0.18em] text-ink">{invitation.invite_code}</p>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between gap-3 text-xs text-whatsapp-muted">
+                  <p>Expires {new Date(invitation.expires_at).toLocaleDateString()}</p>
+                  {invitation.status === "pending" ? (
+                    <button
+                      className="rounded-lg border border-whatsapp-line bg-white px-3 py-1.5 font-semibold text-whatsapp-deep transition hover:bg-[#f5f6f6] disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={revokingInviteId === invitation.id}
+                      onClick={() => handleRevokeInvite(invitation.id)}
+                      type="button"
+                    >
+                      {revokingInviteId === invitation.id ? "Revoking..." : "Revoke"}
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ))}
           </div>
         </section>
       </div>
+
+      <section className="glass-panel p-5">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-whatsapp-muted">Pipeline Snapshot</p>
+        <h2 className="mt-2 text-xl font-semibold text-ink">Lead mix across the organization</h2>
+        <div className="mt-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-5">
+          {Object.entries(salesStatuses).map(([status, count]) => (
+            <div key={status} className="rounded-2xl border border-whatsapp-line bg-white/80 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold capitalize text-ink">{status.replace(/_/g, " ")}</p>
+                <p className="text-lg font-semibold text-ink">{count}</p>
+              </div>
+              <div className="mt-3 h-2 rounded-full bg-[#edf1ef]">
+                <div
+                  className="h-2 rounded-full bg-[linear-gradient(90deg,#1f6b4f_0%,#f0cf9c_100%)]"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      conversations.length ? (count / Math.max(conversations.length, 1)) * 100 : count ? 100 : 0
+                    )}%`
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
     </section>
   );
 }

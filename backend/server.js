@@ -36,7 +36,7 @@ const {
   requireSupabaseAuth,
   revokeDashboardSession
 } = require("./auth");
-const { resolveInsertOwnership } = require("./authz");
+const { requireRole, resolveInsertOwnership } = require("./authz");
 const {
   getConversations,
   getMessagesByPhone,
@@ -62,7 +62,11 @@ const {
   cleanupContactDuplicates,
   getWhatsAppSettings,
   upsertWhatsAppProfile,
-  getProfileByUserId
+  getProfileByUserId,
+  listOrganizationInvitations,
+  createOrganizationInvitation,
+  revokeOrganizationInvitation,
+  acceptOrganizationInvitation
 } = require("./supabase");
 const {
   initializeWhatsApp,
@@ -574,6 +578,32 @@ app.delete("/auth/session", requireSupabaseAuth, async (req, res) => {
   }
 });
 
+app.post("/auth/redeem-invite", requireSupabaseAuth, async (req, res) => {
+  try {
+    const inviteCode = String(req.body?.inviteCode || req.body?.invite_code || "").trim();
+
+    if (!inviteCode) {
+      return res.status(400).json({ error: "Invite code is required." });
+    }
+
+    const profile = await acceptOrganizationInvitation({
+      inviteCode,
+      userId: req.user.id,
+      email: req.user.email || null
+    });
+
+    return res.json({
+      success: true,
+      profile
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      error: error.message || "Failed to redeem invite code.",
+      code: error.code
+    });
+  }
+});
+
 app.get("/profiles/me", requireAuth, async (req, res) => {
   try {
     const profile = await getProfileByUserId(req.user.id);
@@ -594,6 +624,62 @@ app.get("/profiles/me", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Failed to fetch profile:", error);
     return res.status(500).json({ error: "Failed to fetch profile." });
+  }
+});
+
+app.get("/admin/invitations", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const invitations = await listOrganizationInvitations(req.user);
+    return res.json(invitations);
+  } catch (error) {
+    console.error("Failed to list organization invitations:", error);
+    return res.status(error.status || 500).json({
+      error: error.message || "Failed to list invitations."
+    });
+  }
+});
+
+app.post("/admin/invitations", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase() || null;
+    const role = String(req.body?.role || "user").trim().toLowerCase();
+    const expiresInDays = Number(req.body?.expiresInDays || 7);
+    const invitation = await createOrganizationInvitation(req.user, {
+      email,
+      role,
+      expiresInDays
+    });
+
+    return res.status(201).json(invitation);
+  } catch (error) {
+    console.error("Failed to create organization invitation:", error);
+    return res.status(error.status || 500).json({
+      error: error.message || "Failed to create invitation.",
+      code: error.code
+    });
+  }
+});
+
+app.delete("/admin/invitations/:invitationId", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const invitationId = String(req.params.invitationId || "").trim();
+
+    if (!invitationId) {
+      return res.status(400).json({ error: "Invitation ID is required." });
+    }
+
+    const invitation = await revokeOrganizationInvitation(req.user, invitationId);
+
+    if (!invitation) {
+      return res.status(404).json({ error: "Invitation not found." });
+    }
+
+    return res.json({ success: true, invitation });
+  } catch (error) {
+    console.error("Failed to revoke organization invitation:", error);
+    return res.status(error.status || 500).json({
+      error: error.message || "Failed to revoke invitation."
+    });
   }
 });
 

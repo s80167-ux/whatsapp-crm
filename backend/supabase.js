@@ -257,6 +257,7 @@ async function getMessagesByContactId(contact_id, owner_user_id, chat_jid = null
 }
 const { createClient } = require("@supabase/supabase-js");
 const { getPhoneLookupValues, normalizePhone, resolveWhatsAppPhone } = require("./wa-identifiers");
+const crypto = require("crypto");
 const path = require("path");
 
 
@@ -1120,6 +1121,317 @@ async function getProfileByUserId(userId) {
   }
 
   return data || null;
+}
+
+function normalizeInvitationRole(role) {
+  const normalized = String(role || "").trim().toLowerCase();
+  return ["admin", "agent", "user"].includes(normalized) ? normalized : "user";
+}
+
+function normalizeInvitationCode(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function getAuthMetadataValue(metadata, ...keys) {
+  if (!metadata || typeof metadata !== "object") {
+    return "";
+  }
+
+  for (const key of keys) {
+    const nextValue = String(metadata[key] || "").trim();
+    if (nextValue) {
+      return nextValue;
+    }
+  }
+
+  return "";
+}
+
+async function updateProfileOrganizationAccess(userId, { organizationId, role }) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({
+      organization_id: organizationId,
+      role: role ? normalizeRoleForProfile(role) : undefined,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", userId)
+    .select("id, email, full_name, avatar_url, last_sign_in_at, created_at, updated_at, organization_id, role, organization:organizations(id, name, status)")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data || null;
+}
+
+function normalizeRoleForProfile(role) {
+  const normalized = String(role || "").trim().toLowerCase();
+  return ["super_admin", "admin", "agent", "user"].includes(normalized) ? normalized : "user";
+}
+
+async function createOrganizationForAdmin({ userId, organizationName }) {
+  const trimmedOrganizationName = String(organizationName || "").trim();
+
+  if (!userId || !trimmedOrganizationName) {
+    return getProfileByUserId(userId);
+  }
+
+  const { data: organization, error } = await supabase
+    .from("organizations")
+    .insert({
+      name: trimmedOrganizationName
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  await updateProfileOrganizationAccess(userId, {
+    organizationId: organization.id,
+    role: "admin"
+  });
+
+  return getProfileByUserId(userId);
+}
+
+async function listOrganizationInvitations(scopeOrUserId) {
+  const scope = normalizeScopeInput(scopeOrUserId);
+
+  if (scope.role !== "super_admin" && !scope.organizationId) {
+    return [];
+  }
+
+  let query = supabase
+    .from("organization_invitations")
+    .select("id, organization_id, email, role, invite_code, status, invited_by, accepted_by, accepted_at, expires_at, created_at, updated_at")
+    .order("created_at", { ascending: false });
+
+  if (scope.role !== "super_admin") {
+    query = query.eq("organization_id", scope.organizationId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  return data || [];
+}
+
+async function createOrganizationInvitation(scopeOrUserId, { email, role, expiresInDays = 7 }) {
+  const scope = normalizeScopeInput(scopeOrUserId);
+  const organizationId = scope.organizationId;
+
+  if (!organizationId) {
+    const error = new Error("Organization context is required to create invitations.");
+    error.status = 400;
+    throw error;
+  }
+
+  const normalizedEmail = String(email || "").trim().toLowerCase() || null;
+  const normalizedRole = normalizeInvitationRole(role);
+  const safeExpiryDays = Math.min(Math.max(Number(expiresInDays) || 7, 1), 30);
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const inviteCode = crypto.randomBytes(5).toString("hex").toUpperCase();
+    const expiresAt = new Date(Date.now() + safeExpiryDays * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from("organization_invitations")
+      .insert({
+        organization_id: organizationId,
+        email: normalizedEmail,
+        role: normalizedRole,
+        invite_code: inviteCode,
+        invited_by: scope.userId,
+        expires_at: expiresAt
+      })
+      .select("id, organization_id, email, role, invite_code, status, invited_by, accepted_by, accepted_at, expires_at, created_at, updated_at")
+      .single();
+
+    if (!error) {
+      return data;
+    }
+
+    if (error.code !== "23505") {
+      throw error;
+    }
+
+    lastError = error;
+  }
+
+  throw lastError || new Error("Failed to generate a unique invite code.");
+}
+
+async function revokeOrganizationInvitation(scopeOrUserId, invitationId) {
+  const scope = normalizeScopeInput(scopeOrUserId);
+
+  let query = supabase
+    .from("organization_invitations")
+    .update({
+      status: "revoked",
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", invitationId)
+    .eq("status", "pending")
+    .select("id, organization_id, email, role, invite_code, status, invited_by, accepted_by, accepted_at, expires_at, created_at, updated_at");
+
+  if (scope.role !== "super_admin") {
+    query = query.eq("organization_id", scope.organizationId || "00000000-0000-0000-0000-000000000000");
+  }
+
+  const { data, error } = await query.maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data || null;
+}
+
+async function acceptOrganizationInvitation({ inviteCode, userId, email }) {
+  const normalizedInviteCode = normalizeInvitationCode(inviteCode);
+  const normalizedEmail = String(email || "").trim().toLowerCase() || null;
+
+  if (!normalizedInviteCode || !userId) {
+    return null;
+  }
+
+  const currentProfile = await getProfileByUserId(userId);
+
+  const { data: invitation, error } = await supabase
+    .from("organization_invitations")
+    .select("id, organization_id, email, role, invite_code, status, accepted_by, expires_at")
+    .eq("invite_code", normalizedInviteCode)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!invitation) {
+    const missingError = new Error("Invite code is invalid.");
+    missingError.status = 400;
+    missingError.code = "INVITE_NOT_FOUND";
+    throw missingError;
+  }
+
+  const status = String(invitation.status || "").trim().toLowerCase();
+  const expiresAtMs = new Date(invitation.expires_at).getTime();
+
+  if (status === "accepted" && invitation.accepted_by === userId) {
+    return getProfileByUserId(userId);
+  }
+
+  if (status !== "pending") {
+    const statusError = new Error("Invite code is no longer active.");
+    statusError.status = 400;
+    statusError.code = "INVITE_INACTIVE";
+    throw statusError;
+  }
+
+  if (Number.isFinite(expiresAtMs) && expiresAtMs < Date.now()) {
+    await supabase
+      .from("organization_invitations")
+      .update({
+        status: "expired",
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", invitation.id);
+
+    const expiredError = new Error("Invite code has expired.");
+    expiredError.status = 400;
+    expiredError.code = "INVITE_EXPIRED";
+    throw expiredError;
+  }
+
+  if (invitation.email && normalizedEmail && invitation.email !== normalizedEmail) {
+    const emailError = new Error("Invite code was issued for a different email address.");
+    emailError.status = 400;
+    emailError.code = "INVITE_EMAIL_MISMATCH";
+    throw emailError;
+  }
+
+  if (currentProfile?.organization_id) {
+    if (currentProfile.organization_id !== invitation.organization_id) {
+      const orgError = new Error("This account already belongs to a different organization.");
+      orgError.status = 400;
+      orgError.code = "INVITE_ORG_CONFLICT";
+      throw orgError;
+    }
+
+    if (status === "accepted" && invitation.accepted_by && invitation.accepted_by !== userId) {
+      const claimedError = new Error("Invite code has already been used.");
+      claimedError.status = 400;
+      claimedError.code = "INVITE_ALREADY_USED";
+      throw claimedError;
+    }
+  }
+
+  await updateProfileOrganizationAccess(userId, {
+    organizationId: invitation.organization_id,
+    role: invitation.role
+  });
+
+  const { error: acceptError } = await supabase
+    .from("organization_invitations")
+    .update({
+      status: "accepted",
+      accepted_by: userId,
+      accepted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", invitation.id)
+    .eq("status", "pending");
+
+  if (acceptError) {
+    throw acceptError;
+  }
+
+  return getProfileByUserId(userId);
+}
+
+async function hydrateProfileAccessFromAuthUser(authUser) {
+  const userId = String(authUser?.id || "").trim();
+
+  if (!userId) {
+    return null;
+  }
+
+  await upsertProfileFromAuthUser(authUser);
+
+  const currentProfile = await getProfileByUserId(userId);
+  if (currentProfile?.organization_id) {
+    return currentProfile;
+  }
+
+  const metadata = authUser?.user_metadata && typeof authUser.user_metadata === "object" ? authUser.user_metadata : {};
+  const inviteCode = getAuthMetadataValue(metadata, "invite_code", "inviteCode");
+
+  if (inviteCode) {
+    return acceptOrganizationInvitation({
+      inviteCode,
+      userId,
+      email: authUser?.email || currentProfile?.email || null
+    });
+  }
+
+  const requestedRole = normalizeInvitationRole(getAuthMetadataValue(metadata, "requested_role", "requestedRole"));
+  const organizationName = getAuthMetadataValue(metadata, "organization_name", "organizationName");
+
+  if (requestedRole === "admin" && organizationName) {
+    return createOrganizationForAdmin({
+      userId,
+      organizationName
+    });
+  }
+
+  return currentProfile;
 }
 
 function applyWhatsAppAccountFilter(query, whatsappAccountId, columnName = "whatsapp_account_id") {
@@ -3655,7 +3967,12 @@ module.exports = {
   createCustomerSalesItem,
   updateCustomerSalesItem,
   getProfileByUserId,
+  hydrateProfileAccessFromAuthUser,
   upsertProfileFromAuthUser,
+  listOrganizationInvitations,
+  createOrganizationInvitation,
+  revokeOrganizationInvitation,
+  acceptOrganizationInvitation,
   getActiveDashboardSessionId,
   upsertActiveDashboardSession,
   deleteActiveDashboardSession,

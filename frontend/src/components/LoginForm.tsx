@@ -8,6 +8,7 @@ type LoginFormProps = {
   confirmPassword: string;
   registrationOrganizationName: string;
   registrationRole: "admin" | "agent" | "user";
+  registrationInviteCode: string;
   authReady: boolean;
   mode: "login" | "register";
   loading: boolean;
@@ -22,6 +23,7 @@ type LoginFormProps = {
   onEmailChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onConfirmPasswordChange: (value: string) => void;
+  onRegistrationInviteCodeChange: (value: string) => void;
   onRegistrationOrganizationNameChange: (value: string) => void;
   onRegistrationRoleChange: (value: "admin" | "agent" | "user") => void;
   onModeChange: (mode: "login" | "register") => void;
@@ -39,6 +41,7 @@ export function LoginForm(props: LoginFormProps) {
     confirmPassword,
     registrationOrganizationName,
     registrationRole,
+    registrationInviteCode,
     authReady,
     mode,
     loading,
@@ -53,6 +56,7 @@ export function LoginForm(props: LoginFormProps) {
     onEmailChange,
     onPasswordChange,
     onConfirmPasswordChange,
+    onRegistrationInviteCodeChange,
     onRegistrationOrganizationNameChange,
     onRegistrationRoleChange,
     onModeChange,
@@ -231,31 +235,49 @@ export function LoginForm(props: LoginFormProps) {
           </label>
         ) : null}
 
-        {!passwordRecoveryActive && mode === "register" ? (
+        {!passwordRecoveryActive ? (
           <>
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Organization name</span>
+              <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Invite code</span>
               <input
-                className="input-glass w-full min-w-0 py-2 px-3 text-sm"
-                onChange={(event) => onRegistrationOrganizationNameChange(event.target.value)}
-                placeholder="Acme Sales Team"
+                className="input-glass w-full min-w-0 py-2 px-3 text-sm uppercase"
+                onChange={(event) => onRegistrationInviteCodeChange(event.target.value.toUpperCase())}
+                placeholder={mode === "login" ? "Optional for existing users" : "Optional if you were invited"}
                 type="text"
-                value={registrationOrganizationName}
+                value={registrationInviteCode}
               />
+              <p className="mt-1 text-xs text-whatsapp-muted">
+                If you have an invite, enter it here. The invite decides your organization and role.
+              </p>
             </label>
 
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Role type</span>
-              <select
-                className="input-glass w-full min-w-0 py-2 px-3 text-sm"
-                onChange={(event) => onRegistrationRoleChange(event.target.value as "admin" | "agent" | "user")}
-                value={registrationRole}
-              >
-                <option value="admin">Admin</option>
-                <option value="agent">Agent</option>
-                <option value="user">User</option>
-              </select>
-            </label>
+            {mode === "register" ? (
+              <>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Organization name</span>
+                  <input
+                    className="input-glass w-full min-w-0 py-2 px-3 text-sm"
+                    onChange={(event) => onRegistrationOrganizationNameChange(event.target.value)}
+                    placeholder="Acme Sales Team"
+                    type="text"
+                    value={registrationOrganizationName}
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Role type</span>
+                  <select
+                    className="input-glass w-full min-w-0 py-2 px-3 text-sm"
+                    onChange={(event) => onRegistrationRoleChange(event.target.value as "admin" | "agent" | "user")}
+                    value={registrationRole}
+                  >
+                    <option value="admin">Admin</option>
+                    <option value="agent">Agent</option>
+                    <option value="user">User</option>
+                  </select>
+                </label>
+              </>
+            ) : null}
           </>
         ) : null}
 
@@ -295,10 +317,11 @@ export function LoginForm(props: LoginFormProps) {
             : "Create account"}
         </button>
 
-        {mode === "register" && !passwordRecoveryActive ? (
+        {!passwordRecoveryActive ? (
           <p className="text-xs text-whatsapp-muted">
-            Registration uses Supabase Auth. Organization name and requested role are collected during signup so the
-            admin onboarding flow can attach the user to the right workspace after verification.
+            {mode === "register"
+              ? "Registration uses Supabase Auth. Use an invite code to join an existing organization, or enter an organization name to create a new admin workspace."
+              : "Existing users can sign in and redeem an invite code here to join an organization or receive a new role."}
           </p>
         ) : null}
       </div>

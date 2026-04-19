@@ -185,6 +185,7 @@ function App() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [registrationOrganizationName, setRegistrationOrganizationName] = useState("");
   const [registrationRole, setRegistrationRole] = useState<"admin" | "agent" | "user">("admin");
+  const [registrationInviteCode, setRegistrationInviteCode] = useState("");
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -1971,6 +1972,8 @@ function App() {
     setSessionConflictMessage("");
 
     try {
+      const trimmedInviteCode = registrationInviteCode.trim();
+
       if (passwordRecoveryActive) {
         const trimmedPassword = password.trim();
         const trimmedConfirmation = confirmPassword.trim();
@@ -2015,6 +2018,15 @@ function App() {
           throw new Error("Authentication succeeded but no session was returned.");
         }
 
+        if (trimmedInviteCode) {
+          const redemption = await api.redeemInviteCode(trimmedInviteCode, activeToken);
+          if (redemption.profile?.organization?.name) {
+            setAuthNotice(`Invite accepted. Joined ${redemption.profile.organization.name}.`);
+          } else {
+            setAuthNotice("Invite accepted.");
+          }
+        }
+
         await ensureDashboardSession(activeToken, { forceRefresh: true });
       } else {
         const trimmedFullName = fullName.trim();
@@ -2024,8 +2036,8 @@ function App() {
           throw new Error("Enter your full name to continue.");
         }
 
-        if (!trimmedOrganizationName) {
-          throw new Error("Enter your organization name to continue.");
+        if (!trimmedInviteCode && !trimmedOrganizationName) {
+          throw new Error("Enter your organization name or invite code to continue.");
         }
 
         const { data, error } = await supabase.auth.signUp({
@@ -2035,7 +2047,8 @@ function App() {
             data: {
               full_name: trimmedFullName,
               organization_name: trimmedOrganizationName,
-              requested_role: registrationRole
+              requested_role: registrationRole,
+              invite_code: trimmedInviteCode || undefined
             },
             emailRedirectTo: getEmailVerificationRedirectUrl()
           }
@@ -2055,6 +2068,7 @@ function App() {
       setFullName("");
       setRegistrationOrganizationName("");
       setRegistrationRole("admin");
+      setRegistrationInviteCode("");
       setPassword("");
       setConfirmPassword("");
     } catch (error) {
@@ -2626,6 +2640,7 @@ function App() {
             onFullNameChange={setFullName}
             onModeChange={setMode}
             onPasswordChange={setPassword}
+            onRegistrationInviteCodeChange={setRegistrationInviteCode}
             onRegistrationOrganizationNameChange={setRegistrationOrganizationName}
             onRegistrationRoleChange={setRegistrationRole}
             onRequestPasswordReset={handleRequestPasswordReset}
@@ -2635,6 +2650,7 @@ function App() {
             password={password}
             passwordRecoveryActive={passwordRecoveryActive}
             passwordResetRequestLoading={passwordResetRequestLoading}
+            registrationInviteCode={registrationInviteCode}
             registrationOrganizationName={registrationOrganizationName}
             registrationRole={registrationRole}
             replacingActiveSession={replacingActiveSession}
@@ -2682,6 +2698,7 @@ function App() {
             organizationName={organizationName}
             profile={currentProfile}
             salesStatuses={sidebarStats.statusCounts}
+            token={token}
             whatsAppAccounts={whatsAppAccounts}
           />
         ) : isSalesDashboard ? (

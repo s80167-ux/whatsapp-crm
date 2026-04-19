@@ -1,4 +1,4 @@
-const { getProfileByUserId } = require("./supabase");
+const { getProfileByUserId, hydrateProfileAccessFromAuthUser } = require("./supabase");
 
 const VALID_ROLES = new Set(["super_admin", "admin", "user", "agent"]);
 
@@ -20,7 +20,7 @@ async function getRequestUserContext(authUser) {
     throw error;
   }
 
-  const profile = await getProfileByUserId(userId);
+  const profile = await hydrateProfileAccessFromAuthUser(authUser) || await getProfileByUserId(userId);
   const role = normalizeRole(profile?.role);
   const organization = profile?.organization || null;
   const organizationId = profile?.organization_id || null;
