@@ -2,9 +2,12 @@ import { useState } from "react";
 import logo from "../../asset/rezeki_dashboard_logo_glass.png";
 
 type LoginFormProps = {
+  fullName: string;
   email: string;
   password: string;
   confirmPassword: string;
+  registrationOrganizationName: string;
+  registrationRole: "admin" | "agent" | "user";
   authReady: boolean;
   mode: "login" | "register";
   loading: boolean;
@@ -15,9 +18,12 @@ type LoginFormProps = {
   error: string;
   notice: string;
   sessionConflictMessage: string;
+  onFullNameChange: (value: string) => void;
   onEmailChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onConfirmPasswordChange: (value: string) => void;
+  onRegistrationOrganizationNameChange: (value: string) => void;
+  onRegistrationRoleChange: (value: "admin" | "agent" | "user") => void;
   onModeChange: (mode: "login" | "register") => void;
   onRequestPasswordReset: () => void;
   onResendVerification: () => void;
@@ -27,9 +33,12 @@ type LoginFormProps = {
 
 export function LoginForm(props: LoginFormProps) {
   const {
+    fullName,
     email,
     password,
     confirmPassword,
+    registrationOrganizationName,
+    registrationRole,
     authReady,
     mode,
     loading,
@@ -40,9 +49,12 @@ export function LoginForm(props: LoginFormProps) {
     error,
     notice,
     sessionConflictMessage,
+    onFullNameChange,
     onEmailChange,
     onPasswordChange,
     onConfirmPasswordChange,
+    onRegistrationOrganizationNameChange,
+    onRegistrationRoleChange,
     onModeChange,
     onRequestPasswordReset,
     onResendVerification,
@@ -91,6 +103,19 @@ export function LoginForm(props: LoginFormProps) {
       ) : null}
 
       <div className="space-y-4">
+        {!passwordRecoveryActive && mode === "register" ? (
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Full name</span>
+            <input
+              className="input-glass w-full min-w-0 py-2 px-3 text-sm"
+              onChange={(event) => onFullNameChange(event.target.value)}
+              placeholder="Your full name"
+              type="text"
+              value={fullName}
+            />
+          </label>
+        ) : null}
+
         {!passwordRecoveryActive ? (
           <label className="block">
             <div className="mb-2 flex items-center justify-between gap-3">
@@ -206,6 +231,34 @@ export function LoginForm(props: LoginFormProps) {
           </label>
         ) : null}
 
+        {!passwordRecoveryActive && mode === "register" ? (
+          <>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Organization name</span>
+              <input
+                className="input-glass w-full min-w-0 py-2 px-3 text-sm"
+                onChange={(event) => onRegistrationOrganizationNameChange(event.target.value)}
+                placeholder="Acme Sales Team"
+                type="text"
+                value={registrationOrganizationName}
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-whatsapp-deep">Role type</span>
+              <select
+                className="input-glass w-full min-w-0 py-2 px-3 text-sm"
+                onChange={(event) => onRegistrationRoleChange(event.target.value as "admin" | "agent" | "user")}
+                value={registrationRole}
+              >
+                <option value="admin">Admin</option>
+                <option value="agent">Agent</option>
+                <option value="user">User</option>
+              </select>
+            </label>
+          </>
+        ) : null}
+
         {error ? <p className="text-sm text-rose-500">{error}</p> : null}
         {notice ? <p className="text-sm text-whatsapp-dark">{notice}</p> : null}
 
@@ -244,8 +297,8 @@ export function LoginForm(props: LoginFormProps) {
 
         {mode === "register" && !passwordRecoveryActive ? (
           <p className="text-xs text-whatsapp-muted">
-            Registration uses Supabase Auth. If email confirmation is enabled in your project, confirm your
-            email before signing in. Use the resend verification button if the email did not arrive or the link expired.
+            Registration uses Supabase Auth. Organization name and requested role are collected during signup so the
+            admin onboarding flow can attach the user to the right workspace after verification.
           </p>
         ) : null}
       </div>

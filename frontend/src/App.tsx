@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AdminDashboard } from "./components/AdminDashboard";
 import { ChatList } from "./components/ChatList";
 import { ChatWindow } from "./components/ChatWindow";
 import { ContactList } from "./components/ContactList";
@@ -21,6 +22,7 @@ import {
   type CustomerStatus,
   type Message,
   type SalesLeadItem,
+  type UserProfile,
   type WhatsAppAccount,
   type WhatsAppQr,
   type WhatsAppStatus
@@ -29,7 +31,7 @@ import { getConversationIdentifier, getConversationSortTimestamp, getDisplayName
 import { clearPasswordRecoveryCallback, getEmailVerificationRedirectUrl, getPasswordRecoveryRedirectUrl, isPasswordRecoveryCallback, supabase } from "./lib/supabase";
 
 type AuthMode = "login" | "register";
-type DashboardTab = "inbox" | "contacts" | "sales";
+type DashboardTab = "admin" | "inbox" | "contacts" | "sales";
 type SidebarView = "inbox" | "pipeline" | "broadcast";
 const conversationPollMs = 8000;
 const whatsAppStatePollMs = 5000;
@@ -177,9 +179,12 @@ function buildAccountScopedCacheKey(phone: string, chatJid?: string | null, what
 
 function App() {
   const [mode, setMode] = useState<AuthMode>("login");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [registrationOrganizationName, setRegistrationOrganizationName] = useState("");
+  const [registrationRole, setRegistrationRole] = useState<"admin" | "agent" | "user">("admin");
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -189,6 +194,7 @@ function App() {
   const [passwordRecoveryActive, setPasswordRecoveryActive] = useState(false);
   const [token, setToken] = useState("");
   const [dashboardSessionId, setDashboardSessionId] = useState("");
+  const [currentProfile, setCurrentProfile] = useState<UserProfile | null>(null);
   const [sessionConflictMessage, setSessionConflictMessage] = useState("");
   const [replacingActiveSession, setReplacingActiveSession] = useState(false);
   const [userEmail, setUserEmail] = useState("");
@@ -238,6 +244,7 @@ function App() {
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const activeWhatsAppAccountChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const conversationsRefreshTimerRef = useRef<number | null>(null);
+  const roleLandingAppliedRef = useRef<string | null>(null);
   const activeSelectionRef = useRef<{
     dashboardTab: DashboardTab;
     selectedWhatsAppAccountId: string | null;
@@ -258,6 +265,9 @@ function App() {
     activeContactChatJid: null
   });
   const isSalesDashboard = activeDashboardTab === "sales";
+  const isAdminUser = currentProfile?.role === "admin" || currentProfile?.role === "super_admin";
+  const isAdminDashboard = activeDashboardTab === "admin";
+  const organizationName = currentProfile?.organization?.name || registrationOrganizationName || "Default Organization";
 
   // Contacts dashboard state and logic
   const CONTACTS_PAGE_SIZE = 10;
@@ -308,6 +318,7 @@ function App() {
     messagesCacheRef.current = {};
     setToken("");
     setDashboardSessionId("");
+    setCurrentProfile(null);
     setSessionConflictMessage("");
     setUserEmail("");
     setConversations([]);
@@ -1488,6 +1499,53 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfile() {
+      if (!token || !dashboardSessionId) {
+        setCurrentProfile(null);
+        return;
+      }
+
+      try {
+        const profile = await api.getMyProfile(token);
+        if (!cancelled) {
+          setCurrentProfile(profile);
+        }
+      } catch {
+        if (!cancelled) {
+          setCurrentProfile(null);
+        }
+      }
+    }
+
+    void loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboardSessionId, token]);
+
+  useEffect(() => {
+    const profileId = currentProfile?.id || null;
+
+    if (!profileId) {
+      roleLandingAppliedRef.current = null;
+      return;
+    }
+
+    if (roleLandingAppliedRef.current === profileId) {
+      if (!isAdminUser && activeDashboardTab === "admin") {
+        setActiveDashboardTab("inbox");
+      }
+      return;
+    }
+
+    setActiveDashboardTab(isAdminUser ? "admin" : "inbox");
+    roleLandingAppliedRef.current = profileId;
+  }, [activeDashboardTab, currentProfile?.id, isAdminUser]);
+
+  useEffect(() => {
     if (!token || !dashboardSessionId) {
       setWhatsAppStatus(null);
       setWhatsAppQr(null);
@@ -1959,10 +2017,26 @@ function App() {
 
         await ensureDashboardSession(activeToken, { forceRefresh: true });
       } else {
+        const trimmedFullName = fullName.trim();
+        const trimmedOrganizationName = registrationOrganizationName.trim();
+
+        if (!trimmedFullName) {
+          throw new Error("Enter your full name to continue.");
+        }
+
+        if (!trimmedOrganizationName) {
+          throw new Error("Enter your organization name to continue.");
+        }
+
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
+            data: {
+              full_name: trimmedFullName,
+              organization_name: trimmedOrganizationName,
+              requested_role: registrationRole
+            },
             emailRedirectTo: getEmailVerificationRedirectUrl()
           }
         });
@@ -1978,6 +2052,9 @@ function App() {
         }
       }
 
+      setFullName("");
+      setRegistrationOrganizationName("");
+      setRegistrationRole("admin");
       setPassword("");
       setConfirmPassword("");
     } catch (error) {
@@ -2540,13 +2617,17 @@ function App() {
             confirmPassword={confirmPassword}
             email={email}
             error={authError}
+            fullName={fullName}
             loading={authLoading}
             mode={mode}
             notice={authNotice}
             onConfirmPasswordChange={setConfirmPassword}
             onEmailChange={setEmail}
+            onFullNameChange={setFullName}
             onModeChange={setMode}
             onPasswordChange={setPassword}
+            onRegistrationOrganizationNameChange={setRegistrationOrganizationName}
+            onRegistrationRoleChange={setRegistrationRole}
             onRequestPasswordReset={handleRequestPasswordReset}
             onResendVerification={handleResendVerification}
             onReplaceActiveSession={handleReplaceActiveSession}
@@ -2554,6 +2635,8 @@ function App() {
             password={password}
             passwordRecoveryActive={passwordRecoveryActive}
             passwordResetRequestLoading={passwordResetRequestLoading}
+            registrationOrganizationName={registrationOrganizationName}
+            registrationRole={registrationRole}
             replacingActiveSession={replacingActiveSession}
             sessionConflictMessage={sessionConflictMessage}
             verificationResendLoading={verificationResendLoading}
@@ -2584,6 +2667,7 @@ function App() {
             userEmail={userEmail}
             whatsAppQr={whatsAppQr}
             whatsAppStatus={effectiveWhatsAppStatus}
+            showAdminTab={isAdminUser}
           />
         </div>
       </div>
@@ -2592,7 +2676,15 @@ function App() {
         {dashboardError ? <div className="glass-panel border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">{dashboardError}</div> : null}
         {dashboardNotice ? <div className="glass-panel border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{dashboardNotice}</div> : null}
 
-        {isSalesDashboard ? (
+        {isAdminDashboard ? (
+          <AdminDashboard
+            conversations={conversations}
+            organizationName={organizationName}
+            profile={currentProfile}
+            salesStatuses={sidebarStats.statusCounts}
+            whatsAppAccounts={whatsAppAccounts}
+          />
+        ) : isSalesDashboard ? (
           <div className="min-h-0 flex-1 space-y-4 xl:grid xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)] xl:items-stretch xl:gap-4 xl:space-y-0 xl:space-x-0">
             <Sidebar
               activeView={activeView}

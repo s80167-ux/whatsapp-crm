@@ -4,20 +4,13 @@ import { api, type UserProfile, type WhatsAppQr, type WhatsAppStatus } from "../
 import { supabase } from "../lib/supabase";
 import { WhatsAppConnectCard } from "./WhatsAppConnectCard";
 
-type DashboardTab = "inbox" | "contacts" | "sales";
+type DashboardTab = "admin" | "inbox" | "contacts" | "sales";
 
 type NavigationItem = {
   key: DashboardTab | "analytics" | "settings";
   label: string;
   disabled?: boolean;
 };
-
-const navItems: NavigationItem[] = [
-  { key: "inbox", label: "Inbox" },
-  { key: "contacts", label: "Contacts" },
-  { key: "sales", label: "Sales" },
-  { key: "settings", label: "Settings", disabled: true }
-];
 
 type TopBarProps = {
   activeTab: DashboardTab;
@@ -36,6 +29,7 @@ type TopBarProps = {
   userEmail: string;
   whatsAppQr: WhatsAppQr | null;
   whatsAppStatus: WhatsAppStatus | null;
+  showAdminTab?: boolean;
 };
 
 export function TopBar({
@@ -54,8 +48,17 @@ export function TopBar({
   token,
   userEmail,
   whatsAppQr,
-  whatsAppStatus
+  whatsAppStatus,
+  showAdminTab = false
 }: TopBarProps) {
+  const navItems: NavigationItem[] = [
+    ...(showAdminTab ? [{ key: "admin" as const, label: "Admin" }] : []),
+    { key: "inbox", label: "Inbox" },
+    { key: "contacts", label: "Contacts" },
+    { key: "sales", label: "Sales" },
+    { key: "settings", label: "Settings", disabled: true }
+  ];
+
   const passwordPanelRef = useRef<HTMLDivElement | null>(null);
   const passwordButtonRef = useRef<HTMLButtonElement | null>(null);
   const profilePanelRef = useRef<HTMLDivElement | null>(null);
@@ -290,7 +293,7 @@ export function TopBar({
               }`}
               disabled={item.disabled}
               onClick={() => {
-                if (item.key === "inbox" || item.key === "contacts" || item.key === "sales") {
+                if (item.key === "admin" || item.key === "inbox" || item.key === "contacts" || item.key === "sales") {
                   onChangeTab(item.key as DashboardTab);
                 }
               }}
@@ -563,6 +566,15 @@ export function TopBar({
 
 function getItemIcon(label: string) {
   switch (label) {
+    case "Admin":
+      return (
+        <svg fill="none" height="16" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="16">
+          <rect height="7" rx="1.5" width="7" x="3" y="3" />
+          <rect height="7" rx="1.5" width="7" x="14" y="3" />
+          <rect height="7" rx="1.5" width="7" x="3" y="14" />
+          <path d="M17.5 14v7M14 17.5h7" />
+        </svg>
+      );
     case "Inbox":
       return (
         <svg fill="none" height="16" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="16">
