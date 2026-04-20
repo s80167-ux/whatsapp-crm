@@ -1,6 +1,8 @@
 begin;
 
-create or replace view public.conversation_latest_messages as
+drop view if exists public.conversation_latest_messages;
+
+create view public.conversation_latest_messages as
 select distinct on (coalesce(m.whatsapp_account_id::text, 'no-account'), coalesce(nullif(m.phone, ''), nullif(m.chat_jid, '')))
   m.phone,
   m.chat_jid,
